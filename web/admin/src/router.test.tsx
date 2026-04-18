@@ -1,0 +1,49 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { render, screen } from '@testing-library/react'
+import { createMemoryRouter, RouterProvider } from 'react-router-dom'
+import { clearToken, setToken } from './lib/auth'
+import { router as appRouter } from './router'
+
+describe('router protection', () => {
+  beforeEach(() => {
+    clearToken()
+  })
+
+  it('redirects unauthenticated users to login', async () => {
+    const router = createMemoryRouter(appRouter.routes, {
+      initialEntries: ['/dashboard'],
+    })
+
+    renderWithProviders(router)
+
+    expect(await screen.findByText('Admin Console Login')).toBeInTheDocument()
+  })
+
+  it('allows authenticated users to access dashboard', async () => {
+    setToken('demo-admin-token')
+
+    const router = createMemoryRouter(appRouter.routes, {
+      initialEntries: ['/dashboard'],
+    })
+
+    renderWithProviders(router)
+
+    expect(await screen.findByRole('heading', { name: 'Dashboard', level: 1 })).toBeInTheDocument()
+  })
+})
+
+function renderWithProviders(router: ReturnType<typeof createMemoryRouter>) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+      },
+    },
+  })
+
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  )
+}
