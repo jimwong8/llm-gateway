@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "opencode-google-antigravity-auth": "file:node_modules/opencode-google-antigravity-auth-0.2.15.tgz"
+  }
+}
