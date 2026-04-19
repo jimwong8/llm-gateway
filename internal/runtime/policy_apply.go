@@ -299,7 +299,7 @@ func parsePolicyRoleBindingsList(raw any) ([]policy.TenantRoleBinding, error) {
 			if subject == "" {
 				return nil, fmt.Errorf("policy runtime apply role binding subject is required")
 			}
-			if role != "admin" && role != "operator" && role != "readonly" {
+			if role != "admin" && role != "operator" && role != "approver" && role != "readonly" {
 				return nil, fmt.Errorf("policy runtime apply role binding role invalid: %q", item.Role)
 			}
 			out = append(out, policy.TenantRoleBinding{Subject: subject, Role: role})
@@ -319,7 +319,7 @@ func parsePolicyRoleBindingsList(raw any) ([]policy.TenantRoleBinding, error) {
 			if subject == "" {
 				return nil, fmt.Errorf("policy runtime apply role binding subject is required")
 			}
-			if role != "admin" && role != "operator" && role != "readonly" {
+			if role != "admin" && role != "operator" && role != "approver" && role != "readonly" {
 				return nil, fmt.Errorf("policy runtime apply role binding role invalid: %q", role)
 			}
 			out = append(out, policy.TenantRoleBinding{Subject: subject, Role: role})

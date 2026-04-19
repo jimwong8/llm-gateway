@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 )
 
 var (
@@ -50,7 +51,33 @@ type RuntimeResolver struct {
 	loader    activePolicyLoader
 	snapshots runtimeDecisionSnapshotWriter
 	cache     *sync.Map
+
+	observerMu                  sync.Mutex
+	cacheInvalidationCount      int64
+	lastInvalidatedAt           time.Time
+	lastInvalidatedEnvironment  string
 }
+
+type cachedPolicyValue struct {
+	policy   PolicyVersion
+	cachedAt time.Time
+}
+
+// RuntimeResolverCacheEntry 描述 resolver 缓存中的一条环境策略快照。
+type RuntimeResolverCacheEntry struct {
+	Environment     string    `json:"environment"`
+	PolicyVersionID string    `json:"policy_version_id"`
+	CachedAt        time.Time `json:"cached_at"`
+}
+
+// RuntimeResolverObserverSnapshot 提供 runtime observer 需要的缓存/失效状态。
+type RuntimeResolverObserverSnapshot struct {
+	CacheEntries              []RuntimeResolverCacheEntry `json:"cache_entries"`
+	CacheInvalidationCount    int64                       `json:"cache_invalidation_count"`
+	LastInvalidatedAt         time.Time                   `json:"last_invalidated_at,omitempty"`
+	LastInvalidatedEnvironment string                     `json:"last_invalidated_environment,omitempty"`
+}
+
 
 type activePolicyLoader interface {
 	LoadActivePolicy(ctx context.Context, environment string) (PolicyVersion, error)
@@ -88,6 +115,17 @@ func (r *RuntimeResolver) InvalidateCache(environment string) {
 	if r == nil || r.cache == nil {
 		return
 	}
+	environment = strings.TrimSpace(environment)
+	r.observerMu.Lock()
+	r.cacheInvalidationCount++
+	r.lastInvalidatedAt = time.Now().UTC()
+	if environment == "" {
+		r.lastInvalidatedEnvironment = "*"
+	} else {
+		r.lastInvalidatedEnvironment = environment
+	}
+	r.observerMu.Unlock()
+
 	if environment == "" {
 		r.cache.Range(func(key, value any) bool {
 			r.cache.Delete(key)
@@ -98,10 +136,42 @@ func (r *RuntimeResolver) InvalidateCache(environment string) {
 	r.cache.Delete(environment)
 }
 
+func (r *RuntimeResolver) ObserverSnapshot() RuntimeResolverObserverSnapshot {
+	if r == nil {
+		return RuntimeResolverObserverSnapshot{}
+	}
+	snapshot := RuntimeResolverObserverSnapshot{CacheEntries: make([]RuntimeResolverCacheEntry, 0)}
+	if r.cache != nil {
+		r.cache.Range(func(key, value any) bool {
+			environment, _ := key.(string)
+			cached, ok := value.(cachedPolicyValue)
+			if !ok {
+				return true
+			}
+			snapshot.CacheEntries = append(snapshot.CacheEntries, RuntimeResolverCacheEntry{
+				Environment:     environment,
+				PolicyVersionID: cached.policy.ID,
+				CachedAt:        cached.cachedAt,
+			})
+			return true
+		})
+	}
+	r.observerMu.Lock()
+	snapshot.CacheInvalidationCount = r.cacheInvalidationCount
+	snapshot.LastInvalidatedAt = r.lastInvalidatedAt
+	snapshot.LastInvalidatedEnvironment = r.lastInvalidatedEnvironment
+	r.observerMu.Unlock()
+	return snapshot
+}
+
+
 func (r *RuntimeResolver) loadPolicyCached(ctx context.Context, environment string) (PolicyVersion, error) {
 	if r.cache != nil {
 		if val, ok := r.cache.Load(environment); ok {
-			return val.(PolicyVersion), nil
+			cached, ok := val.(cachedPolicyValue)
+			if ok {
+				return cached.policy, nil
+			}
 		}
 	}
 	policy, err := r.loader.LoadActivePolicy(ctx, environment)
@@ -109,7 +179,7 @@ func (r *RuntimeResolver) loadPolicyCached(ctx context.Context, environment stri
 		return PolicyVersion{}, err
 	}
 	if r.cache != nil {
-		r.cache.Store(environment, policy)
+		r.cache.Store(environment, cachedPolicyValue{policy: policy, cachedAt: time.Now().UTC()})
 	}
 	return policy, nil
 }

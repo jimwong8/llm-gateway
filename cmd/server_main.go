@@ -124,6 +124,9 @@ func main() {
 	var governanceApprovalService *governance.ApprovalService
 	var governanceVersionService *governance.VersionService
 	var governanceRolloutService *governance.RolloutService
+	var governanceRolloutDashboardService *governance.RolloutDashboardService
+	var governanceRollbackService *governance.RollbackService
+	var governanceRollbackRecordRepo *governance.RollbackRecordRepo
 	var governanceEvaluationService *governance.EvaluationService
 	var governanceDriftService *governance.DriftService
 	var governanceRuntimeResolver *governance.RuntimeResolver
@@ -141,6 +144,9 @@ func main() {
 			governanceVersionService = governance.NewVersionService(store)
 			governanceRuntimeResolver = governance.NewRuntimeResolver(store)
 			governanceRolloutService = governance.NewRolloutService(store).WithAuditEmitter(governanceAuditRepo).WithInvalidator(governanceRuntimeResolver)
+			governanceRolloutDashboardService = governance.NewRolloutDashboardService(store)
+			governanceRollbackService = governance.NewRollbackService(store).WithAuditEmitter(governanceAuditRepo).WithInvalidator(governanceRuntimeResolver)
+			governanceRollbackRecordRepo = governance.NewRollbackRecordRepo(store)
 			governanceEvaluationService = governance.NewEvaluationService(store)
 			governanceDriftService = governance.NewDriftService(store)
 			_ = governanceAuditSvc
@@ -155,6 +161,9 @@ func main() {
 			WithApprovalService(governanceApprovalService).
 			WithVersionService(governanceVersionService).
 			WithRolloutService(governanceRolloutService).
+			WithRolloutDashboardService(governanceRolloutDashboardService).
+			WithRollbackService(governanceRollbackService).
+			WithRollbackRecordStore(governanceRollbackRecordRepo).
 			WithEvaluationService(governanceEvaluationService).
 			WithDriftService(governanceDriftService).
 			WithQueryer(governanceQueryDB)

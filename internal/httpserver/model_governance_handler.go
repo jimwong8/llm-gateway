@@ -23,11 +23,22 @@ type versionLifecycle interface {
 	CreateFromApproval(ctx context.Context, approvalID, createdBy string) (governance.PolicyVersion, error)
 	Approve(ctx context.Context, versionID, approvedBy string) (governance.PolicyVersion, error)
 	Activate(ctx context.Context, versionID string) (governance.PolicyVersion, error)
+	GetDiff(ctx context.Context, versionID string) (governance.PolicyVersionDiff, error)
 }
 
 type rolloutCoordinator interface {
 	Start(ctx context.Context, input governance.StartRolloutInput) (governance.Rollout, governance.DistributionEvent, error)
 	Promote(ctx context.Context, input governance.PromoteRolloutInput) (governance.Rollout, error)
+}
+
+type rollbackExecutor interface {
+	Execute(ctx context.Context, input governance.ExecuteRollbackInput) (governance.ExecuteRollbackResult, error)
+}
+
+type rollbackRecordStore interface {
+	Create(ctx context.Context, input governance.ExecuteRollbackInput, result governance.ExecuteRollbackResult) (governance.RollbackRecord, error)
+	List(ctx context.Context, limit int) ([]governance.RollbackRecord, error)
+	Get(ctx context.Context, rollbackID string) (governance.RollbackRecord, error)
 }
 
 type evaluationRunner interface {
@@ -45,14 +56,21 @@ type governanceSQLQueryer interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
+type rolloutDashboardReader interface {
+	ListRows(ctx context.Context, query governance.RolloutDashboardQuery) ([]governance.RolloutDashboardRow, error)
+}
+
 type ModelGovernanceHandler struct {
-	recommendations recommendationGenerator
-	approvals       approvalDecider
-	versions        versionLifecycle
-	rollouts        rolloutCoordinator
-	evaluations     evaluationRunner
-	drifts          driftManager
-	queryer         governanceSQLQueryer
+	recommendations  recommendationGenerator
+	approvals        approvalDecider
+	versions         versionLifecycle
+	rollouts         rolloutCoordinator
+	rolloutDashboard rolloutDashboardReader
+	rollback         rollbackExecutor
+	rollbackRecords  rollbackRecordStore
+	evaluations      evaluationRunner
+	drifts           driftManager
+	queryer          governanceSQLQueryer
 }
 
 func NewModelGovernanceHandler() *ModelGovernanceHandler {
@@ -76,6 +94,21 @@ func (h *ModelGovernanceHandler) WithVersionService(service versionLifecycle) *M
 
 func (h *ModelGovernanceHandler) WithRolloutService(service rolloutCoordinator) *ModelGovernanceHandler {
 	h.rollouts = service
+	return h
+}
+
+func (h *ModelGovernanceHandler) WithRolloutDashboardService(service rolloutDashboardReader) *ModelGovernanceHandler {
+	h.rolloutDashboard = service
+	return h
+}
+
+func (h *ModelGovernanceHandler) WithRollbackService(service rollbackExecutor) *ModelGovernanceHandler {
+	h.rollback = service
+	return h
+}
+
+func (h *ModelGovernanceHandler) WithRollbackRecordStore(store rollbackRecordStore) *ModelGovernanceHandler {
+	h.rollbackRecords = store
 	return h
 }
 
@@ -109,6 +142,12 @@ func (h *ModelGovernanceHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 		h.handleRollouts(w, r)
 	case strings.HasPrefix(path, "/admin/governance/rollouts/"):
 		h.handleRolloutActions(w, r)
+	case path == "/admin/governance/dashboard/rollouts":
+		h.handleDashboardRollouts(w, r)
+	case path == "/admin/governance/rollbacks":
+		h.handleRollbacks(w, r)
+	case strings.HasPrefix(path, "/admin/governance/rollbacks/"):
+		h.handleRollbackByID(w, r)
 	case path == "/admin/governance/evaluations":
 		h.handleEvaluations(w, r)
 	case strings.HasPrefix(path, "/admin/governance/evaluations/"):
@@ -330,16 +369,33 @@ func (h *ModelGovernanceHandler) handlePolicyVersionActions(w http.ResponseWrite
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"message": "route not found", "type": "not_found_error", "path": r.URL.Path}})
 		return
 	}
-	if r.Method != http.MethodPost {
-		methodNotAllowed(w, r)
-		return
-	}
 	if h.versions == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "version service unavailable"})
 		return
 	}
 	versionID := strings.TrimSpace(parts[0])
 	action := strings.TrimSpace(parts[1])
+
+	if r.Method == http.MethodGet {
+		switch action {
+		case "diff":
+			diff, err := h.versions.GetDiff(r.Context(), versionID)
+			if err != nil {
+				writeGovernanceError(w, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, diff)
+			return
+		default:
+			writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"message": "route not found", "type": "not_found_error", "path": r.URL.Path}})
+			return
+		}
+	}
+
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, r)
+		return
+	}
 	switch action {
 	case "approve":
 		var req mutatePolicyVersionRequest
@@ -363,6 +419,23 @@ func (h *ModelGovernanceHandler) handlePolicyVersionActions(w http.ResponseWrite
 	default:
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"message": "route not found", "type": "not_found_error", "path": r.URL.Path}})
 	}
+}
+
+func (h *ModelGovernanceHandler) handleDashboardRollouts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	if h.rolloutDashboard == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "rollout dashboard service unavailable"})
+		return
+	}
+	rows, err := h.rolloutDashboard.ListRows(r.Context(), governance.RolloutDashboardQuery{Limit: parseLimit(r, 20)})
+	if err != nil {
+		writeGovernanceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": rows})
 }
 
 func (h *ModelGovernanceHandler) handleRollouts(w http.ResponseWriter, r *http.Request) {
@@ -429,34 +502,140 @@ func (h *ModelGovernanceHandler) handleRolloutActions(w http.ResponseWriter, r *
 		methodNotAllowed(w, r)
 		return
 	}
-	if h.rollouts == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "rollout service unavailable"})
-		return
-	}
 	rolloutID := strings.TrimSpace(parts[0])
 	action := strings.TrimSpace(parts[1])
-	if action != "promote" {
+	switch action {
+	case "promote":
+		if h.rollouts == nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "rollout service unavailable"})
+			return
+		}
+		var body struct {
+			RolloutPercent int    `json:"rollout_percent"`
+			GuardSummary   string `json:"guard_summary"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			badRequest(w, "invalid JSON body")
+			return
+		}
+		rollout, err := h.rollouts.Promote(r.Context(), governance.PromoteRolloutInput{
+			RolloutID:      rolloutID,
+			RolloutPercent: body.RolloutPercent,
+			GuardSummary:   strings.TrimSpace(body.GuardSummary),
+		})
+		if err != nil {
+			writeGovernanceError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, rollout)
+	case "rollback":
+		h.handleRolloutRollback(w, r, rolloutID)
+	default:
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"message": "route not found", "type": "not_found_error", "path": r.URL.Path}})
+	}
+}
+
+func (h *ModelGovernanceHandler) handleRolloutRollback(w http.ResponseWriter, r *http.Request, rolloutID string) {
+	if h.rollback == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "rollback service unavailable"})
+		return
+	}
+	if h.rollbackRecords == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "rollback record store unavailable"})
 		return
 	}
 	var body struct {
-		RolloutPercent int    `json:"rollout_percent"`
-		GuardSummary   string `json:"guard_summary"`
+		Actor  string `json:"actor"`
+		Reason string `json:"reason"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		badRequest(w, "invalid JSON body")
 		return
 	}
-	rollout, err := h.rollouts.Promote(r.Context(), governance.PromoteRolloutInput{
-		RolloutID:      rolloutID,
-		RolloutPercent: body.RolloutPercent,
-		GuardSummary:   strings.TrimSpace(body.GuardSummary),
-	})
+	input := governance.ExecuteRollbackInput{
+		RolloutID: strings.TrimSpace(rolloutID),
+		Actor:     strings.TrimSpace(body.Actor),
+		Reason:    strings.TrimSpace(body.Reason),
+	}
+	result, err := h.rollback.Execute(r.Context(), input)
 	if err != nil {
 		writeGovernanceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, rollout)
+	record, err := h.rollbackRecords.Create(r.Context(), input, result)
+	if err != nil {
+		writeGovernanceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"rollback": record, "result": result})
+}
+
+func (h *ModelGovernanceHandler) handleRollbacks(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		if h.rollbackRecords == nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "rollback record store unavailable"})
+			return
+		}
+		items, err := h.rollbackRecords.List(r.Context(), parseLimit(r, 20))
+		if err != nil {
+			internalError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": items})
+	case http.MethodPost:
+		if h.rollback == nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "rollback service unavailable"})
+			return
+		}
+		if h.rollbackRecords == nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "rollback record store unavailable"})
+			return
+		}
+		var input governance.ExecuteRollbackInput
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			badRequest(w, "invalid JSON body")
+			return
+		}
+		input.RolloutID = strings.TrimSpace(input.RolloutID)
+		input.Actor = strings.TrimSpace(input.Actor)
+		input.Reason = strings.TrimSpace(input.Reason)
+		result, err := h.rollback.Execute(r.Context(), input)
+		if err != nil {
+			writeGovernanceError(w, err)
+			return
+		}
+		record, err := h.rollbackRecords.Create(r.Context(), input, result)
+		if err != nil {
+			writeGovernanceError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]any{"rollback": record, "result": result})
+	default:
+		methodNotAllowed(w, r)
+	}
+}
+
+func (h *ModelGovernanceHandler) handleRollbackByID(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	if h.rollbackRecords == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "rollback record store unavailable"})
+		return
+	}
+	rollbackID := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/admin/governance/rollbacks/"))
+	if rollbackID == "" || strings.Contains(rollbackID, "/") {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"message": "route not found", "type": "not_found_error", "path": r.URL.Path}})
+		return
+	}
+	record, err := h.rollbackRecords.Get(r.Context(), rollbackID)
+	if err != nil {
+		writeGovernanceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, record)
 }
 
 func (h *ModelGovernanceHandler) handleEvaluations(w http.ResponseWriter, r *http.Request) {
@@ -665,7 +844,9 @@ func governanceStatusFromError(err error) int {
 		errors.Is(err, governance.ErrScoringFormulaNotFound),
 		errors.Is(err, governance.ErrEvaluationRunNotFound),
 		errors.Is(err, governance.ErrPolicyDriftNotFound),
-		errors.Is(err, governance.ErrActivePolicyNotFound):
+		errors.Is(err, governance.ErrActivePolicyNotFound),
+		errors.Is(err, governance.ErrRolloutNotFound),
+		errors.Is(err, governance.ErrRollbackNotFound):
 		return http.StatusNotFound
 	}
 	msg := strings.ToLower(strings.TrimSpace(err.Error()))

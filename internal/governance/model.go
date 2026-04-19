@@ -206,18 +206,35 @@ type Approval struct {
 
 // PolicyVersion 表示治理域中的不可变策略版本。
 type PolicyVersion struct {
-	ID          string              `json:"id"`
-	TenantID    string              `json:"tenant_id"`
-	Environment string              `json:"environment"`
-	Version     int64               `json:"version"`
-	Status      PolicyVersionStatus `json:"status"`
-	Policy      RuntimePolicy       `json:"policy"`
-	Summary     string              `json:"summary,omitempty"`
-	CreatedBy   string              `json:"created_by,omitempty"`
-	ApprovedBy  string              `json:"approved_by,omitempty"`
-	CreatedAt   time.Time           `json:"created_at"`
-	ApprovedAt  time.Time           `json:"approved_at,omitempty"`
-	ActivatedAt time.Time           `json:"activated_at,omitempty"`
+	ID               string              `json:"id"`
+	TenantID         string              `json:"tenant_id"`
+	Environment      string              `json:"environment"`
+	Version          int64               `json:"version"`
+	Status           PolicyVersionStatus `json:"status"`
+	Policy           RuntimePolicy       `json:"policy"`
+	SourceApprovalID string              `json:"source_approval_id,omitempty"`
+	Summary          string              `json:"summary,omitempty"`
+	CreatedBy        string              `json:"created_by,omitempty"`
+	ApprovedBy       string              `json:"approved_by,omitempty"`
+	CreatedAt        time.Time           `json:"created_at"`
+	ApprovedAt       time.Time           `json:"approved_at,omitempty"`
+	ActivatedAt      time.Time           `json:"activated_at,omitempty"`
+}
+
+// PolicyVersionDiff 描述当前版本与基线版本的差异（用于管理端 UI 展示）。
+type PolicyVersionDiff struct {
+	CurrentVersion PolicyVersion     `json:"current_version"`
+	BaseVersion    *PolicyVersion    `json:"base_version,omitempty"`
+	BaseType       string            `json:"base_type"`
+	Changes        []PolicyDiffEntry `json:"changes"`
+}
+
+// PolicyDiffEntry 表示一条策略字段差异。
+type PolicyDiffEntry struct {
+	Path       string `json:"path"`
+	ChangeType string `json:"change_type"`
+	From       any    `json:"from,omitempty"`
+	To         any    `json:"to,omitempty"`
 }
 
 // RuntimePolicy 是 runtime 解析用的稳定策略快照。
@@ -257,14 +274,14 @@ type Rollout struct {
 
 // RolloutMetricsSnapshot 是发布窗口聚合指标快照。
 type RolloutMetricsSnapshot struct {
-	WindowStart        time.Time `json:"window_start,omitempty"`
-	WindowEnd          time.Time `json:"window_end,omitempty"`
-	RequestsTotal      int64     `json:"requests_total,omitempty"`
-	ErrorRate          float64   `json:"error_rate,omitempty"`
-	P95LatencyMillis   int64     `json:"p95_latency_millis,omitempty"`
-	FallbackRequests   int64     `json:"fallback_requests,omitempty"`
-	FallbackRate       float64   `json:"fallback_rate,omitempty"`
-	MeanCost           float64   `json:"mean_cost,omitempty"`
+	WindowStart      time.Time `json:"window_start,omitempty"`
+	WindowEnd        time.Time `json:"window_end,omitempty"`
+	RequestsTotal    int64     `json:"requests_total,omitempty"`
+	ErrorRate        float64   `json:"error_rate,omitempty"`
+	P95LatencyMillis int64     `json:"p95_latency_millis,omitempty"`
+	FallbackRequests int64     `json:"fallback_requests,omitempty"`
+	FallbackRate     float64   `json:"fallback_rate,omitempty"`
+	MeanCost         float64   `json:"mean_cost,omitempty"`
 }
 
 // DistributionEventType 表示策略分发生命周期事件类型。
@@ -290,30 +307,30 @@ type DistributionEvent struct {
 type RolloutGuardVerdict string
 
 const (
-	RolloutGuardKeep               RolloutGuardVerdict = "keep"
-	RolloutGuardPause              RolloutGuardVerdict = "pause"
-	RolloutGuardRollbackSuggested  RolloutGuardVerdict = "rollback_suggested"
-	RolloutGuardRollbackRequired   RolloutGuardVerdict = "rollback_required"
+	RolloutGuardKeep              RolloutGuardVerdict = "keep"
+	RolloutGuardPause             RolloutGuardVerdict = "pause"
+	RolloutGuardRollbackSuggested RolloutGuardVerdict = "rollback_suggested"
+	RolloutGuardRollbackRequired  RolloutGuardVerdict = "rollback_required"
 )
 
 // RolloutGuardThresholds 定义指标守卫阈值。
 type RolloutGuardThresholds struct {
-	MinRequests                       int64   `json:"min_requests,omitempty"`
-	PauseErrorRateGTE                 float64 `json:"pause_error_rate_gte,omitempty"`
-	RollbackSuggestedErrorRateGTE     float64 `json:"rollback_suggested_error_rate_gte,omitempty"`
-	RollbackRequiredErrorRateGTE      float64 `json:"rollback_required_error_rate_gte,omitempty"`
-	PauseP95LatencyMillisGTE          int64   `json:"pause_p95_latency_millis_gte,omitempty"`
-	RollbackSuggestedP95LatencyGTE    int64   `json:"rollback_suggested_p95_latency_millis_gte,omitempty"`
-	RollbackRequiredP95LatencyGTE     int64   `json:"rollback_required_p95_latency_millis_gte,omitempty"`
-	PauseFallbackRateGTE              float64 `json:"pause_fallback_rate_gte,omitempty"`
-	RollbackSuggestedFallbackRateGTE  float64 `json:"rollback_suggested_fallback_rate_gte,omitempty"`
-	RollbackRequiredFallbackRateGTE   float64 `json:"rollback_required_fallback_rate_gte,omitempty"`
+	MinRequests                      int64   `json:"min_requests,omitempty"`
+	PauseErrorRateGTE                float64 `json:"pause_error_rate_gte,omitempty"`
+	RollbackSuggestedErrorRateGTE    float64 `json:"rollback_suggested_error_rate_gte,omitempty"`
+	RollbackRequiredErrorRateGTE     float64 `json:"rollback_required_error_rate_gte,omitempty"`
+	PauseP95LatencyMillisGTE         int64   `json:"pause_p95_latency_millis_gte,omitempty"`
+	RollbackSuggestedP95LatencyGTE   int64   `json:"rollback_suggested_p95_latency_millis_gte,omitempty"`
+	RollbackRequiredP95LatencyGTE    int64   `json:"rollback_required_p95_latency_millis_gte,omitempty"`
+	PauseFallbackRateGTE             float64 `json:"pause_fallback_rate_gte,omitempty"`
+	RollbackSuggestedFallbackRateGTE float64 `json:"rollback_suggested_fallback_rate_gte,omitempty"`
+	RollbackRequiredFallbackRateGTE  float64 `json:"rollback_required_fallback_rate_gte,omitempty"`
 }
 
 // RolloutGuardResult 表示 rollout 指标守卫输出。
 type RolloutGuardResult struct {
-	Verdict RolloutGuardVerdict   `json:"verdict"`
-	Summary string                `json:"summary,omitempty"`
+	Verdict RolloutGuardVerdict    `json:"verdict"`
+	Summary string                 `json:"summary,omitempty"`
 	Metrics RolloutMetricsSnapshot `json:"metrics,omitempty"`
 }
 
@@ -328,15 +345,42 @@ type StartRolloutInput struct {
 
 // PromoteRolloutInput 表示 rollout 推进输入。
 type PromoteRolloutInput struct {
-	RolloutID       string `json:"rollout_id"`
-	RolloutPercent  int    `json:"rollout_percent"`
-	GuardSummary    string `json:"guard_summary,omitempty"`
+	RolloutID      string `json:"rollout_id"`
+	RolloutPercent int    `json:"rollout_percent"`
+	GuardSummary   string `json:"guard_summary,omitempty"`
 }
 
 // RolloutMetricsQuery 表示 rollout 指标聚合查询。
 type RolloutMetricsQuery struct {
 	RolloutID       string `json:"rollout_id,omitempty"`
 	PolicyVersionID string `json:"policy_version_id,omitempty"`
+}
+
+// RolloutDashboardRollout 表示 dashboard 聚合前的 rollout 基础行。
+type RolloutDashboardRollout struct {
+	RolloutID       string
+	PolicyVersionID string
+	Environment     string
+	RolloutPercent  int
+	Status          string
+}
+
+// RolloutDashboardRow 是管理台 rollout dashboard 的简化展示行。
+type RolloutDashboardRow struct {
+	RolloutID       string  `json:"rollout_id"`
+	PolicyVersionID string  `json:"policy_version_id"`
+	Environment     string  `json:"environment"`
+	Percent         int     `json:"percent"`
+	Status          string  `json:"status"`
+	ErrorRate       float64 `json:"error_rate"`
+	P95Latency      int64   `json:"p95_latency"`
+	FallbackRate    float64 `json:"fallback_rate"`
+	SampleCount     int64   `json:"sample_count"`
+}
+
+// RolloutDashboardQuery 表示 dashboard rollout 列表查询参数。
+type RolloutDashboardQuery struct {
+	Limit int `json:"limit,omitempty"`
 }
 
 // ExecuteRollbackInput 表示回滚执行输入。
@@ -348,10 +392,22 @@ type ExecuteRollbackInput struct {
 
 // ExecuteRollbackResult 表示回滚执行结果。
 type ExecuteRollbackResult struct {
-	Rollout                 Rollout      `json:"rollout"`
-	RestoredPolicyVersionID string       `json:"restored_policy_version_id"`
-	RevertedPolicyVersionID string       `json:"reverted_policy_version_id"`
+	Rollout                 Rollout           `json:"rollout"`
+	RestoredPolicyVersionID string            `json:"restored_policy_version_id"`
+	RevertedPolicyVersionID string            `json:"reverted_policy_version_id"`
 	DistributionEvent       DistributionEvent `json:"distribution_event"`
+}
+
+// RollbackRecord 表示一次可审计、可查询的治理回滚记录。
+type RollbackRecord struct {
+	ID                      string    `json:"id"`
+	RolloutID               string    `json:"rollout_id"`
+	Environment             string    `json:"environment"`
+	Actor                   string    `json:"actor"`
+	Reason                  string    `json:"reason,omitempty"`
+	RestoredPolicyVersionID string    `json:"restored_policy_version_id"`
+	RevertedPolicyVersionID string    `json:"reverted_policy_version_id"`
+	CreatedAt               time.Time `json:"created_at"`
 }
 
 // EvaluationDataset 表示评估数据集注册。

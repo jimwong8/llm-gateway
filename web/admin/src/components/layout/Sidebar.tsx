@@ -20,6 +20,10 @@ export const navItems: NavItem[] = [
   { label: 'Observability', path: '/observability' },
   { label: 'Quota', path: '/quota' },
   { label: 'Policies', path: '/policies' },
+  { label: 'Policy Versions', path: '/policy-versions' },
+  { label: 'Rollouts', path: '/rollouts' },
+  { label: 'Runtime Observer', path: '/runtime-observer' },
+  { label: 'Drift Dashboard', path: '/drifts' },
   { label: 'System', path: '/system' },
 ]
 

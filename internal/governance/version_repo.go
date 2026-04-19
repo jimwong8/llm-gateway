@@ -254,6 +254,30 @@ WHERE environment = $1 AND status = $2
 	return cnt, nil
 }
 
+func (r *VersionRepo) GetDiffBaseVersion(ctx context.Context, current PolicyVersion) (PolicyVersion, string, error) {
+	if r == nil || r.db == nil {
+		return PolicyVersion{}, "", errors.New("version repo is nil")
+	}
+	if strings.TrimSpace(current.SourceApprovalID) != "" {
+		base, err := r.findBySourceApprovalAndEnvironment(ctx, current.SourceApprovalID, current.Environment, current.ID)
+		if err != nil {
+			return PolicyVersion{}, "", err
+		}
+		if strings.TrimSpace(base.ID) != "" {
+			return base, "source", nil
+		}
+	}
+
+	base, err := r.findPreviousByCreatedAt(ctx, current)
+	if err != nil {
+		return PolicyVersion{}, "", err
+	}
+	if strings.TrimSpace(base.ID) == "" {
+		return PolicyVersion{}, "none", nil
+	}
+	return base, "previous", nil
+}
+
 func (r *VersionRepo) loadApprovalSourceTx(ctx context.Context, q queryer, approvalID string) (approvalSource, error) {
 	var (
 		src      approvalSource
@@ -395,10 +419,61 @@ WHERE policy_version_id = $1
 		version.ActivatedAt = activatedAt.Time.UTC()
 	}
 	if sourceApprovalID.Valid {
-		version.Summary = fmt.Sprintf("source_approval_id=%s", strings.TrimSpace(sourceApprovalID.String))
+		version.SourceApprovalID = strings.TrimSpace(sourceApprovalID.String)
+		version.Summary = fmt.Sprintf("source_approval_id=%s", version.SourceApprovalID)
 	}
 
 	return version, nil
+}
+
+func (r *VersionRepo) findBySourceApprovalAndEnvironment(ctx context.Context, sourceApprovalID, environment, excludeVersionID string) (PolicyVersion, error) {
+	sourceApprovalID = strings.TrimSpace(sourceApprovalID)
+	environment = strings.TrimSpace(environment)
+	excludeVersionID = strings.TrimSpace(excludeVersionID)
+	if sourceApprovalID == "" || environment == "" {
+		return PolicyVersion{}, nil
+	}
+
+	var versionID string
+	err := r.db.QueryRowContext(ctx, `
+SELECT policy_version_id
+FROM model_policy_versions
+WHERE source_approval_id = $1
+  AND environment = $2
+  AND policy_version_id <> $3
+ORDER BY created_at DESC, id DESC
+LIMIT 1
+`, sourceApprovalID, environment, excludeVersionID).Scan(&versionID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return PolicyVersion{}, nil
+		}
+		return PolicyVersion{}, err
+	}
+	return r.GetVersion(ctx, strings.TrimSpace(versionID))
+}
+
+func (r *VersionRepo) findPreviousByCreatedAt(ctx context.Context, current PolicyVersion) (PolicyVersion, error) {
+	if strings.TrimSpace(current.ID) == "" || strings.TrimSpace(current.Environment) == "" {
+		return PolicyVersion{}, nil
+	}
+	var versionID string
+	err := r.db.QueryRowContext(ctx, `
+SELECT policy_version_id
+FROM model_policy_versions
+WHERE environment = $1
+  AND policy_version_id <> $2
+  AND created_at < $3
+ORDER BY created_at DESC, id DESC
+LIMIT 1
+`, strings.TrimSpace(current.Environment), strings.TrimSpace(current.ID), current.CreatedAt).Scan(&versionID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return PolicyVersion{}, nil
+		}
+		return PolicyVersion{}, err
+	}
+	return r.GetVersion(ctx, strings.TrimSpace(versionID))
 }
 
 func (r *VersionRepo) nextID(prefix string) string {

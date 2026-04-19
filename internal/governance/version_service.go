@@ -18,6 +18,7 @@ type versionDataStore interface {
 	ApproveVersion(ctx context.Context, versionID, approvedBy string) (PolicyVersion, error)
 	ActivateVersion(ctx context.Context, versionID string) (PolicyVersion, error)
 	GetVersion(ctx context.Context, versionID string) (PolicyVersion, error)
+	GetDiffBaseVersion(ctx context.Context, current PolicyVersion) (PolicyVersion, string, error)
 	ActiveVersionCountByEnvironment(ctx context.Context, environment string) (int, error)
 }
 
@@ -108,4 +109,36 @@ func (s *VersionService) Get(ctx context.Context, versionID string) (PolicyVersi
 		return PolicyVersion{}, errors.New("policy_version_id is required")
 	}
 	return s.repo.GetVersion(ctx, versionID)
+}
+
+func (s *VersionService) GetDiff(ctx context.Context, versionID string) (PolicyVersionDiff, error) {
+	if s == nil || s.repo == nil {
+		return PolicyVersionDiff{}, errors.New("version service is not initialized")
+	}
+	versionID = strings.TrimSpace(versionID)
+	if versionID == "" {
+		return PolicyVersionDiff{}, errors.New("policy_version_id is required")
+	}
+
+	current, err := s.repo.GetVersion(ctx, versionID)
+	if err != nil {
+		return PolicyVersionDiff{}, err
+	}
+
+	base, baseType, err := s.repo.GetDiffBaseVersion(ctx, current)
+	if err != nil {
+		return PolicyVersionDiff{}, err
+	}
+
+	diff := PolicyVersionDiff{
+		CurrentVersion: current,
+		BaseType:       baseType,
+	}
+	if baseType == "none" {
+		diff.Changes = buildPolicyDiff(current.Policy, nil)
+		return diff, nil
+	}
+	diff.BaseVersion = &base
+	diff.Changes = buildPolicyDiff(current.Policy, &base.Policy)
+	return diff, nil
 }

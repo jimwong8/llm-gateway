@@ -1,14 +1,18 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { ProtectedRoute } from './components/auth/ProtectedRoute'
-import { ConfigCenterPage } from './pages/ConfigCenterPage'
 import { AuditRuntimePage } from './pages/AuditRuntimePage'
+import { ConfigCenterPage } from './pages/ConfigCenterPage'
 import { DashboardPage } from './pages/DashboardPage'
+import { DriftDashboardPage } from './pages/DriftDashboardPage'
 import { LoginPage } from './pages/LoginPage'
 import { ObservabilityPage } from './pages/ObservabilityPage'
 import { PlaygroundPage } from './pages/PlaygroundPage'
 import { PoliciesPage } from './pages/PoliciesPage'
+import { PolicyVersionsPage } from './pages/PolicyVersionsPage'
 import { QuotaPage } from './pages/QuotaPage'
 import { ReleasesPage } from './pages/ReleasesPage'
+import { RolloutsPage } from './pages/RolloutsPage'
+import { RuntimeObserverPage } from './pages/RuntimeObserverPage'
 import { SystemPage } from './pages/SystemPage'
 
 export const router = createBrowserRouter([
@@ -58,6 +62,22 @@ export const router = createBrowserRouter([
       {
         path: 'policies',
         element: <PoliciesPage />,
+      },
+      {
+        path: 'policy-versions',
+        element: <PolicyVersionsPage />,
+      },
+      {
+        path: 'rollouts',
+        element: <RolloutsPage />,
+      },
+      {
+        path: 'runtime-observer',
+        element: <RuntimeObserverPage />,
+      },
+      {
+        path: 'drifts',
+        element: <DriftDashboardPage />,
       },
     ],
   },

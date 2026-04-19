@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"llm-gateway/gateway/internal/governance"
 )
@@ -160,5 +161,56 @@ func TestVersionActivationRequiresApprovalAndSingleActivePerEnvironment(t *testi
 	}
 	if v1After.Status != governance.PolicyVersionSuperseded {
 		t.Fatalf("expected v1 superseded, got %s", v1After.Status)
+	}
+}
+
+func TestGetPolicyVersionDiffPrefersSourceThenPrevious(t *testing.T) {
+	svc, store := newVersionServiceForTest(t)
+	ctx := context.Background()
+
+	recID1 := seedRecommendationForVersionTest(t, store.DB(), "diff-agent", "qa", "model-x")
+	approvalID1 := seedApprovalForVersionTest(t, store.DB(), recID1, "qa", "approved", "")
+
+	v1, err := svc.CreateFromApproval(ctx, approvalID1, "alice")
+	if err != nil {
+		t.Fatalf("CreateFromApproval(v1) error = %v", err)
+	}
+	time.Sleep(2 * time.Millisecond)
+	v2, err := svc.CreateFromApproval(ctx, approvalID1, "alice")
+	if err != nil {
+		t.Fatalf("CreateFromApproval(v2) error = %v", err)
+	}
+
+	diffBySource, err := svc.GetDiff(ctx, v2.ID)
+	if err != nil {
+		t.Fatalf("GetDiff(v2) error = %v", err)
+	}
+	if diffBySource.BaseType != "source" {
+		t.Fatalf("expected base_type=source, got %s", diffBySource.BaseType)
+	}
+	if diffBySource.BaseVersion == nil || diffBySource.BaseVersion.ID != v1.ID {
+		t.Fatalf("expected source base version %s, got %+v", v1.ID, diffBySource.BaseVersion)
+	}
+
+	recID2 := seedRecommendationForVersionTest(t, store.DB(), "diff-agent", "qa", "model-y")
+	approvalID2 := seedApprovalForVersionTest(t, store.DB(), recID2, "qa", "approved", "")
+	time.Sleep(2 * time.Millisecond)
+	v3, err := svc.CreateFromApproval(ctx, approvalID2, "bob")
+	if err != nil {
+		t.Fatalf("CreateFromApproval(v3) error = %v", err)
+	}
+
+	diffByPrevious, err := svc.GetDiff(ctx, v3.ID)
+	if err != nil {
+		t.Fatalf("GetDiff(v3) error = %v", err)
+	}
+	if diffByPrevious.BaseType != "previous" {
+		t.Fatalf("expected base_type=previous, got %s", diffByPrevious.BaseType)
+	}
+	if diffByPrevious.BaseVersion == nil || diffByPrevious.BaseVersion.ID != v2.ID {
+		t.Fatalf("expected previous base version %s, got %+v", v2.ID, diffByPrevious.BaseVersion)
+	}
+	if len(diffByPrevious.Changes) == 0 {
+		t.Fatalf("expected non-empty changes for previous diff")
 	}
 }

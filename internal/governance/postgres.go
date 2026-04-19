@@ -79,6 +79,7 @@ func migrationFiles() []string {
 		filepath.Join(base, "006_model_governance_runtime.sql"),
 		filepath.Join(base, "007_model_governance_evaluations.sql"),
 		filepath.Join(base, "008_model_governance_distribution_and_drift.sql"),
+		filepath.Join(base, "009_model_governance_rollbacks.sql"),
 	}
 }
 

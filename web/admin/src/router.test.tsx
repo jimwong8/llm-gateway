@@ -1,12 +1,17 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearToken, setToken } from './lib/auth'
 import { router as appRouter } from './router'
 
 describe('router protection', () => {
   beforeEach(() => {
     clearToken()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('redirects unauthenticated users to login', async () => {
@@ -29,6 +34,34 @@ describe('router protection', () => {
     renderWithProviders(router)
 
     expect(await screen.findByRole('heading', { name: 'Dashboard', level: 1 })).toBeInTheDocument()
+  })
+
+  it('allows authenticated users to access runtime observer page', async () => {
+    setToken('demo-admin-token')
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          environment: 'prod',
+          active_policy: { version_id: '' },
+          cache: { entry_count: 0, entries: [], invalidation_count: 0 },
+          facts: { runtime_decisions: [], distribution_events: [] },
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const router = createMemoryRouter(appRouter.routes, {
+      initialEntries: ['/runtime-observer'],
+    })
+
+    renderWithProviders(router)
+
+    expect(await screen.findByRole('heading', { name: 'Runtime Observer', level: 1 })).toBeInTheDocument()
   })
 })
 

@@ -34,6 +34,7 @@ func TestGovernanceStoreBootstrapsSchema(t *testing.T) {
 		"model_approvals",
 		"model_policy_versions",
 		"model_rollouts",
+		"model_rollbacks",
 		"runtime_decision_snapshots",
 		"evaluation_runs",
 		"policy_drifts",
