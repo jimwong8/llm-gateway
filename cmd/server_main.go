@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"log"
 	"net/http"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"llm-gateway/gateway/internal/cache"
 	"llm-gateway/gateway/internal/config"
 	"llm-gateway/gateway/internal/controlplane"
+	"llm-gateway/gateway/internal/governance"
 	"llm-gateway/gateway/internal/httpserver"
 	"llm-gateway/gateway/internal/memory"
 	"llm-gateway/gateway/internal/policy"
@@ -83,7 +85,7 @@ func main() {
 
 	var memoryStore *memory.Store
 	if cfg.MemoryEnabled {
-		if store, err := memory.NewStore(cfg.PostgresDSN); err != nil {
+		if store, err := memory.NewStore(cfg.PostgresDSN, redisCache); err != nil {
 			log.Printf("memory init failed: %v", err)
 		} else {
 			memoryStore = store
@@ -117,9 +119,52 @@ func main() {
 		log.Printf("policy startup replay skipped due to error: %v", err)
 	}
 
+	var governanceStore *governance.Store
+	var governanceRecommendationService *governance.RecommendationService
+	var governanceApprovalService *governance.ApprovalService
+	var governanceVersionService *governance.VersionService
+	var governanceRolloutService *governance.RolloutService
+	var governanceEvaluationService *governance.EvaluationService
+	var governanceDriftService *governance.DriftService
+	var governanceRuntimeResolver *governance.RuntimeResolver
+	var governanceQueryDB *sql.DB
+	if cfg.ModelGovernanceEnabled {
+		if store, err := governance.NewStore(cfg.PostgresDSN); err != nil {
+			log.Printf("governance init failed: %v", err)
+		} else {
+			governanceStore = store
+			governanceQueryDB = store.DB()
+			governanceAuditRepo := governance.NewGovernanceAuditRepo(store)
+			governanceAuditSvc := governance.NewGovernanceAuditService(governanceAuditRepo)
+			governanceRecommendationService = governance.NewRecommendationService(governance.NewRecommendationRepo(store))
+			governanceApprovalService = governance.NewApprovalService(store).WithAuditEmitter(governanceAuditRepo)
+			governanceVersionService = governance.NewVersionService(store)
+			governanceRuntimeResolver = governance.NewRuntimeResolver(store)
+			governanceRolloutService = governance.NewRolloutService(store).WithAuditEmitter(governanceAuditRepo).WithInvalidator(governanceRuntimeResolver)
+			governanceEvaluationService = governance.NewEvaluationService(store)
+			governanceDriftService = governance.NewDriftService(store)
+			_ = governanceAuditSvc
+		}
+	}
+
 	srv := httpserver.New(cfg, registry, redisCache, modelRouter, auditStore, semanticCache, memoryStore, billingStore, limiter, adminStore, policyStore).
 		WithControlPlane(controlPlaneService, controlPlaneAudit, runtimePublisher, runtimeManager)
-	log.Printf("starting %s on %s mock_mode=%v redis=%s audit=%v semantic=%v memory=%v billing=%v", cfg.AppName, cfg.Addr(), cfg.MockMode, cfg.RedisAddr, auditStore != nil, semanticCache != nil, memoryStore != nil, billingStore != nil)
+	if cfg.ModelGovernanceEnabled && governanceStore != nil {
+		modelGovernanceHandler := httpserver.NewModelGovernanceHandler().
+			WithRecommendationService(governanceRecommendationService).
+			WithApprovalService(governanceApprovalService).
+			WithVersionService(governanceVersionService).
+			WithRolloutService(governanceRolloutService).
+			WithEvaluationService(governanceEvaluationService).
+			WithDriftService(governanceDriftService).
+			WithQueryer(governanceQueryDB)
+		modelRuntimeHandler := httpserver.NewModelRuntimeHandler().
+			WithResolver(governanceRuntimeResolver).
+			WithQueryer(governanceQueryDB)
+		srv = srv.WithModelGovernanceHandler(modelGovernanceHandler).
+			WithModelRuntimeHandler(modelRuntimeHandler)
+	}
+	log.Printf("starting %s on %s mock_mode=%v redis=%s audit=%v semantic=%v memory=%v billing=%v governance=%v", cfg.AppName, cfg.Addr(), cfg.MockMode, cfg.RedisAddr, auditStore != nil, semanticCache != nil, memoryStore != nil, billingStore != nil, governanceStore != nil)
 	if err := http.ListenAndServe(cfg.Addr(), srv.Handler()); err != nil {
 		log.Fatalf("server stopped: %v", err)
 	}

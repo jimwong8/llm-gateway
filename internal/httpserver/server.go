@@ -54,6 +54,8 @@ type Server struct {
 	runtimeManager                *runtime.Manager
 	runtimePublisher              *runtime.Publisher
 	controlPlaneAdmin             *AdminHandler
+	modelGovernanceAdmin          *ModelGovernanceHandler
+	modelRuntime                  *ModelRuntimeHandler
 }
 
 func New(cfg config.Config, registry *providers.Registry, redisCache cache.L1Cache, rt *router.Router, auditStore *audit.Store, semanticCache semantic.L2Cache, memoryStore *memory.Store, billingStore *billing.Store, limiter *quota.Limiter, adminStore *admin.Store, policyStore *policy.Store) *Server {
@@ -100,6 +102,16 @@ func (s *Server) WithControlPlane(service *controlplane.Service, auditor *audit.
 	return s
 }
 
+func (s *Server) WithModelGovernanceHandler(handler *ModelGovernanceHandler) *Server {
+	s.modelGovernanceAdmin = handler
+	return s
+}
+
+func (s *Server) WithModelRuntimeHandler(handler *ModelRuntimeHandler) *Server {
+	s.modelRuntime = handler
+	return s
+}
+
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.healthz)
@@ -122,6 +134,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/admin/assets/rollback", s.requireAdmin(s.adminAssetRollback))
 	mux.HandleFunc("/admin/control-plane/compensations", s.requireAdmin(s.adminCompensations))
 	s.mountControlPlaneAdminRoutes(mux)
+	s.mountModelGovernanceRoutes(mux)
+	s.mountModelRuntimeRoutes(mux)
 	mux.HandleFunc("/admin/ui", s.adminUI)
 	mux.HandleFunc("/admin/ui/", s.adminUI)
 	mux.HandleFunc("/", s.notFound)
@@ -142,6 +156,32 @@ func (s *Server) mountControlPlaneAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/runtime-events", s.requireAdmin(s.controlPlaneRoute))
 	mux.HandleFunc("/admin/config-versions", s.requireAdmin(s.controlPlaneRoute))
 	mux.HandleFunc("/admin/config-versions/", s.requireAdmin(s.controlPlaneRoute))
+}
+
+func (s *Server) mountModelGovernanceRoutes(mux *http.ServeMux) {
+	if s.modelGovernanceAdmin == nil {
+		return
+	}
+	mux.HandleFunc("/admin/governance/recommendations", s.requireAdmin(s.modelGovernanceRoute))
+	mux.HandleFunc("/admin/governance/approvals", s.requireAdmin(s.modelGovernanceRoute))
+	mux.HandleFunc("/admin/governance/policy-versions", s.requireAdmin(s.modelGovernanceRoute))
+	mux.HandleFunc("/admin/governance/policy-versions/", s.requireAdmin(s.modelGovernanceRoute))
+	mux.HandleFunc("/admin/governance/rollouts", s.requireAdmin(s.modelGovernanceRoute))
+	mux.HandleFunc("/admin/governance/rollouts/", s.requireAdmin(s.modelGovernanceRoute))
+	mux.HandleFunc("/admin/governance/evaluations", s.requireAdmin(s.modelGovernanceRoute))
+	mux.HandleFunc("/admin/governance/evaluations/", s.requireAdmin(s.modelGovernanceRoute))
+	mux.HandleFunc("/admin/governance/drifts", s.requireAdmin(s.modelGovernanceRoute))
+	mux.HandleFunc("/admin/governance/drifts/", s.requireAdmin(s.modelGovernanceRoute))
+	mux.HandleFunc("/admin/governance/runtime-decisions", s.requireAdmin(s.modelGovernanceRoute))
+	mux.HandleFunc("/admin/governance/distribution-events", s.requireAdmin(s.modelGovernanceRoute))
+}
+
+func (s *Server) mountModelRuntimeRoutes(mux *http.ServeMux) {
+	if s.modelRuntime == nil {
+		return
+	}
+	mux.HandleFunc("/v1/runtime/resolve", s.modelRuntimeResolveRoute)
+	mux.HandleFunc("/admin/governance/runtime/resolve", s.requireAdmin(s.modelRuntimeResolveRoute))
 }
 
 func (s *Server) controlPlaneRoute(w http.ResponseWriter, r *http.Request) {
@@ -166,6 +206,22 @@ func (s *Server) controlPlaneRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.controlPlaneAdmin.ServeHTTP(w, proxyReq)
+}
+
+func (s *Server) modelGovernanceRoute(w http.ResponseWriter, r *http.Request) {
+	if s.modelGovernanceAdmin == nil {
+		s.notFound(w, r)
+		return
+	}
+	s.modelGovernanceAdmin.ServeHTTP(w, r)
+}
+
+func (s *Server) modelRuntimeResolveRoute(w http.ResponseWriter, r *http.Request) {
+	if s.modelRuntime == nil {
+		s.notFound(w, r)
+		return
+	}
+	s.modelRuntime.ServeHTTP(w, r)
 }
 
 func (s *Server) syncRuntimeManagerFromPublisher() {
