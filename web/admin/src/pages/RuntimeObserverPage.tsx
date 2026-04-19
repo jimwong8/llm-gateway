@@ -8,6 +8,9 @@ function formatDate(value?: string) {
   if (!value) {
     return '—'
   }
+  if (value.startsWith('0001-01-01')) {
+    return '—'
+  }
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) {
     return value

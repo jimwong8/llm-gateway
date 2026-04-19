@@ -1,4 +1,4 @@
-import type { GovernanceListResponse, GovernanceRollbackRequest, GovernanceRollbackRow, RolloutRow } from '../types/rollout'
+import type { GovernanceListResponse, GovernanceRollbackRequest, GovernanceRollbackResponse, RolloutRow } from '../types/rollout'
 import { apiRequest, jsonRequest } from './http'
 
 export function listGovernanceRollouts() {
@@ -10,5 +10,5 @@ export function listRolloutDashboard() {
 }
 
 export function createGovernanceRollback(input: GovernanceRollbackRequest) {
-  return jsonRequest<GovernanceRollbackRow>('/admin/governance/rollbacks', input)
+  return jsonRequest<GovernanceRollbackResponse>('/admin/governance/rollbacks', input)
 }

@@ -117,14 +117,17 @@ describe('RolloutsPage', () => {
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
-            id: 'rb-1',
-            rollout_id: 'ro-1',
-            actor: 'ops-reviewer',
-            environment: 'prod',
-            restored_policy_version_id: 'pv-prev',
-            reverted_policy_version_id: 'pv-cur',
-            reason: 'manual rollback',
-            status: 'completed',
+            rollback: {
+              id: 'rb-1',
+              rollout_id: 'ro-1',
+              actor: 'ops-reviewer',
+              environment: 'prod',
+              restored_policy_version_id: 'pv-prev',
+              reverted_policy_version_id: 'pv-cur',
+              reason: 'manual rollback',
+              status: 'completed',
+            },
+            result: {},
           }),
           {
             status: 201,
