@@ -56,6 +56,7 @@ type Server struct {
 	controlPlaneAdmin             *AdminHandler
 	modelGovernanceAdmin          *ModelGovernanceHandler
 	modelRuntime                  *ModelRuntimeHandler
+	memoryAdmin                   *MemoryAdminHandler
 }
 
 func New(cfg config.Config, registry *providers.Registry, redisCache cache.L1Cache, rt *router.Router, auditStore *audit.Store, semanticCache semantic.L2Cache, memoryStore *memory.Store, billingStore *billing.Store, limiter *quota.Limiter, adminStore *admin.Store, policyStore *policy.Store) *Server {
@@ -112,6 +113,11 @@ func (s *Server) WithModelRuntimeHandler(handler *ModelRuntimeHandler) *Server {
 	return s
 }
 
+func (s *Server) WithMemoryAdminHandler(handler *MemoryAdminHandler) *Server {
+	s.memoryAdmin = handler
+	return s
+}
+
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.healthz)
@@ -136,6 +142,7 @@ func (s *Server) Handler() http.Handler {
 	s.mountControlPlaneAdminRoutes(mux)
 	s.mountModelGovernanceRoutes(mux)
 	s.mountModelRuntimeRoutes(mux)
+	s.mountMemoryAdminRoutes(mux)
 	mux.HandleFunc("/admin/ui", s.adminUI)
 	mux.HandleFunc("/admin/ui/", s.adminUI)
 	mux.HandleFunc("/", s.notFound)
@@ -168,12 +175,13 @@ func (s *Server) mountModelGovernanceRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/governance/policy-versions/", s.requireAdmin(s.modelGovernanceRoute))
 	mux.HandleFunc("/admin/governance/rollouts", s.requireAdmin(s.modelGovernanceRoute))
 	mux.HandleFunc("/admin/governance/rollouts/", s.requireAdmin(s.modelGovernanceRoute))
+	mux.HandleFunc("/admin/governance/dashboard/rollouts", s.requireAdmin(s.modelGovernanceRoute))
+	mux.HandleFunc("/admin/governance/rollbacks", s.requireAdmin(s.modelGovernanceRoute))
+	mux.HandleFunc("/admin/governance/rollbacks/", s.requireAdmin(s.modelGovernanceRoute))
 	mux.HandleFunc("/admin/governance/evaluations", s.requireAdmin(s.modelGovernanceRoute))
 	mux.HandleFunc("/admin/governance/evaluations/", s.requireAdmin(s.modelGovernanceRoute))
 	mux.HandleFunc("/admin/governance/drifts", s.requireAdmin(s.modelGovernanceRoute))
 	mux.HandleFunc("/admin/governance/drifts/", s.requireAdmin(s.modelGovernanceRoute))
-	mux.HandleFunc("/admin/governance/runtime-decisions", s.requireAdmin(s.modelGovernanceRoute))
-	mux.HandleFunc("/admin/governance/distribution-events", s.requireAdmin(s.modelGovernanceRoute))
 }
 
 func (s *Server) mountModelRuntimeRoutes(mux *http.ServeMux) {
@@ -182,6 +190,18 @@ func (s *Server) mountModelRuntimeRoutes(mux *http.ServeMux) {
 	}
 	mux.HandleFunc("/v1/runtime/resolve", s.modelRuntimeResolveRoute)
 	mux.HandleFunc("/admin/governance/runtime/resolve", s.requireAdmin(s.modelRuntimeResolveRoute))
+	mux.HandleFunc("/admin/governance/runtime-decisions", s.requireAdmin(s.modelRuntimeResolveRoute))
+	mux.HandleFunc("/admin/governance/distribution-events", s.requireAdmin(s.modelRuntimeResolveRoute))
+	mux.HandleFunc("/admin/governance/runtime-observer", s.requireAdmin(s.modelRuntimeResolveRoute))
+}
+
+func (s *Server) mountMemoryAdminRoutes(mux *http.ServeMux) {
+	if s.memoryAdmin == nil {
+		return
+	}
+	mux.HandleFunc("/admin/memory/candidate-facts", s.requireAdmin(s.memoryAdminRoute))
+	mux.HandleFunc("/admin/memory/candidate-facts/", s.requireAdmin(s.memoryAdminRoute))
+	mux.HandleFunc("/admin/memory/project-facts", s.requireAdmin(s.memoryAdminRoute))
 }
 
 func (s *Server) controlPlaneRoute(w http.ResponseWriter, r *http.Request) {
@@ -197,8 +217,8 @@ func (s *Server) controlPlaneRoute(w http.ResponseWriter, r *http.Request) {
 			proxyReq.Header.Set("Authorization", "Bearer "+key)
 		}
 	}
-	if strings.HasPrefix(proxyReq.URL.Path, "/admin/config-versions/") {
-		versionID := strings.TrimPrefix(proxyReq.URL.Path, "/admin/config-versions/")
+	if versionPath, ok := strings.CutPrefix(proxyReq.URL.Path, "/admin/config-versions/"); ok {
+		versionID := versionPath
 		if versionID != "" {
 			versionID = strings.SplitN(versionID, "/", 2)[0]
 			proxyReq.SetPathValue("versionID", versionID)
@@ -222,6 +242,14 @@ func (s *Server) modelRuntimeResolveRoute(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.modelRuntime.ServeHTTP(w, r)
+}
+
+func (s *Server) memoryAdminRoute(w http.ResponseWriter, r *http.Request) {
+	if s.memoryAdmin == nil {
+		s.notFound(w, r)
+		return
+	}
+	s.memoryAdmin.ServeHTTP(w, r)
 }
 
 func (s *Server) syncRuntimeManagerFromPublisher() {
@@ -267,9 +295,9 @@ func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				role, err := s.policy.RoleFor(ctx, tenantID, subject)
 				cancel()
-				if err == nil && role != "" && !roleAllowsMethod(role, r.Method) {
-					s.writeAuditAsync(audit.Event{RequestPayload: map[string]any{"tenant_id": tenantID, "policy": "admin_rbac_denied", "role": role, "subject": subject, "path": r.URL.Path}})
-					writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]any{"message": "role not permitted for admin endpoint", "type": "authorization_error", "tenant_id": tenantID, "role": role}})
+				if err == nil && role != "" && !roleAllowsAdminPath(role, r.URL.Path, r.Method) {
+					s.writeAuditAsync(audit.Event{RequestPayload: map[string]any{"tenant_id": tenantID, "policy": "admin_rbac_denied", "role": role, "subject": subject, "path": r.URL.Path, "method": r.Method}})
+					writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]any{"message": "role not permitted for admin endpoint", "type": "authorization_error", "tenant_id": tenantID, "role": role, "path": r.URL.Path, "method": r.Method}})
 					return
 				}
 			}
@@ -298,6 +326,57 @@ func roleAllowsMethod(role, method string) bool {
 	default:
 		return false
 	}
+}
+
+func governancePathMatches(path, base string) bool {
+	path = strings.TrimSpace(path)
+	base = strings.TrimSpace(base)
+	if path == base {
+		return true
+	}
+	return strings.HasPrefix(path, base+"/")
+}
+
+func roleAllowsGovernanceAction(role, path, method string) bool {
+	role = strings.TrimSpace(strings.ToLower(role))
+	path = strings.TrimSpace(path)
+	switch role {
+	case "admin":
+		return true
+	case "operator":
+		if method == http.MethodGet {
+			return true
+		}
+		if method != http.MethodPost {
+			return false
+		}
+		return governancePathMatches(path, "/admin/governance/recommendations") ||
+			governancePathMatches(path, "/admin/governance/evaluations") ||
+			governancePathMatches(path, "/admin/governance/drifts")
+	case "approver":
+		if method == http.MethodGet {
+			return true
+		}
+		if method != http.MethodPost {
+			return false
+		}
+		return governancePathMatches(path, "/admin/governance/approvals") ||
+			governancePathMatches(path, "/admin/governance/policy-versions") ||
+			governancePathMatches(path, "/admin/governance/rollouts") ||
+			governancePathMatches(path, "/admin/governance/rollbacks")
+	case "viewer", "readonly":
+		return method == http.MethodGet
+	default:
+		return false
+	}
+}
+
+func roleAllowsAdminPath(role, path, method string) bool {
+	path = strings.TrimSpace(path)
+	if strings.HasPrefix(path, "/admin/governance/") {
+		return roleAllowsGovernanceAction(role, path, method)
+	}
+	return roleAllowsMethod(role, method)
 }
 
 func containsSensitive(req providers.ChatCompletionRequest, rules []policy.SensitiveRule) (string, bool) {
@@ -1127,6 +1206,18 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), 2*time.Second)
+		prefs, err := s.memory.GetUserPreferences(ctx, req.TenantID, req.UserID)
+		cancel()
+		if err != nil {
+			log.Printf("user preferences load failed: %v", err)
+		} else if len(prefs) > 0 {
+			prefs = rerankUserPreferencesForRecall(prefs, time.Now().UTC())
+			if prefBlock := memory.FormatUserPreferences(prefs); prefBlock != "" {
+				injectedMemoryMessages = append(injectedMemoryMessages, providers.ChatMessage{Role: "system", Content: prefBlock})
+			}
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), 2*time.Second)
 		summary, err := s.memory.GetSessionSummary(ctx, req.TenantID, req.UserID, req.SessionID)
 		cancel()
 		if err != nil {
@@ -1137,18 +1228,6 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			if strings.TrimSpace(summaryBlock) != "" {
 				injectedMemoryMessages = append(injectedMemoryMessages, providers.ChatMessage{Role: "system", Content: summaryBlock})
 				remainingDynamicBudget -= len([]rune(summaryBlock))
-			}
-		}
-
-		ctx, cancel = context.WithTimeout(context.Background(), 2*time.Second)
-		prefs, err := s.memory.GetUserPreferences(ctx, req.TenantID, req.UserID)
-		cancel()
-		if err != nil {
-			log.Printf("user preferences load failed: %v", err)
-		} else if len(prefs) > 0 {
-			prefs = rerankUserPreferencesForRecall(prefs, time.Now().UTC())
-			if prefBlock := memory.FormatUserPreferences(prefs); prefBlock != "" {
-				injectedMemoryMessages = append(injectedMemoryMessages, providers.ChatMessage{Role: "system", Content: prefBlock})
 			}
 		}
 
@@ -1555,9 +1634,9 @@ func (s *Server) buildLightweightHistoryRecallMessage(req providers.ChatCompleti
 	}
 
 	const (
-		searchLimit          = 6
-		maxInjectedFragments = 3
-		messagesPerFragment  = 3
+		searchLimit           = 6
+		maxInjectedFragments  = 3
+		messagesPerFragment   = 3
 		messageContentRuneMax = 180
 		snippetContentRuneMax = 120
 	)

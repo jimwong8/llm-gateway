@@ -67,12 +67,21 @@ func TestPolicyEngineGovernanceRoleHelpers(t *testing.T) {
 	if roleAllowsGovernanceAction("operator", "/admin/governance/approvals", http.MethodPost) {
 		t.Fatal("operator should not allow approvals write")
 	}
+	if roleAllowsGovernanceAction("operator", "/admin/governance/recommendations-backup", http.MethodPost) {
+		t.Fatal("operator should not allow prefixed recommendation-like path")
+	}
 
 	if !roleAllowsGovernanceAction("approver", "/admin/governance/approvals", http.MethodPost) {
 		t.Fatal("approver should allow approvals write")
 	}
+	if !roleAllowsGovernanceAction("approver", "/admin/governance/rollouts/ro-1/rollback", http.MethodPost) {
+		t.Fatal("approver should allow rollout subresource write")
+	}
 	if roleAllowsGovernanceAction("approver", "/admin/governance/drifts", http.MethodPost) {
 		t.Fatal("approver should not allow drifts write")
+	}
+	if roleAllowsGovernanceAction("approver", "/admin/governance/rollbacks-archive", http.MethodPost) {
+		t.Fatal("approver should not allow prefixed rollback-like path")
 	}
 
 	if !roleAllowsAdminPath("approver", "/admin/governance/rollouts", http.MethodPost) {

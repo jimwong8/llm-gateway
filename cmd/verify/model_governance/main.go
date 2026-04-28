@@ -3,14 +3,18 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 
 	"llm-gateway/gateway/internal/config"
 	"llm-gateway/gateway/internal/governance"
 	"llm-gateway/gateway/internal/httpserver"
+	"llm-gateway/gateway/internal/memory"
 )
 
 const adminToken = "admin-secret"
@@ -118,6 +122,43 @@ func (s *driftServiceStub) Resolve(_ context.Context, driftID, reason string) (g
 
 type runtimeResolverStub struct{}
 
+type governanceQueryerStub struct{}
+
+type memoryAdminStoreStub struct{}
+
+func (s *memoryAdminStoreStub) ListCandidateFacts(_ context.Context, tenantID, userID, status string) ([]memory.CandidateFact, error) {
+	return []memory.CandidateFact{{ID: 1, TenantID: tenantID, UserID: userID, Key: "repo", Value: "mono", Status: firstNonEmpty(status, "pending")}}, nil
+}
+
+func (s *memoryAdminStoreStub) ListProjectFacts(_ context.Context, tenantID, userID, status string) ([]memory.ProjectFact, error) {
+	return []memory.ProjectFact{{ID: 2, TenantID: tenantID, UserID: userID, Key: "stack", Value: "go", Status: firstNonEmpty(status, "active")}}, nil
+}
+
+func (s *memoryAdminStoreStub) ConfirmCandidateFact(_ context.Context, tenantID, userID, factKey string) (*memory.CandidateFact, error) {
+	return &memory.CandidateFact{ID: 1, TenantID: tenantID, UserID: userID, Key: factKey, Value: "mono", Status: "confirmed"}, nil
+}
+
+func (s *memoryAdminStoreStub) RejectCandidateFact(_ context.Context, tenantID, userID, factKey string) (*memory.CandidateFact, error) {
+	return &memory.CandidateFact{ID: 1, TenantID: tenantID, UserID: userID, Key: factKey, Value: "mono", Status: "rejected"}, nil
+}
+
+func (s *memoryAdminStoreStub) PromoteCandidateFact(_ context.Context, tenantID, userID, factKey string) (*memory.CandidateFact, error) {
+	return &memory.CandidateFact{ID: 1, TenantID: tenantID, UserID: userID, Key: factKey, Value: "mono", Status: "promoted"}, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func (s *governanceQueryerStub) QueryContext(_ context.Context, query string, args ...any) (*sql.Rows, error) {
+	return nil, errors.New("query unavailable in verify stub")
+}
+
 func (s *runtimeResolverStub) Resolve(_ context.Context, input governance.ResolveInput) (governance.ResolveDecision, error) {
 	return governance.ResolveDecision{RequestID: input.RequestID, ResolvedModel: "model-a", MatchedScopeType: "agent"}, nil
 }
@@ -138,11 +179,13 @@ func main() {
 			WithRollbackRecordStore(&rollbackRecordStoreStub{}).
 			WithEvaluationService(&evaluationServiceStub{}).
 			WithDriftService(&driftServiceStub{})).
-		WithModelRuntimeHandler(httpserver.NewModelRuntimeHandler().WithResolver(&runtimeResolverStub{}))
+		WithModelRuntimeHandler(httpserver.NewModelRuntimeHandler().WithResolver(&runtimeResolverStub{}).WithQueryer(&governanceQueryerStub{})).
+		WithMemoryAdminHandler(httpserver.NewMemoryAdminHandler(&memoryAdminStoreStub{}))
 
 	handler := srv.Handler()
 
 	assertStatus(handler, http.MethodPost, "/admin/governance/recommendations", `{"agent_id":"a1","task_type":"chat","environment":"prod"}`, http.StatusUnauthorized, false)
+	assertStatus(handler, http.MethodGet, "/admin/memory/candidate-facts?tenant_id=t1&user_id=u1", ``, http.StatusUnauthorized, false)
 	assertStatus(handler, http.MethodPost, "/admin/governance/recommendations", `{"agent_id":"a1","task_type":"chat","environment":"prod"}`, http.StatusCreated, true)
 	assertStatus(handler, http.MethodPost, "/admin/governance/approvals", `{"recommendation_id":"rec-1","decision":"approved","approved_by":"ops","effective_scope":{"scope":"agent","environment":"prod"}}`, http.StatusCreated, true)
 	assertStatus(handler, http.MethodPost, "/admin/governance/policy-versions", `{"approval_id":"ap-1","created_by":"ops"}`, http.StatusCreated, true)
@@ -161,6 +204,17 @@ func main() {
 	assertStatus(handler, http.MethodPost, "/admin/governance/drifts", `{"environment":"prod","agent_id":"a1"}`, http.StatusOK, true)
 	assertStatus(handler, http.MethodPost, "/admin/governance/drifts/drift-1/acknowledge", `{"reason":"ok"}`, http.StatusOK, true)
 	assertStatus(handler, http.MethodPost, "/admin/governance/drifts/drift-1/resolve", `{"reason":"fixed"}`, http.StatusOK, true)
+	assertStatus(handler, http.MethodGet, "/admin/governance/runtime-decisions", ``, http.StatusInternalServerError, true)
+	assertStatus(handler, http.MethodGet, "/admin/governance/distribution-events", ``, http.StatusInternalServerError, true)
+	assertStatus(handler, http.MethodGet, "/admin/governance/runtime-observer", ``, http.StatusInternalServerError, true)
+	assertStatus(handler, http.MethodGet, "/admin/memory/candidate-facts?tenant_id=t1&user_id=u1&status=pending", ``, http.StatusOK, true)
+	assertStatus(handler, http.MethodGet, "/admin/memory/project-facts?tenant_id=t1&user_id=u1&status=active", ``, http.StatusOK, true)
+	assertStatus(handler, http.MethodPost, "/admin/memory/candidate-facts/repo/confirm", `{"tenant_id":"t1","user_id":"u1"}`, http.StatusOK, true)
+	assertStatus(handler, http.MethodPost, "/admin/memory/candidate-facts/repo/reject", `{"tenant_id":"t1","user_id":"u1"}`, http.StatusOK, true)
+	assertStatus(handler, http.MethodPost, "/admin/memory/candidate-facts/repo/promote", `{"tenant_id":"t1","user_id":"u1"}`, http.StatusOK, true)
+	assertStatus(handler, http.MethodPost, "/admin/memory/candidate-facts/actions/confirm", `{"items":[{"tenant_id":"t1","user_id":"u1","fact_key":"repo"},{"tenant_id":"t1","user_id":"u1","fact_key":"stack"}]}`, http.StatusOK, true)
+	assertStatus(handler, http.MethodPost, "/admin/memory/candidate-facts/actions/reject", `{"items":[{"tenant_id":"t1","user_id":"u1","fact_key":"repo"},{"tenant_id":"t1","user_id":"u1","fact_key":"stack"}]}`, http.StatusOK, true)
+	assertStatus(handler, http.MethodPost, "/admin/memory/candidate-facts/actions/promote", `{"items":[{"tenant_id":"t1","user_id":"u1","fact_key":"repo"},{"tenant_id":"t1","user_id":"u1","fact_key":"stack"}]}`, http.StatusOK, true)
 	assertStatus(handler, http.MethodPost, "/v1/runtime/resolve", `{"request_id":"req-1","environment":"prod","agent_id":"a1"}`, http.StatusOK, false)
 
 	fmt.Println("verify result: PASS model_governance admin/runtime routes")

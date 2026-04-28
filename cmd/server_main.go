@@ -155,6 +155,9 @@ func main() {
 
 	srv := httpserver.New(cfg, registry, redisCache, modelRouter, auditStore, semanticCache, memoryStore, billingStore, limiter, adminStore, policyStore).
 		WithControlPlane(controlPlaneService, controlPlaneAudit, runtimePublisher, runtimeManager)
+	if memoryStore != nil {
+		srv = srv.WithMemoryAdminHandler(httpserver.NewMemoryAdminHandler(memoryStore))
+	}
 	if cfg.ModelGovernanceEnabled && governanceStore != nil {
 		modelGovernanceHandler := httpserver.NewModelGovernanceHandler().
 			WithRecommendationService(governanceRecommendationService).
