@@ -47,7 +47,9 @@ go run ./cmd/verify/smoke
 - `cmd/verify/model_governance`
   - 验证治理域 admin/runtime 基础路由是否可用
   - 当前覆盖：
-    - recommendation / approval / policy version / rollout / evaluation / drift 关键写路径
+    - recommendation / approval / policy version / rollout / rollback / evaluation / drift 关键写路径
+    - rollout dashboard、rollback records、runtime-decisions、distribution-events、runtime-observer
+    - memory governance（candidate facts / project facts / confirm|reject|promote / bulk actions）
     - runtime resolve 公共入口
     - admin 鉴权保护
 
@@ -57,6 +59,30 @@ go run ./cmd/verify/smoke
 go run ./cmd/verify/smoke
 go test ./...
 ```
+
+### Memory Governance / Admin 操作入口
+
+当前仓库已提供 memory governance admin API，可用于查看候选事实、项目事实，并执行 confirm / reject / promote：
+
+- `GET /admin/memory/candidate-facts`
+- `GET /admin/memory/project-facts`
+- `POST /admin/memory/candidate-facts/{factKey}/confirm`
+- `POST /admin/memory/candidate-facts/{factKey}/reject`
+- `POST /admin/memory/candidate-facts/{factKey}/promote`
+- `POST /admin/memory/candidate-facts/actions/{action}`（bulk confirm / reject / promote）
+
+其中 bulk action 请求体格式为：
+
+```json
+{
+  "items": [
+    { "tenant_id": "tenant-a", "user_id": "user-a", "fact_key": "repo" },
+    { "tenant_id": "tenant-a", "user_id": "user-a", "fact_key": "stack" }
+  ]
+}
+```
+
+具体 curl 示例与运维流程见 [RUNBOOK.md](./RUNBOOK.md)。
 
 ### 推荐执行时机
 

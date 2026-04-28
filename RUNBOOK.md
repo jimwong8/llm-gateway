@@ -8,16 +8,18 @@
 go run ./cmd/verify/smoke
 ```
 
-用途：一键验证当前仓库最关键的两条闭环：
+用途：一键验证当前仓库最关键的三条闭环：
 
 - control-plane -> runtime apply
 - control-plane replay -> request-path policy enforcement
+- model governance admin/runtime + memory admin 管理入口
 
 期望输出：
 
 - `[PASS] controlplane_runtime`
 - `[PASS] chat_policy`
-- `verify result: PASS smoke(controlplane_runtime,chat_policy)`
+- `[PASS] model_governance`
+- `verify result: PASS smoke(controlplane_runtime,chat_policy,model_governance)`
 
 适用时机：
 
@@ -236,30 +238,133 @@ curl -sS -X POST \
 
 期望：start 返回 HTTP 201；promote 返回 HTTP 200，`rollout_percent` 更新。
 
-### 3.6 回滚（rollback）
+### 3.6 治理回滚（rollback）
 
-当前仓库已暴露的可用回滚 admin API 为控制面回滚入口：`POST /admin/releases/rollback`。
-治理平台在出现发布劣化时，使用该入口将 runtime 拉回到已知稳定版本。
+当前治理域已暴露两种回滚 admin API：
+
+- `POST /admin/governance/rollbacks`：直接按 rollout id 创建回滚记录并执行回滚
+- `POST /admin/governance/rollouts/{rolloutID}/rollback`：从 rollout 子资源入口触发回滚
+
+1) 直接执行治理回滚：
 
 ```bash
 curl -sS -X POST \
   -H "X-Admin-Key: ${ADMIN_API_KEY}" \
   -H "Content-Type: application/json" \
-  "${GATEWAY_BASE_URL}/admin/releases/rollback" \
+  "${GATEWAY_BASE_URL}/admin/governance/rollbacks" \
   -d '{
-    "module":"router",
-    "tenant_id":"tenant-a",
-    "environment":"prod",
-    "scope":"tenant",
-    "version_id":"cfg_rel_替换为已知稳定版本",
+    "rollout_id":"ro_替换为目标rollout_id",
     "actor":"ops-bot",
-    "reason":"rollback to known good"
+    "reason":"rollback to known good policy version"
   }'
 ```
 
-期望：HTTP 200，返回新的 released 版本 id，并携带 `source_version`（被回滚来源版本）。
+2) 从 rollout 子资源入口执行回滚：
 
-### 3.7 验证命令（MUST RUN）
+```bash
+curl -sS -X POST \
+  -H "X-Admin-Key: ${ADMIN_API_KEY}" \
+  -H "Content-Type: application/json" \
+  "${GATEWAY_BASE_URL}/admin/governance/rollouts/ro_替换为目标rollout_id/rollback" \
+  -d '{
+    "actor":"ops-bot",
+    "reason":"guard threshold violated"
+  }'
+```
+
+期望：HTTP 201，返回 rollback 结果，包含：
+
+- `rollout.status = rolled_back`
+- `restored_policy_version_id`
+- `reverted_policy_version_id`
+- `distribution_event`
+
+可选只读查询：
+
+```bash
+# 查看最近 rollback 记录
+curl -sS -H "X-Admin-Key: ${ADMIN_API_KEY}" \
+  "${GATEWAY_BASE_URL}/admin/governance/rollbacks?limit=20"
+
+# 查看指定 rollback 记录明细
+curl -sS -H "X-Admin-Key: ${ADMIN_API_KEY}" \
+  "${GATEWAY_BASE_URL}/admin/governance/rollbacks/rb_替换为rollback_id"
+```
+
+### 3.7 Memory Governance（候选事实 / 项目事实）
+
+当前 memory admin API 已可用于审阅候选事实、查看项目事实，以及执行 confirm/reject/promote，或通过 bulk action 一次处理多条候选事实：
+
+```bash
+# 列出候选事实
+curl -sS -H "X-Admin-Key: ${ADMIN_API_KEY}" \
+  "${GATEWAY_BASE_URL}/admin/memory/candidate-facts?tenant_id=tenant-a&user_id=user-a&status=pending"
+
+# 列出项目事实
+curl -sS -H "X-Admin-Key: ${ADMIN_API_KEY}" \
+  "${GATEWAY_BASE_URL}/admin/memory/project-facts?tenant_id=tenant-a&user_id=user-a&status=active"
+
+# 确认候选事实
+curl -sS -X POST \
+  -H "X-Admin-Key: ${ADMIN_API_KEY}" \
+  -H "Content-Type: application/json" \
+  "${GATEWAY_BASE_URL}/admin/memory/candidate-facts/repo/confirm" \
+  -d '{"tenant_id":"tenant-a","user_id":"user-a"}'
+
+# 拒绝候选事实
+curl -sS -X POST \
+  -H "X-Admin-Key: ${ADMIN_API_KEY}" \
+  -H "Content-Type: application/json" \
+  "${GATEWAY_BASE_URL}/admin/memory/candidate-facts/repo/reject" \
+  -d '{"tenant_id":"tenant-a","user_id":"user-a"}'
+
+# 提升候选事实为已采纳事实
+curl -sS -X POST \
+  -H "X-Admin-Key: ${ADMIN_API_KEY}" \
+  -H "Content-Type: application/json" \
+  "${GATEWAY_BASE_URL}/admin/memory/candidate-facts/repo/promote" \
+  -d '{"tenant_id":"tenant-a","user_id":"user-a"}'
+
+# 批量确认多条候选事实
+curl -sS -X POST \
+  -H "X-Admin-Key: ${ADMIN_API_KEY}" \
+  -H "Content-Type: application/json" \
+  "${GATEWAY_BASE_URL}/admin/memory/candidate-facts/actions/confirm" \
+  -d '{
+    "items": [
+      {"tenant_id":"tenant-a","user_id":"user-a","fact_key":"repo"},
+      {"tenant_id":"tenant-a","user_id":"user-a","fact_key":"stack"}
+    ]
+  }'
+
+# 批量拒绝多条候选事实
+curl -sS -X POST \
+  -H "X-Admin-Key: ${ADMIN_API_KEY}" \
+  -H "Content-Type: application/json" \
+  "${GATEWAY_BASE_URL}/admin/memory/candidate-facts/actions/reject" \
+  -d '{
+    "items": [
+      {"tenant_id":"tenant-a","user_id":"user-a","fact_key":"repo"},
+      {"tenant_id":"tenant-a","user_id":"user-a","fact_key":"stack"}
+    ]
+  }'
+
+# 批量提升多条候选事实
+curl -sS -X POST \
+  -H "X-Admin-Key: ${ADMIN_API_KEY}" \
+  -H "Content-Type: application/json" \
+  "${GATEWAY_BASE_URL}/admin/memory/candidate-facts/actions/promote" \
+  -d '{
+    "items": [
+      {"tenant_id":"tenant-a","user_id":"user-a","fact_key":"repo"},
+      {"tenant_id":"tenant-a","user_id":"user-a","fact_key":"stack"}
+    ]
+  }'
+```
+
+期望：列表接口返回 HTTP 200；单条动作接口返回 HTTP 200，且返回候选事实最新状态；bulk action 返回 HTTP 200，并包含 `success_count`、`failure_count` 与逐项 `results`。
+
+### 3.8 验证命令（MUST RUN）
 
 治理流程操作后，至少执行以下验证：
 
@@ -336,14 +441,21 @@ curl -sS -H "X-Admin-Key: ${ADMIN_API_KEY}" \
 - `internal/httpserver/chat_completions_policy_live_apply_test.go`
 - `cmd/verify/chat_policy/main.go`
 
-### 4.3 顶层 smoke 失败
+### 4.3 `model_governance` 失败
 
-顶层命令只是编排器。优先直接重跑失败的子命令：
+先看失败停在：
 
-```bash
-go run ./cmd/verify/controlplane_runtime
-# 或
-go run ./cmd/verify/chat_policy
-```
+- recommendations / approvals / policy versions
+- rollouts / rollbacks / dashboard
+- runtime-decisions / distribution-events / runtime-observer
+- memory candidate facts / project facts / confirm|reject|promote / bulk actions
 
-不要先怀疑 `cmd/verify/smoke` 本身，除非两个子命令单跑都正常但总入口失败。
+对应检查：
+
+- `internal/httpserver/server.go`
+- `internal/httpserver/model_governance_handler.go`
+- `internal/httpserver/model_runtime_handler.go`
+- `internal/httpserver/memory_admin_handler.go`
+- `cmd/verify/model_governance/main.go`
+
+### 4.4 顶层 smoke 失败

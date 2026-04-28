@@ -4,8 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
+	"math"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -79,12 +83,38 @@ type ProjectFact struct {
 	UpdatedAt        time.Time
 }
 
+type CandidateFact struct {
+	ID                int64
+	TenantID          string
+	UserID            string
+	Key               string
+	Value             string
+	SourceText        string
+	Status            string
+	SourceMessageSeq  int64
+	ConfirmationCount int
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
 type SearchResult struct {
 	ConversationID int64
 	SessionID      string
 	MessageID      int64
 	Seq            int64
 	Snippet        string
+}
+
+type SemanticRecallResult struct {
+	SessionID      string
+	AnchorSeq      int64
+	Snippet        string
+	FTSRank        int
+	SemanticRank   int
+	CombinedScore  float64
+	FTSScore       float64
+	SemanticScore  float64
+	ConversationID int64
 }
 
 type messageToAppend struct {
@@ -105,6 +135,11 @@ type Store struct {
 	db    *sql.DB
 	cache conversationCache
 }
+
+var (
+	ErrCandidateFactNotFound          = errors.New("candidate fact not found")
+	ErrInvalidCandidateFactTransition = errors.New("invalid candidate fact status transition")
+)
 
 func NewStore(dsn string, rc *cache.RedisCache) (*Store, error) {
 	db, err := sql.Open("postgres", dsn)
@@ -224,8 +259,53 @@ ALTER TABLE project_facts ALTER COLUMN last_verified_at SET NOT NULL;
 DROP INDEX IF EXISTS idx_project_facts_tenant_user_key;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_project_facts_active_tenant_user_key ON project_facts (COALESCE(tenant_id, ''), COALESCE(user_id, ''), fact_key) WHERE status = 'active';
 CREATE INDEX IF NOT EXISTS idx_project_facts_tenant_user_key_status ON project_facts (tenant_id, user_id, fact_key, status);
-`)
 
+CREATE TABLE IF NOT EXISTS candidate_facts (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id TEXT,
+    user_id TEXT,
+    fact_key TEXT NOT NULL,
+    fact_value TEXT NOT NULL,
+    source_text TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    source_message_seq BIGINT NOT NULL DEFAULT 0,
+    confirmation_count INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_candidate_facts_confirmation_count_non_negative CHECK (confirmation_count >= 0)
+);
+ALTER TABLE candidate_facts ADD COLUMN IF NOT EXISTS status TEXT;
+ALTER TABLE candidate_facts ALTER COLUMN status SET DEFAULT 'pending';
+UPDATE candidate_facts SET status = 'pending' WHERE status IS NULL OR TRIM(status) = '';
+ALTER TABLE candidate_facts ALTER COLUMN status SET NOT NULL;
+ALTER TABLE candidate_facts ADD COLUMN IF NOT EXISTS source_message_seq BIGINT;
+ALTER TABLE candidate_facts ALTER COLUMN source_message_seq SET DEFAULT 0;
+UPDATE candidate_facts SET source_message_seq = 0 WHERE source_message_seq IS NULL;
+ALTER TABLE candidate_facts ALTER COLUMN source_message_seq SET NOT NULL;
+ALTER TABLE candidate_facts ADD COLUMN IF NOT EXISTS confirmation_count INTEGER;
+ALTER TABLE candidate_facts ALTER COLUMN confirmation_count SET DEFAULT 0;
+UPDATE candidate_facts SET confirmation_count = 0 WHERE confirmation_count IS NULL OR confirmation_count < 0;
+ALTER TABLE candidate_facts ALTER COLUMN confirmation_count SET NOT NULL;
+ALTER TABLE candidate_facts DROP CONSTRAINT IF EXISTS chk_candidate_facts_confirmation_count_non_negative;
+ALTER TABLE candidate_facts ADD CONSTRAINT chk_candidate_facts_confirmation_count_non_negative CHECK (confirmation_count >= 0);
+ALTER TABLE candidate_facts DROP CONSTRAINT IF EXISTS chk_candidate_facts_status;
+UPDATE candidate_facts
+SET status = CASE LOWER(TRIM(status))
+	WHEN 'pending' THEN 'pending'
+	WHEN 'confirmed' THEN 'confirmed'
+	WHEN 'confirmed_by_user' THEN 'confirmed'
+	WHEN 'promoted' THEN 'promoted'
+	WHEN 'rejected' THEN 'rejected'
+	ELSE 'pending'
+END
+WHERE status IS NOT NULL;
+UPDATE candidate_facts SET status = 'pending' WHERE status IS NULL OR TRIM(status) = '';
+ALTER TABLE candidate_facts ADD CONSTRAINT chk_candidate_facts_status CHECK (status IN ('pending', 'confirmed', 'promoted', 'rejected'));
+DROP INDEX IF EXISTS idx_candidate_facts_tenant_user_key_value;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_candidate_facts_tenant_user_key ON candidate_facts (COALESCE(tenant_id, ''), COALESCE(user_id, ''), fact_key);
+CREATE INDEX IF NOT EXISTS idx_candidate_facts_tenant_user_status_updated_at ON candidate_facts (tenant_id, user_id, status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_candidate_facts_tenant_user_source_message_seq ON candidate_facts (tenant_id, user_id, source_message_seq DESC);
+`)
 
 	return err
 }
@@ -910,7 +990,14 @@ func (s *Store) RefreshSessionSummary(ctx context.Context, tenantID, userID, ses
 	if err := s.pruneSupersededProjectFactMentions(ctx, tenantID, userID, summary); err != nil {
 		return err
 	}
+	if err := s.pruneRejectedCandidateFactMentions(ctx, tenantID, userID, summary); err != nil {
+		return err
+	}
 	summaryPruned := len(summary.KeyDecisions) != beforeDecisionCount || len(summary.Blockers) != beforeBlockerCount
+
+	if err := s.PromoteCandidateFacts(ctx, tenantID, userID); err != nil {
+		return err
+	}
 
 	if maxSeenSeq <= summary.SourceMessageSeq && !summaryPruned {
 		return nil
@@ -1159,6 +1246,35 @@ func (s *Store) pruneSupersededProjectFactMentions(ctx context.Context, tenantID
 	return nil
 }
 
+func (s *Store) pruneRejectedCandidateFactMentions(ctx context.Context, tenantID, userID string, summary *SessionSummary) error {
+	if summary == nil {
+		return nil
+	}
+	rejectedFacts, err := s.ListCandidateFacts(ctx, tenantID, userID, "rejected")
+	if err != nil {
+		return err
+	}
+	if len(rejectedFacts) == 0 {
+		return nil
+	}
+
+	rejectedValues := make([]string, 0, len(rejectedFacts))
+	for _, fact := range rejectedFacts {
+		value := strings.ToLower(strings.TrimSpace(fact.Value))
+		if value == "" {
+			continue
+		}
+		rejectedValues = append(rejectedValues, value)
+	}
+	if len(rejectedValues) == 0 {
+		return nil
+	}
+
+	summary.KeyDecisions = pruneSummaryItemsReferencingFactValues(summary.KeyDecisions, rejectedValues)
+	summary.Blockers = pruneSummaryItemsReferencingFactValues(summary.Blockers, rejectedValues)
+	return nil
+}
+
 func (s *Store) SearchMessages(ctx context.Context, tenantID, query string, limit, offset int) ([]SearchResult, error) {
 	if strings.TrimSpace(query) == "" {
 		return nil, nil
@@ -1203,6 +1319,290 @@ LIMIT $3 OFFSET $4
 		return nil, err
 	}
 	return out, nil
+}
+
+func (s *Store) HybridSemanticRecall(ctx context.Context, tenantID, userID, sessionID, query string, ftsTopK, semanticTopK, finalTopK int) ([]SemanticRecallResult, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, nil
+	}
+	if ftsTopK <= 0 {
+		ftsTopK = 8
+	}
+	if semanticTopK <= 0 {
+		semanticTopK = 8
+	}
+	if finalTopK <= 0 {
+		finalTopK = 3
+	}
+
+	ftsCandidates, err := s.searchMessagesFTSForHybrid(ctx, tenantID, userID, sessionID, query, ftsTopK)
+	if err != nil {
+		return nil, err
+	}
+	semanticCandidates, err := s.searchMessagesSemanticLiteForHybrid(ctx, tenantID, userID, sessionID, query, semanticTopK)
+	if err != nil {
+		return nil, err
+	}
+
+	type fusedItem struct {
+		result SemanticRecallResult
+	}
+
+	fused := make(map[string]*fusedItem, len(ftsCandidates)+len(semanticCandidates))
+	rrf := func(rank int) float64 {
+		if rank <= 0 {
+			return 0
+		}
+		return 1.0 / float64(60+rank)
+	}
+
+	for idx, item := range ftsCandidates {
+		rank := idx + 1
+		key := item.SessionID + ":" + strconv.FormatInt(item.AnchorSeq, 10)
+		entry, ok := fused[key]
+		if !ok {
+			entry = &fusedItem{result: item}
+			fused[key] = entry
+		}
+		entry.result.FTSRank = rank
+		entry.result.FTSScore = item.FTSScore
+		entry.result.CombinedScore += rrf(rank)
+	}
+
+	for idx, item := range semanticCandidates {
+		rank := idx + 1
+		key := item.SessionID + ":" + strconv.FormatInt(item.AnchorSeq, 10)
+		entry, ok := fused[key]
+		if !ok {
+			entry = &fusedItem{result: item}
+			fused[key] = entry
+		}
+		if strings.TrimSpace(entry.result.Snippet) == "" {
+			entry.result.Snippet = item.Snippet
+		}
+		if entry.result.ConversationID == 0 {
+			entry.result.ConversationID = item.ConversationID
+		}
+		entry.result.SemanticRank = rank
+		entry.result.SemanticScore = item.SemanticScore
+		entry.result.CombinedScore += rrf(rank)
+	}
+
+	if len(fused) == 0 {
+		return nil, nil
+	}
+
+	out := make([]SemanticRecallResult, 0, len(fused))
+	for _, item := range fused {
+		if item.result.FTSRank == 0 {
+			item.result.FTSRank = math.MaxInt32
+		}
+		if item.result.SemanticRank == 0 {
+			item.result.SemanticRank = math.MaxInt32
+		}
+		out = append(out, item.result)
+	}
+
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].CombinedScore != out[j].CombinedScore {
+			return out[i].CombinedScore > out[j].CombinedScore
+		}
+		if out[i].FTSRank != out[j].FTSRank {
+			return out[i].FTSRank < out[j].FTSRank
+		}
+		if out[i].SemanticRank != out[j].SemanticRank {
+			return out[i].SemanticRank < out[j].SemanticRank
+		}
+		if out[i].SessionID != out[j].SessionID {
+			return out[i].SessionID < out[j].SessionID
+		}
+		return out[i].AnchorSeq < out[j].AnchorSeq
+	})
+
+	if len(out) > finalTopK {
+		out = out[:finalTopK]
+	}
+	for i := range out {
+		if out[i].FTSRank == math.MaxInt32 {
+			out[i].FTSRank = 0
+		}
+		if out[i].SemanticRank == math.MaxInt32 {
+			out[i].SemanticRank = 0
+		}
+	}
+	return out, nil
+}
+
+func (s *Store) searchMessagesFTSForHybrid(ctx context.Context, tenantID, userID, sessionID, query string, topK int) ([]SemanticRecallResult, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT
+	m.conversation_id,
+	m.session_id,
+	m.seq,
+	ts_rank_cd(m.search_vector, plainto_tsquery('english', $4)) AS fts_score,
+	ts_headline('english', m.content, plainto_tsquery('english', $4)) AS snippet
+FROM messages m
+JOIN conversations c ON c.id = m.conversation_id
+WHERE COALESCE(c.tenant_id, '') = COALESCE($1, '')
+  AND COALESCE(c.user_id, '') = COALESCE($2, '')
+  AND ($3 = '' OR m.session_id = $3)
+  AND COALESCE(c.status, 'active') <> 'deleted'
+  AND m.deleted_at IS NULL
+  AND m.search_vector @@ plainto_tsquery('english', $4)
+ORDER BY fts_score DESC, m.created_at DESC
+LIMIT $5
+`, tenantID, userID, strings.TrimSpace(sessionID), query, topK)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]SemanticRecallResult, 0, topK)
+	for rows.Next() {
+		var item SemanticRecallResult
+		if err := rows.Scan(&item.ConversationID, &item.SessionID, &item.AnchorSeq, &item.FTSScore, &item.Snippet); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (s *Store) searchMessagesSemanticLiteForHybrid(ctx context.Context, tenantID, userID, sessionID, query string, topK int) ([]SemanticRecallResult, error) {
+	queryTokens := tokenizeSemanticRecall(query)
+	if len(queryTokens) == 0 {
+		return nil, nil
+	}
+
+	candidateLimit := topK * 6
+	if candidateLimit < 24 {
+		candidateLimit = 24
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+SELECT
+	m.conversation_id,
+	m.session_id,
+	m.seq,
+	m.content
+FROM messages m
+JOIN conversations c ON c.id = m.conversation_id
+WHERE COALESCE(c.tenant_id, '') = COALESCE($1, '')
+  AND COALESCE(c.user_id, '') = COALESCE($2, '')
+  AND ($3 = '' OR m.session_id = $3)
+  AND COALESCE(c.status, 'active') <> 'deleted'
+  AND m.deleted_at IS NULL
+ORDER BY m.created_at DESC
+LIMIT $4
+`, tenantID, userID, strings.TrimSpace(sessionID), candidateLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]SemanticRecallResult, 0, topK)
+	for rows.Next() {
+		var (
+			item    SemanticRecallResult
+			content string
+		)
+		if err := rows.Scan(&item.ConversationID, &item.SessionID, &item.AnchorSeq, &content); err != nil {
+			return nil, err
+		}
+		score := semanticTokenOverlapScore(queryTokens, tokenizeSemanticRecall(content))
+		if score <= 0 {
+			continue
+		}
+		item.SemanticScore = score
+		item.Snippet = compactSemanticRecallSnippet(content, 120)
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].SemanticScore != out[j].SemanticScore {
+			return out[i].SemanticScore > out[j].SemanticScore
+		}
+		if out[i].SessionID != out[j].SessionID {
+			return out[i].SessionID < out[j].SessionID
+		}
+		return out[i].AnchorSeq > out[j].AnchorSeq
+	})
+	if len(out) > topK {
+		out = out[:topK]
+	}
+	return out, nil
+}
+
+var semanticTokenPattern = regexp.MustCompile(`[\p{L}\p{N}_]+`)
+
+func tokenizeSemanticRecall(text string) []string {
+	text = strings.TrimSpace(strings.ToLower(text))
+	if text == "" {
+		return nil
+	}
+	tokens := semanticTokenPattern.FindAllString(text, -1)
+	if len(tokens) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(tokens))
+	seen := make(map[string]struct{}, len(tokens))
+	for _, tok := range tokens {
+		tok = strings.TrimSpace(tok)
+		if len([]rune(tok)) < 2 {
+			continue
+		}
+		if _, ok := seen[tok]; ok {
+			continue
+		}
+		seen[tok] = struct{}{}
+		out = append(out, tok)
+	}
+	return out
+}
+
+func semanticTokenOverlapScore(queryTokens, contentTokens []string) float64 {
+	if len(queryTokens) == 0 || len(contentTokens) == 0 {
+		return 0
+	}
+	set := make(map[string]struct{}, len(contentTokens))
+	for _, tok := range contentTokens {
+		set[tok] = struct{}{}
+	}
+	matched := 0
+	for _, tok := range queryTokens {
+		if _, ok := set[tok]; ok {
+			matched++
+		}
+	}
+	if matched == 0 {
+		return 0
+	}
+	return float64(matched) / float64(len(queryTokens))
+}
+
+func compactSemanticRecallSnippet(content string, maxRunes int) string {
+	content = strings.Join(strings.Fields(strings.TrimSpace(content)), " ")
+	if content == "" {
+		return ""
+	}
+	if maxRunes <= 0 {
+		return content
+	}
+	r := []rune(content)
+	if len(r) <= maxRunes {
+		return content
+	}
+	if maxRunes == 1 {
+		return "…"
+	}
+	return string(r[:maxRunes-1]) + "…"
 }
 
 func InjectMemory(req providers.ChatCompletionRequest, items []Item) providers.ChatCompletionRequest {
@@ -1322,6 +1722,30 @@ func FormatUserPreferences(prefs []UserPreference) string {
 	return strings.Join(sections, "\n")
 }
 
+func (s *Store) ListProjectFacts(ctx context.Context, tenantID, userID, status string) ([]ProjectFact, error) {
+	status = strings.TrimSpace(strings.ToLower(status))
+	switch status {
+	case "active":
+		return s.getProjectFacts(ctx, tenantID, userID, false)
+	case "superseded":
+		facts, err := s.getProjectFacts(ctx, tenantID, userID, true)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]ProjectFact, 0, len(facts))
+		for _, fact := range facts {
+			if strings.ToLower(strings.TrimSpace(fact.Status)) == "superseded" {
+				out = append(out, fact)
+			}
+		}
+		return out, nil
+	case "", "all":
+		return s.getProjectFacts(ctx, tenantID, userID, true)
+	default:
+		return s.getProjectFacts(ctx, tenantID, userID, false)
+	}
+}
+
 func (s *Store) GetProjectFacts(ctx context.Context, tenantID, userID string) ([]ProjectFact, error) {
 	return s.getProjectFacts(ctx, tenantID, userID, false)
 }
@@ -1400,6 +1824,19 @@ WHERE COALESCE(tenant_id, '') = COALESCE($1, '')
 }
 
 func (s *Store) UpsertProjectFact(ctx context.Context, fact ProjectFact) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if err := s.upsertProjectFactInTx(ctx, tx, fact); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Store) upsertProjectFactInTx(ctx context.Context, tx *sql.Tx, fact ProjectFact) error {
 	fact.Key = strings.TrimSpace(strings.ToLower(fact.Key))
 	fact.Value = trim(fact.Value)
 	fact.SourceText = trim(fact.SourceText)
@@ -1413,12 +1850,6 @@ func (s *Store) UpsertProjectFact(ctx context.Context, fact ProjectFact) error {
 	if verifiedAt.IsZero() {
 		verifiedAt = time.Now().UTC()
 	}
-
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
 
 	var oldActiveID sql.NullInt64
 	if err := tx.QueryRowContext(ctx, `
@@ -1464,7 +1895,7 @@ WHERE id = $1
 		}
 	}
 
-	return tx.Commit()
+	return nil
 }
 
 func FormatProjectFacts(facts []ProjectFact) string {
@@ -1480,6 +1911,370 @@ func FormatProjectFacts(facts []ProjectFact) string {
 			continue
 		}
 		line := fmt.Sprintf("- %s: %s", key, value)
+		if source := strings.TrimSpace(fact.SourceText); source != "" {
+			line += fmt.Sprintf(" (source: %q)", source)
+		}
+		sections = append(sections, line)
+	}
+	if len(sections) <= 2 {
+		return ""
+	}
+	return strings.Join(sections, "\n")
+}
+
+func (s *Store) GetCandidateFacts(ctx context.Context, tenantID, userID string) ([]CandidateFact, error) {
+	return s.ListCandidateFacts(ctx, tenantID, userID, "")
+}
+
+func (s *Store) ListCandidateFacts(ctx context.Context, tenantID, userID, status string) ([]CandidateFact, error) {
+	status = normalizeCandidateFactStatus(status)
+	query := `
+SELECT id, tenant_id, user_id, fact_key, fact_value, source_text, status, source_message_seq, confirmation_count, created_at, updated_at
+FROM candidate_facts
+WHERE COALESCE(tenant_id, '') = COALESCE($1, '')
+  AND COALESCE(user_id, '') = COALESCE($2, '')`
+	args := []any{tenantID, userID}
+	if status != "" {
+		query += "\n  AND status = $3"
+		args = append(args, status)
+	}
+	query += "\nORDER BY fact_key ASC, updated_at DESC"
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]CandidateFact, 0, 8)
+	for rows.Next() {
+		var fact CandidateFact
+		var tenant sql.NullString
+		var user sql.NullString
+		var rawStatus sql.NullString
+		if err := rows.Scan(
+			&fact.ID,
+			&tenant,
+			&user,
+			&fact.Key,
+			&fact.Value,
+			&fact.SourceText,
+			&rawStatus,
+			&fact.SourceMessageSeq,
+			&fact.ConfirmationCount,
+			&fact.CreatedAt,
+			&fact.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		if tenant.Valid {
+			fact.TenantID = tenant.String
+		}
+		if user.Valid {
+			fact.UserID = user.String
+		}
+		if rawStatus.Valid {
+			fact.Status = normalizeCandidateFactStatus(rawStatus.String)
+		}
+		if fact.Status == "" {
+			fact.Status = "pending"
+		}
+		if fact.SourceMessageSeq < 0 {
+			fact.SourceMessageSeq = 0
+		}
+		if fact.ConfirmationCount < 0 {
+			fact.ConfirmationCount = 0
+		}
+		fact.Key = strings.TrimSpace(fact.Key)
+		fact.Value = strings.TrimSpace(fact.Value)
+		fact.SourceText = strings.TrimSpace(fact.SourceText)
+		if fact.Key == "" || fact.Value == "" {
+			continue
+		}
+		out = append(out, fact)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (s *Store) UpsertCandidateFact(ctx context.Context, fact CandidateFact) error {
+	fact.Key = strings.TrimSpace(strings.ToLower(fact.Key))
+	fact.Value = trim(fact.Value)
+	fact.SourceText = trim(fact.SourceText)
+	rawStatus := strings.TrimSpace(strings.ToLower(fact.Status))
+	fact.Status = normalizeCandidateFactStatus(fact.Status)
+	if fact.Key == "" || fact.Value == "" {
+		return nil
+	}
+	if fact.SourceMessageSeq < 0 {
+		fact.SourceMessageSeq = 0
+	}
+	if fact.ConfirmationCount < 0 {
+		fact.ConfirmationCount = 0
+	}
+
+	var existingValue string
+	var existingConfirmationCount int
+	var existingStatus string
+	err := s.db.QueryRowContext(ctx, `
+SELECT fact_value, confirmation_count, status
+FROM candidate_facts
+WHERE COALESCE(tenant_id, '') = COALESCE($1, '')
+  AND COALESCE(user_id, '') = COALESCE($2, '')
+  AND fact_key = $3
+`, fact.TenantID, fact.UserID, fact.Key).Scan(&existingValue, &existingConfirmationCount, &existingStatus)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+
+	if err == nil {
+		existingValue = trim(existingValue)
+		existingStatus = normalizeCandidateFactStatus(existingStatus)
+		if existingValue == fact.Value {
+			fact.ConfirmationCount = existingConfirmationCount + 1
+		} else if fact.ConfirmationCount == 0 {
+			fact.ConfirmationCount = 1
+		}
+
+		switch existingStatus {
+		case "promoted", "rejected":
+			if existingValue == fact.Value {
+				fact.Status = existingStatus
+			} else if rawStatus == "confirmed" || rawStatus == "confirmed_by_user" || rawStatus == "rejected" {
+				fact.Status = normalizeCandidateFactStatus(rawStatus)
+			} else {
+				fact.Status = "pending"
+			}
+		case "confirmed":
+			if existingValue == fact.Value && fact.Status == "pending" {
+				fact.Status = "confirmed"
+			}
+		}
+	} else if fact.ConfirmationCount == 0 {
+		fact.ConfirmationCount = 1
+	}
+
+	_, err = s.db.ExecContext(ctx, `
+INSERT INTO candidate_facts (tenant_id, user_id, fact_key, fact_value, source_text, status, source_message_seq, confirmation_count, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+ON CONFLICT ((COALESCE(tenant_id, '')), (COALESCE(user_id, '')), fact_key) DO UPDATE SET
+	fact_value = EXCLUDED.fact_value,
+	source_text = EXCLUDED.source_text,
+	status = EXCLUDED.status,
+	source_message_seq = EXCLUDED.source_message_seq,
+	confirmation_count = EXCLUDED.confirmation_count,
+	updated_at = NOW()
+`, fact.TenantID, fact.UserID, fact.Key, fact.Value, fact.SourceText, fact.Status, fact.SourceMessageSeq, fact.ConfirmationCount)
+	return err
+}
+
+func (s *Store) ConfirmCandidateFact(ctx context.Context, tenantID, userID, factKey string) (*CandidateFact, error) {
+	return s.transitionCandidateFactStatus(ctx, tenantID, userID, factKey, "confirmed")
+}
+
+func (s *Store) RejectCandidateFact(ctx context.Context, tenantID, userID, factKey string) (*CandidateFact, error) {
+	return s.transitionCandidateFactStatus(ctx, tenantID, userID, factKey, "rejected")
+}
+
+func (s *Store) PromoteCandidateFact(ctx context.Context, tenantID, userID, factKey string) (*CandidateFact, error) {
+	return s.transitionCandidateFactStatus(ctx, tenantID, userID, factKey, "promoted")
+}
+
+func (s *Store) transitionCandidateFactStatus(ctx context.Context, tenantID, userID, factKey, targetStatus string) (*CandidateFact, error) {
+	factKey = strings.TrimSpace(strings.ToLower(factKey))
+	if factKey == "" {
+		return nil, ErrCandidateFactNotFound
+	}
+	targetStatus = normalizeCandidateFactStatus(targetStatus)
+	if targetStatus == "" {
+		return nil, fmt.Errorf("%w: target=%q", ErrInvalidCandidateFactTransition, targetStatus)
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	fact, err := s.getCandidateFactByKeyInTx(ctx, tx, tenantID, userID, factKey)
+	if err != nil {
+		return nil, err
+	}
+
+	currentStatus := normalizeCandidateFactStatus(fact.Status)
+	if currentStatus == targetStatus {
+		if err := tx.Commit(); err != nil {
+			return nil, err
+		}
+		return fact, nil
+	}
+	if !isCandidateFactTransitionAllowed(currentStatus, targetStatus) {
+		return nil, fmt.Errorf("%w: from=%s to=%s", ErrInvalidCandidateFactTransition, currentStatus, targetStatus)
+	}
+
+	if targetStatus == "promoted" {
+		if err := s.upsertProjectFactInTx(ctx, tx, ProjectFact{
+			TenantID:         tenantID,
+			UserID:           userID,
+			Key:              fact.Key,
+			Value:            fact.Value,
+			SourceText:       fact.SourceText,
+			SourceMessageSeq: fact.SourceMessageSeq,
+			LastVerifiedAt:   time.Now().UTC(),
+		}); err != nil {
+			return nil, err
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+UPDATE candidate_facts
+SET status = $4, updated_at = NOW()
+WHERE COALESCE(tenant_id, '') = COALESCE($1, '')
+  AND COALESCE(user_id, '') = COALESCE($2, '')
+  AND fact_key = $3
+`, tenantID, userID, factKey, targetStatus); err != nil {
+		return nil, err
+	}
+
+	auditAction := "candidate_fact_" + targetStatus
+	if err := s.insertBusinessAuditActionInTx(ctx, tx, tenantID, auditAction, "candidate_fact", strconv.FormatInt(fact.ID, 10), userID); err != nil {
+		return nil, err
+	}
+
+	fact.Status = targetStatus
+	fact.UpdatedAt = time.Now().UTC()
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return fact, nil
+}
+
+func (s *Store) getCandidateFactByKeyInTx(ctx context.Context, tx *sql.Tx, tenantID, userID, factKey string) (*CandidateFact, error) {
+	var fact CandidateFact
+	var tenant sql.NullString
+	var user sql.NullString
+	var status sql.NullString
+	err := tx.QueryRowContext(ctx, `
+SELECT id, tenant_id, user_id, fact_key, fact_value, source_text, status, source_message_seq, confirmation_count, created_at, updated_at
+FROM candidate_facts
+WHERE COALESCE(tenant_id, '') = COALESCE($1, '')
+  AND COALESCE(user_id, '') = COALESCE($2, '')
+  AND fact_key = $3
+FOR UPDATE
+`, tenantID, userID, factKey).Scan(
+		&fact.ID,
+		&tenant,
+		&user,
+		&fact.Key,
+		&fact.Value,
+		&fact.SourceText,
+		&status,
+		&fact.SourceMessageSeq,
+		&fact.ConfirmationCount,
+		&fact.CreatedAt,
+		&fact.UpdatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrCandidateFactNotFound
+		}
+		return nil, err
+	}
+	if tenant.Valid {
+		fact.TenantID = tenant.String
+	}
+	if user.Valid {
+		fact.UserID = user.String
+	}
+	if status.Valid {
+		fact.Status = normalizeCandidateFactStatus(status.String)
+	}
+	if fact.Status == "" {
+		fact.Status = "pending"
+	}
+	if fact.SourceMessageSeq < 0 {
+		fact.SourceMessageSeq = 0
+	}
+	if fact.ConfirmationCount < 0 {
+		fact.ConfirmationCount = 0
+	}
+	fact.Key = strings.TrimSpace(strings.ToLower(fact.Key))
+	fact.Value = strings.TrimSpace(fact.Value)
+	fact.SourceText = strings.TrimSpace(fact.SourceText)
+	return &fact, nil
+}
+
+func (s *Store) PromoteCandidateFacts(ctx context.Context, tenantID, userID string) error {
+	candidateFacts, err := s.GetCandidateFacts(ctx, tenantID, userID)
+	if err != nil {
+		return err
+	}
+	if len(candidateFacts) == 0 {
+		return nil
+	}
+
+	for _, candidate := range candidateFacts {
+		if !shouldPromoteCandidateFact(candidate) {
+			continue
+		}
+		if _, err := s.PromoteCandidateFact(ctx, tenantID, userID, candidate.Key); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func isCandidateFactTransitionAllowed(currentStatus, targetStatus string) bool {
+	currentStatus = normalizeCandidateFactStatus(currentStatus)
+	targetStatus = normalizeCandidateFactStatus(targetStatus)
+
+	switch currentStatus {
+	case "pending":
+		return targetStatus == "confirmed" || targetStatus == "rejected" || targetStatus == "promoted"
+	case "confirmed":
+		return targetStatus == "promoted" || targetStatus == "rejected"
+	case "promoted", "rejected":
+		return false
+	default:
+		return false
+	}
+}
+
+func shouldPromoteCandidateFact(fact CandidateFact) bool {
+	if strings.TrimSpace(fact.Key) == "" || strings.TrimSpace(fact.Value) == "" {
+		return false
+	}
+	status := normalizeCandidateFactStatus(fact.Status)
+	if status == "promoted" || status == "rejected" {
+		return false
+	}
+	if status == "confirmed" {
+		return true
+	}
+	if isTentativeCandidateFactSignal(fact.SourceText) {
+		return false
+	}
+	if isConfirmedCandidateFactSignal(fact.SourceText) {
+		return true
+	}
+	return normalizeCandidateFactConfirmationCount(fact.ConfirmationCount) >= 2
+}
+
+func FormatCandidateFacts(facts []CandidateFact) string {
+	if len(facts) == 0 {
+		return ""
+	}
+
+	sections := []string{"[Candidate Facts]", "Unconfirmed candidate facts extracted from conversation; must be verified before promoting to active project facts:"}
+	for _, fact := range facts {
+		key := strings.TrimSpace(fact.Key)
+		value := strings.TrimSpace(fact.Value)
+		if key == "" || value == "" {
+			continue
+		}
+		line := fmt.Sprintf("- %s: %s [status=%s, confirmations=%d, source_seq=%d]", key, value, normalizeCandidateFactStatus(fact.Status), normalizeCandidateFactConfirmationCount(fact.ConfirmationCount), normalizeCandidateFactSourceSeq(fact.SourceMessageSeq))
 		if source := strings.TrimSpace(fact.SourceText); source != "" {
 			line += fmt.Sprintf(" (source: %q)", source)
 		}
@@ -1692,3 +2487,66 @@ func trim(s string) string {
 	return s
 }
 
+func normalizeCandidateFactStatus(status string) string {
+	status = strings.TrimSpace(strings.ToLower(status))
+	switch status {
+	case "":
+		return "pending"
+	case "confirmed_by_user":
+		return "confirmed"
+	case "pending", "confirmed", "promoted", "rejected":
+		return status
+	default:
+		return "pending"
+	}
+}
+
+func normalizeCandidateFactConfirmationCount(count int) int {
+	if count < 0 {
+		return 0
+	}
+	return count
+}
+
+func normalizeCandidateFactSourceSeq(seq int64) int64 {
+	if seq < 0 {
+		return 0
+	}
+	return seq
+}
+
+func isConfirmedCandidateFactSignal(content string) bool {
+	lower := strings.ToLower(strings.TrimSpace(content))
+	if lower == "" {
+		return false
+	}
+	signals := []string{"已确认", "已定", "最终决定", "已经落地", "确定采用", "结论：", "confirm", "confirmed", "decided", "we use", "is truth", "只做", "默认"}
+	for _, signal := range signals {
+		signal = strings.TrimSpace(strings.ToLower(signal))
+		if signal == "" {
+			continue
+		}
+		if strings.Contains(lower, signal) {
+			return true
+		}
+	}
+	return false
+}
+
+func isTentativeCandidateFactSignal(content string) bool {
+	lower := strings.ToLower(strings.TrimSpace(content))
+	if lower == "" {
+		return false
+	}
+	signals := []string{"考虑", "候选", "可能", "试试", "暂定", "先这样", "maybe", "might", "proposal", "proposed", "option", "候选方案", "讨论"}
+	for _, signal := range signals {
+		signal = strings.TrimSpace(strings.ToLower(signal))
+		if signal == "" {
+			continue
+		}
+		if strings.Contains(lower, signal) {
+			return true
+		}
+	}
+	return false
+}
