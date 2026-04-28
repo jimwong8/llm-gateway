@@ -360,7 +360,8 @@ main {
   color: #475569;
 }
 
-.config-filters input {
+.config-filters input,
+.config-filters select {
   width: 100%;
   padding: 0.75rem 0.85rem;
   border: 1px solid #cbd5e1;
@@ -572,9 +573,164 @@ main {
 
 .policy-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
 }
 
+.memory-fact-cell {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.memory-fact-cell strong {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.memory-fact-cell small {
+  color: #64748b;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.memory-fact-cell--compact strong {
+  font-size: 0.92rem;
+}
+
+.memory-governance__feedback strong,
+.memory-governance__hint strong,
+.memory-governance__scope-summary strong {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: #0f172a;
+}
+
+.memory-governance__feedback,
+.memory-governance__hint {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.memory-governance__content {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.memory-governance__candidate-panel,
+.memory-governance__project-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.memory-governance__detail {
+  position: sticky;
+  top: 1rem;
+}
+
+.memory-governance__detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.memory-governance__detail-grid span {
+  display: block;
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+.memory-governance__detail-grid strong {
+  display: block;
+  margin-top: 0.25rem;
+  color: #0f172a;
+}
+
+.memory-governance__detail-wide {
+  grid-column: 1 / -1;
+}
+
+.memory-governance__detail pre {
+  margin: 0.35rem 0 0;
+  padding: 0.85rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.85rem;
+  background: #f8fafc;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #0f172a;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.memory-governance__batch-toolbar,
+.memory-governance__table-toolbar,
+.memory-governance__pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.memory-governance__table-toolbar {
+  flex-wrap: wrap;
+}
+
+.memory-governance__table-toolbar-fields {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) 140px;
+  gap: 0.75rem;
+  flex: 1 1 28rem;
+}
+
+.memory-governance__table-toolbar label {
+  display: grid;
+  gap: 0.35rem;
+  color: #475569;
+  font-size: 0.92rem;
+}
+
+.memory-governance__table-toolbar input,
+.memory-governance__table-toolbar select {
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.9rem;
+  background: #fff;
+}
+
+.memory-governance__scope-summary {
+  min-width: 18rem;
+  flex: 0 1 22rem;
+}
+
+.memory-governance__scope-summary span,
+.memory-governance__pager span {
+  color: #475569;
+  font-size: 0.92rem;
+}
+
+.memory-governance__pager {
+  padding: 0.9rem 1rem;
+  border: 1px solid #dbe3f0;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.memory-governance__selection-cell {
+  width: 3rem;
+}
+
+.memory-row {
+  cursor: pointer;
+}
+
+.memory-row--selected {
+  background: #eff6ff;
+}
 .policy-actions .rollouts-action[disabled] {
   cursor: not-allowed;
   color: #94a3b8;

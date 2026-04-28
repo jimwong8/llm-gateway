@@ -173,7 +173,7 @@ export function RolloutsPage() {
         reason: rollbackForm.reason.trim() || undefined,
       })
 
-      setRollbackSuccess(`已触发回滚：${response.rollback.id}`)
+      setRollbackSuccess(`已触发回滚：${response.id}`)
       setDialogState((previous) => ({ ...previous, open: false }))
       void rolloutsQuery.refetch()
     } catch (unknownError) {

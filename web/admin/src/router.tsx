@@ -1,12 +1,15 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { ProtectedRoute } from './components/auth/ProtectedRoute'
+import { ApprovalsPage } from './pages/ApprovalsPage'
 import { AuditRuntimePage } from './pages/AuditRuntimePage'
 import { ConfigCenterPage } from './pages/ConfigCenterPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { DriftDashboardPage } from './pages/DriftDashboardPage'
+import { MemoryGovernancePage } from './pages/MemoryGovernancePage'
 import { LoginPage } from './pages/LoginPage'
 import { ObservabilityPage } from './pages/ObservabilityPage'
 import { PlaygroundPage } from './pages/PlaygroundPage'
+import { RecommendationCenterPage } from './pages/RecommendationCenterPage'
 import { PoliciesPage } from './pages/PoliciesPage'
 import { PolicyVersionsPage } from './pages/PolicyVersionsPage'
 import { QuotaPage } from './pages/QuotaPage'
@@ -62,6 +65,18 @@ export const router = createBrowserRouter([
       {
         path: 'policies',
         element: <PoliciesPage />,
+      },
+      {
+        path: 'memory-governance',
+        element: <MemoryGovernancePage />,
+      },
+      {
+        path: 'recommendations',
+        element: <RecommendationCenterPage />,
+      },
+      {
+        path: 'approvals',
+        element: <ApprovalsPage />,
       },
       {
         path: 'policy-versions',

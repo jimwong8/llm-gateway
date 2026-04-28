@@ -32,11 +32,6 @@ export type GovernanceRollbackRow = {
   created_at?: string
 }
 
-export type GovernanceRollbackResponse = {
-  rollback: GovernanceRollbackRow
-  result: unknown
-}
-
 export type GovernanceRollbackRequest = {
   rollout_id: string
   actor: string

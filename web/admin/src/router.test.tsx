@@ -21,7 +21,7 @@ describe('router protection', () => {
 
     renderWithProviders(router)
 
-    expect(await screen.findByText('Admin Console Login')).toBeInTheDocument()
+    expect(await screen.findByText('Admin Console Login')).toBeTruthy()
   })
 
   it('allows authenticated users to access dashboard', async () => {
@@ -33,7 +33,81 @@ describe('router protection', () => {
 
     renderWithProviders(router)
 
-    expect(await screen.findByRole('heading', { name: 'Dashboard', level: 1 })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Dashboard', level: 1 })).toBeTruthy()
+  })
+
+  it('allows authenticated users to access memory governance page', async () => {
+    setToken('demo-admin-token')
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            object: 'list',
+            tenant_id: '',
+            user_id: '',
+            status: '',
+            data: [],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            object: 'list',
+            tenant_id: '',
+            user_id: '',
+            status: '',
+            data: [],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const router = createMemoryRouter(appRouter.routes, {
+      initialEntries: ['/memory-governance'],
+    })
+
+    renderWithProviders(router)
+
+    expect(await screen.findByRole('heading', { name: 'Memory Governance', level: 1 })).toBeTruthy()
+  })
+
+  it('allows authenticated users to access runtime observer page', async () => {
+    setToken('demo-admin-token')
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          environment: 'prod',
+          active_policy: { version_id: '' },
+          cache: { entry_count: 0, entries: [], invalidation_count: 0 },
+          facts: { runtime_decisions: [], distribution_events: [] },
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const router = createMemoryRouter(appRouter.routes, {
+      initialEntries: ['/runtime-observer'],
+    })
+
+    renderWithProviders(router)
+
+    expect(await screen.findByRole('heading', { name: 'Runtime Observer', level: 1 })).toBeTruthy()
   })
 
   it('allows authenticated users to access runtime observer page', async () => {
