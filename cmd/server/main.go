@@ -75,8 +75,12 @@ func main() {
 	}
 
 	var semanticCache semantic.L2Cache = nil
-	if true {
-		semanticCache = semantic.NewMemoryL2Cache(cfg.SemanticVectorSize, cfg.SemanticCacheThreshold)
+	if cfg.SemanticCacheEnabled {
+		if cfg.QdrantURL != "http://127.0.0.1:6333" && strings.TrimSpace(cfg.QdrantAPIKey) != "" {
+			semanticCache = semantic.New(cfg.QdrantURL, cfg.QdrantAPIKey, cfg.QdrantCollection, cfg.SemanticVectorSize, cfg.SemanticCacheThreshold)
+		} else {
+			semanticCache = semantic.NewMemoryL2Cache(cfg.SemanticVectorSize, cfg.SemanticCacheThreshold)
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := semanticCache.EnsureCollection(ctx); err != nil {
