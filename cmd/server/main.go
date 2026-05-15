@@ -45,14 +45,14 @@ func main() {
 	redisCache := cache.NewRedis(cfg.RedisAddr, time.Duration(cfg.L1CacheTTLSeconds)*time.Second)
 	modelRouter := router.New(cfg.DefaultProvider, cfg.DefaultModel)
 	if err := modelRouter.BootstrapFromFile(cfg.RouterBootstrapPath); err != nil {
-		slog.Warn("router bootstrap skipped", "err", err)
+		slog.Warn("router bootstrap skipped", "err", slog.Any("err", err))
 	}
 	limiter := quota.New(cfg.RedisAddr, cfg.TenantRPM)
 
 	var auditStore *audit.Store
 	if cfg.AuditLogEnabled {
 		if store, err := audit.NewStore(cfg.PostgresDSN); err != nil {
-			slog.Warn("audit init failed", "err", err)
+			slog.Warn("audit init failed", "err", slog.Any("err", err))
 		} else {
 			auditStore = store
 		}
@@ -60,18 +60,18 @@ func main() {
 	var billingStore *billing.Store
 	if cfg.BillingEnabled {
 		if store, err := billing.NewStore(cfg.PostgresDSN); err != nil {
-			slog.Warn("billing init failed", "err", err)
+			slog.Warn("billing init failed", "err", slog.Any("err", err))
 		} else {
 			billingStore = store
 		}
 	}
 	adminStore, err := admin.NewStore(cfg.PostgresDSN)
 	if err != nil {
-		slog.Warn("admin init failed", "err", err)
+		slog.Warn("admin init failed", "err", slog.Any("err", err))
 	}
 	policyStore, err := policy.NewStore(cfg.PostgresDSN)
 	if err != nil {
-		slog.Warn("policy init failed", "err", err)
+		slog.Warn("policy init failed", "err", slog.Any("err", err))
 	}
 
 	var semanticCache semantic.L2Cache = nil
@@ -80,7 +80,7 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := semanticCache.EnsureCollection(ctx); err != nil {
-			slog.Warn("semantic cache init failed", "err", err)
+			slog.Warn("semantic cache init failed", "err", slog.Any("err", err))
 			semanticCache = nil
 		}
 	}
@@ -88,7 +88,7 @@ func main() {
 	var memoryStore *memory.Store = nil
 	if true {
 		if store, err := memory.NewStore(cfg.PostgresDSN, redisCache); err != nil {
-			slog.Warn("memory init failed", "err", err)
+			slog.Warn("memory init failed", "err", slog.Any("err", err))
 		} else {
 			memoryStore = store
 		}
@@ -112,19 +112,19 @@ func main() {
 		),
 	}))
 	if err := runtime.ReplayCurrentReleasedRouterConfig(context.Background(), controlPlaneService, runtimeBus); err != nil {
-		slog.Warn("router startup replay skipped", "err", err)
+		slog.Warn("router startup replay skipped", "err", slog.Any("err", err))
 	}
 	if err := runtime.ReplayCurrentReleasedModuleConfig(context.Background(), controlPlaneService, runtimeBus, "quota"); err != nil {
-		slog.Warn("quota startup replay skipped", "err", err)
+		slog.Warn("quota startup replay skipped", "err", slog.Any("err", err))
 	}
 	if err := runtime.ReplayCurrentReleasedModuleConfig(context.Background(), controlPlaneService, runtimeBus, "policy"); err != nil {
-		slog.Warn("policy startup replay skipped", "err", err)
+		slog.Warn("policy startup replay skipped", "err", slog.Any("err", err))
 	}
 
 	srv := httpserver.New(cfg, registry, redisCache, modelRouter, auditStore, semanticCache, memoryStore, billingStore, limiter, adminStore, policyStore).
 		WithControlPlane(controlPlaneService, controlPlaneAudit, runtimePublisher, runtimeManager)
 	slog.Info("starting", "app", cfg.AppName, "addr", cfg.Addr(), "mock", cfg.MockMode, "redis", cfg.RedisAddr, "audit", auditStore != nil, "semantic", semanticCache != nil, "memory", memoryStore != nil, "billing", billingStore != nil)
 	if err := http.ListenAndServe(cfg.Addr(), srv.Handler()); err != nil {
-		slog.Error("server stopped: %v", err)
+		slog.Error("server stopped", "err", slog.Any("err", err))
 	}
 }
