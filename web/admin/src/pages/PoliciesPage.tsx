@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { AppShell } from '../components/layout/AppShell'
+import { PoliciesSummarySection } from '../components/policies/PoliciesSummarySection'
+import { PoliciesModelsSection } from '../components/policies/PoliciesModelsSection'
 import { apiRequest } from '../lib/http'
 
 type PoliciesResponse = {
@@ -23,35 +25,14 @@ export function PoliciesPage() {
         {query.error ? <div className="config-error">策略模型加载失败，请检查 policy store 状态。</div> : null}
 
         {!query.isLoading && !query.error ? (
-          <div className="summary-card-grid">
-            <section className="summary-card">
-              <span>Tenant</span>
-              <strong>{query.data?.tenant_id || '—'}</strong>
-            </section>
-            <section className="summary-card">
-              <span>Allowed Models</span>
-              <strong>{query.data?.models?.length ?? 0}</strong>
-            </section>
-          </div>
+          <PoliciesSummarySection
+            tenantId={query.data?.tenant_id ?? '—'}
+            modelCount={query.data?.models?.length ?? 0}
+          />
         ) : null}
 
         {!query.isLoading && !query.error ? (
-          <div className="event-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Model</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(query.data?.models ?? []).map((model) => (
-                  <tr key={model}>
-                    <td>{model}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <PoliciesModelsSection models={query.data?.models ?? []} />
         ) : null}
       </div>
     </AppShell>

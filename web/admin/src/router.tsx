@@ -94,6 +94,10 @@ export const router = createBrowserRouter([
         path: 'drifts',
         element: <DriftDashboardPage />,
       },
+      {
+        path: '*',
+        element: <Navigate to="/dashboard" replace />,
+      },
     ],
   },
 ], {

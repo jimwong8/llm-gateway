@@ -26,6 +26,11 @@ export function LoginPage() {
       return
     }
 
+    if (normalized.length < 10) {
+      setError('Token 格式无效，长度至少 10 个字符')
+      return
+    }
+
     setToken(normalized)
     setError('')
     navigate(nextPath, { replace: true })
@@ -42,15 +47,15 @@ export function LoginPage() {
 
         <form className="login-form" onSubmit={handleSubmit}>
           <label htmlFor="admin-token">Admin Token</label>
-          <textarea
+          <input
             id="admin-token"
             name="admin-token"
-            rows={5}
+            type="password"
             placeholder="sk-admin-..."
             value={token}
             onChange={(event) => setTokenValue(event.target.value)}
           />
-          {error ? <div className="login-error">{error}</div> : null}
+          {error ? <div className="login-error" role="alert">{error}</div> : null}
           <button type="submit">进入控制台</button>
         </form>
       </section>

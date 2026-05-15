@@ -1,4 +1,4 @@
-import type { GovernanceListResponse } from './rollout'
+import type { ListResponse } from './common'
 
 export type RecommendationRow = {
   id: string
@@ -24,7 +24,7 @@ export type ApprovalRequest = {
   }
 }
 
-export type RecommendationsListResponse = GovernanceListResponse<RecommendationRow>
+export type RecommendationsListResponse = ListResponse<RecommendationRow>
 
 export type ApprovalResponse = {
   id: string

@@ -1,6 +1,9 @@
 import { FormEvent, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AppShell } from '../components/layout/AppShell'
+import { ObservabilitySummarySection } from '../components/observability/ObservabilitySummarySection'
+import { ObservabilityProvidersSection } from '../components/observability/ObservabilityProvidersSection'
+import { ObservabilityHotspotsSection } from '../components/observability/ObservabilityHotspotsSection'
 import { apiRequest } from '../lib/http'
 import type {
   BillingSummary,
@@ -93,58 +96,16 @@ export function ObservabilityPage() {
           <div className="config-error">观测数据加载失败，请检查 Admin API 与 billing store 状态。</div>
         ) : null}
 
-        <div className="summary-card-grid">
-          <section className="summary-card">
-            <span>Requests</span>
-            <strong>{summaryQuery.data?.requests ?? 0}</strong>
-          </section>
-          <section className="summary-card">
-            <span>Cache Hit Rate</span>
-            <strong>{((summaryQuery.data?.cache_hit_rate ?? 0) * 100).toFixed(1)}%</strong>
-          </section>
-          <section className="summary-card">
-            <span>Provider Error Rate</span>
-            <strong>{((summaryQuery.data?.provider_error_rate ?? 0) * 100).toFixed(1)}%</strong>
-          </section>
-          <section className="summary-card">
-            <span>Avg Latency</span>
-            <strong>{(summaryQuery.data?.avg_latency_ms ?? 0).toFixed(1)} ms</strong>
-          </section>
-        </div>
+        <ObservabilitySummarySection
+          requests={summaryQuery.data?.requests ?? 0}
+          cacheHitRate={summaryQuery.data?.cache_hit_rate ?? 0}
+          providerErrorRate={summaryQuery.data?.provider_error_rate ?? 0}
+          avgLatencyMs={summaryQuery.data?.avg_latency_ms ?? 0}
+        />
 
-        <div className="event-table">
-          <table>
-            <thead>
-              <tr>
-                <th>Provider</th>
-                <th>Requests</th>
-                <th>Total Tokens</th>
-                <th>Error Rate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {providers.map((row) => (
-                <tr key={row.provider}>
-                  <td>{row.provider}</td>
-                  <td>{row.requests}</td>
-                  <td>{row.total_tokens}</td>
-                  <td>{(row.provider_error_rate * 100).toFixed(1)}%</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ObservabilityProvidersSection providers={providers} />
 
-        <div className="summary-card-grid">
-          <section className="summary-card">
-            <span>Top Tenant</span>
-            <strong>{hotspots?.tenants[0]?.key ?? '—'}</strong>
-          </section>
-          <section className="summary-card">
-            <span>Top Model</span>
-            <strong>{hotspots?.models[0]?.key ?? '—'}</strong>
-          </section>
-        </div>
+        <ObservabilityHotspotsSection hotspots={hotspots} />
       </div>
     </AppShell>
   )

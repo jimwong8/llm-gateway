@@ -38,7 +38,6 @@ export type HotspotsResult = {
   models: HotspotRow[]
 }
 
-export type ListResponse<T> = {
-  object: string
-  data: T[]
-}
+import type { ListResponse } from './common'
+
+export type { ListResponse }

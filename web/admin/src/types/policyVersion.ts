@@ -1,4 +1,4 @@
-import type { GovernanceListResponse } from './rollout'
+import type { ListResponse } from './common'
 
 export type PolicyVersionStatus = 'draft' | 'approved' | 'active' | 'superseded' | 'rolled_back' | string
 
@@ -14,6 +14,6 @@ export type PolicyVersionRow = {
   created_at?: string
 }
 
-export type PolicyVersionListResponse = GovernanceListResponse<PolicyVersionRow>
+export type PolicyVersionListResponse = ListResponse<PolicyVersionRow>
 
 export type PolicyVersionDiffPayload = Record<string, unknown> | unknown[] | string | null

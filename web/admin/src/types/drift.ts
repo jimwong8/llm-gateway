@@ -1,4 +1,4 @@
-import type { GovernanceListResponse } from './rollout'
+import type { ListResponse } from './common'
 
 export type DriftRow = {
   id: string
@@ -12,4 +12,4 @@ export type DriftRow = {
   updated_at?: string
 }
 
-export type DriftListResponse = GovernanceListResponse<DriftRow>
+export type DriftListResponse = ListResponse<DriftRow>

@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { AppShell } from '../components/layout/AppShell'
 import { apiRequest } from '../lib/http'
 
@@ -10,41 +10,25 @@ type SystemResponse = {
   data?: unknown[]
 }
 
-type LoadedState = {
-  health: SystemResponse | null
-  usage: SystemResponse | null
-  audit: SystemResponse | null
-}
-
 export function SystemPage() {
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [loaded, setLoaded] = useState<LoadedState>({
-    health: null,
-    usage: null,
-    audit: null,
-  })
-
-  async function handleLoad(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setLoading(true)
-    setError('')
-
-    try {
-      const [health, usage, audit] = await Promise.all([
+  const query = useQuery({
+    queryKey: ['system'],
+    queryFn: async () => {
+      const results = await Promise.allSettled([
         apiRequest<SystemResponse>('/admin/health'),
         apiRequest<SystemResponse>('/admin/usage'),
         apiRequest<SystemResponse>('/admin/audit'),
       ])
 
-      setLoaded({ health, usage, audit })
-    } catch (unknownError) {
-      const message = unknownError instanceof Error ? unknownError.message : '加载系统状态失败'
-      setError(message)
-    } finally {
-      setLoading(false)
-    }
-  }
+      const [health, usage, audit] = results
+
+      return {
+        health: health.status === 'fulfilled' ? health.value : null,
+        usage: usage.status === 'fulfilled' ? usage.value : null,
+        audit: audit.status === 'fulfilled' ? audit.value : null,
+      }
+    },
+  })
 
   return (
     <AppShell
@@ -52,28 +36,28 @@ export function SystemPage() {
       description="检查管理服务健康状态、最近 usage 列表和最近审计记录。"
     >
       <div className="system-page">
-        <form className="system-toolbar" onSubmit={handleLoad}>
-          <button type="submit">{loading ? '加载中…' : '刷新系统状态'}</button>
+        <form className="system-toolbar" onSubmit={(e) => { e.preventDefault(); query.refetch() }}>
+          <button type="submit">{query.isLoading ? '加载中…' : '刷新系统状态'}</button>
         </form>
 
-        {error ? <div className="config-error">{error}</div> : null}
+        {query.error ? <div className="config-error">{(query.error as Error).message}</div> : null}
 
         <div className="summary-card-grid">
           <section className="summary-card">
             <span>Health Service</span>
-            <strong>{loaded.health?.service ?? '—'}</strong>
+            <strong>{query.data?.health?.service ?? '—'}</strong>
           </section>
           <section className="summary-card">
             <span>Admin Auth</span>
-            <strong>{loaded.health?.admin_auth ?? '—'}</strong>
+            <strong>{query.data?.health?.admin_auth ?? '—'}</strong>
           </section>
           <section className="summary-card">
             <span>Usage Items</span>
-            <strong>{loaded.usage?.data?.length ?? 0}</strong>
+            <strong>{query.data?.usage?.data?.length ?? 0}</strong>
           </section>
           <section className="summary-card">
             <span>Audit Items</span>
-            <strong>{loaded.audit?.data?.length ?? 0}</strong>
+            <strong>{query.data?.audit?.data?.length ?? 0}</strong>
           </section>
         </div>
       </div>

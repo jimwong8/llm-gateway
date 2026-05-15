@@ -1,6 +1,8 @@
 import { FormEvent, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AppShell } from '../components/layout/AppShell'
+import { QuotaSummarySection } from '../components/quota/QuotaSummarySection'
+import { QuotaTrendsSection } from '../components/quota/QuotaTrendsSection'
 import { apiRequest } from '../lib/http'
 import type { QuotaSummary, QuotaTrendsResponse } from '../types/quota'
 
@@ -72,47 +74,14 @@ export function QuotaPage() {
           <div className="config-error">Quota 数据加载失败，请检查 Redis / limiter 状态。</div>
         ) : null}
 
-        <div className="summary-card-grid">
-          <section className="summary-card">
-            <span>Tenant</span>
-            <strong>{summaryQuery.data?.tenant_id ?? '—'}</strong>
-          </section>
-          <section className="summary-card">
-            <span>Used</span>
-            <strong>{summaryQuery.data?.used ?? 0}</strong>
-          </section>
-          <section className="summary-card">
-            <span>Remaining</span>
-            <strong>{summaryQuery.data?.remaining ?? 0}</strong>
-          </section>
-          <section className="summary-card">
-            <span>Reject Rate</span>
-            <strong>{((summaryQuery.data?.reject_rate ?? 0) * 100).toFixed(1)}%</strong>
-          </section>
-        </div>
+        <QuotaSummarySection
+          tenantId={summaryQuery.data?.tenant_id ?? '—'}
+          used={summaryQuery.data?.used ?? 0}
+          remaining={summaryQuery.data?.remaining ?? 0}
+          rejectRate={summaryQuery.data?.reject_rate ?? 0}
+        />
 
-        <div className="event-table">
-          <table>
-            <thead>
-              <tr>
-                <th>Minute</th>
-                <th>Used</th>
-                <th>Rejected</th>
-                <th>Remaining Estimate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(trendsQuery.data?.points ?? []).map((point) => (
-                <tr key={point.minute}>
-                  <td>{point.minute}</td>
-                  <td>{point.used}</td>
-                  <td>{point.rejected}</td>
-                  <td>{point.remaining_estimate}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <QuotaTrendsSection trends={trendsQuery.data} />
       </div>
     </AppShell>
   )

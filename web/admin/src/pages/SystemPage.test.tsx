@@ -1,8 +1,14 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearToken, setToken } from '../lib/auth'
 import { SystemPage } from './SystemPage'
+
+function renderWithQuery(ui: React.ReactElement) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>)
+}
 
 describe('SystemPage', () => {
   beforeEach(() => {
@@ -40,9 +46,7 @@ describe('SystemPage', () => {
       )
     vi.stubGlobal('fetch', fetchMock)
 
-    render(<SystemPage />)
-
-    await userEvent.click(screen.getByRole('button', { name: '刷新系统状态' }))
+    renderWithQuery(<SystemPage />)
 
     expect(await screen.findByText('llm-gateway')).toBeInTheDocument()
     expect(screen.getByText('enabled')).toBeInTheDocument()

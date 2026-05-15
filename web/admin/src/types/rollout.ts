@@ -1,8 +1,3 @@
-export type GovernanceListResponse<T> = {
-  object: string
-  data: T[]
-}
-
 export type RolloutRow = {
   id: string
   policy_version_id: string
