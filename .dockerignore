@@ -1,0 +1,17 @@
+.git
+.gitignore
+node_modules
+tmp_sync*
+tmp_sync_remote
+tmp_sync_runtime
+dist
+bin
+*.tar
+*.log
+env
+.env*
+MISS: cache_status
+HANDOFF_CONTEXT.md
+*.md~
+*.orig
+自进化混合认知架构*
