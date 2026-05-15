@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -113,7 +114,7 @@ func TestModelRuntimeHandlerRuntimeObserverEndpoint(t *testing.T) {
 
 	environment := "observer-it"
 	policyVersionID := "pv_observer_it_1"
-	requestID := "req_observer_it_1"
+	requestID := fmt.Sprintf("req_observer_it_%d", time.Now().UnixNano())
 	eventID := "distribution_observer_it_1"
 	baseTime := time.Now().UTC().Add(-2 * time.Minute)
 
@@ -123,7 +124,7 @@ func TestModelRuntimeHandlerRuntimeObserverEndpoint(t *testing.T) {
 
 	resolver := governance.NewRuntimeResolver(store)
 	_, err = resolver.Resolve(context.Background(), governance.ResolveInput{
-		RequestID:   "req_observer_cache_prime",
+		RequestID:   fmt.Sprintf("req_observer_cache_prime_%d", time.Now().UnixNano()),
 		Environment: environment,
 		AgentID:     "agent-observer",
 		TenantID:    "tenant-observer",

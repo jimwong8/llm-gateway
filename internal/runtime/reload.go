@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"sort"
+	"sync"
 	"time"
 
 	"llm-gateway/gateway/internal/controlplane"
@@ -17,6 +18,7 @@ type ReloadStatus struct {
 }
 
 type Manager struct {
+	mu            sync.RWMutex
 	statuses      map[string]ReloadStatus
 	compensations *controlplane.CompensationStore
 }
@@ -26,6 +28,8 @@ func NewManager() *Manager {
 }
 
 func (m *Manager) SetStatus(name, status, err string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	s := m.statuses[name]
 	s.Name = name
 	s.LastReloadAt = time.Now().UTC()
@@ -35,6 +39,8 @@ func (m *Manager) SetStatus(name, status, err string) {
 }
 
 func (m *Manager) MarkEventSeen(name, version string, at time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	s := m.statuses[name]
 	s.Name = name
 	s.LastSeenEventAt = at.UTC()
@@ -43,14 +49,18 @@ func (m *Manager) MarkEventSeen(name, version string, at time.Time) {
 }
 
 func (m *Manager) GetStatus(name string) ReloadStatus {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return m.statuses[name]
 }
 
 func (m *Manager) AllStatuses() []ReloadStatus {
+	m.mu.RLock()
 	out := make([]ReloadStatus, 0, len(m.statuses))
 	for _, status := range m.statuses {
 		out = append(out, status)
 	}
+	m.mu.RUnlock()
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Name != out[j].Name {
 			return out[i].Name < out[j].Name

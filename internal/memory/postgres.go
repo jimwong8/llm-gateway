@@ -146,7 +146,11 @@ func NewStore(dsn string, rc *cache.RedisCache) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Store{db: db, cache: rc}
+	s := &Store{db: db}
+	// Avoid typed-nil interface trap: only assign when concrete value is non-nil.
+	if rc != nil {
+		s.cache = rc
+	}
 	if err := s.ensureSchema(context.Background()); err != nil {
 		return nil, err
 	}
@@ -1927,7 +1931,7 @@ func (s *Store) GetCandidateFacts(ctx context.Context, tenantID, userID string) 
 }
 
 func (s *Store) ListCandidateFacts(ctx context.Context, tenantID, userID, status string) ([]CandidateFact, error) {
-	status = normalizeCandidateFactStatus(status)
+	status = strings.TrimSpace(strings.ToLower(status))
 	query := `
 SELECT id, tenant_id, user_id, fact_key, fact_value, source_text, status, source_message_seq, confirmation_count, created_at, updated_at
 FROM candidate_facts
@@ -1935,6 +1939,7 @@ WHERE COALESCE(tenant_id, '') = COALESCE($1, '')
   AND COALESCE(user_id, '') = COALESCE($2, '')`
 	args := []any{tenantID, userID}
 	if status != "" {
+		status = normalizeCandidateFactStatus(status)
 		query += "\n  AND status = $3"
 		args = append(args, status)
 	}
@@ -2033,9 +2038,15 @@ WHERE COALESCE(tenant_id, '') = COALESCE($1, '')
 		existingValue = trim(existingValue)
 		existingStatus = normalizeCandidateFactStatus(existingStatus)
 		if existingValue == fact.Value {
-			fact.ConfirmationCount = existingConfirmationCount + 1
+			if existingConfirmationCount <= 0 {
+				fact.ConfirmationCount = 2
+			} else {
+				fact.ConfirmationCount = existingConfirmationCount + 1
+			}
 		} else if fact.ConfirmationCount == 0 {
-			fact.ConfirmationCount = 1
+			if fact.Status == "confirmed" {
+				fact.ConfirmationCount = 1
+			}
 		}
 
 		switch existingStatus {
@@ -2053,7 +2064,9 @@ WHERE COALESCE(tenant_id, '') = COALESCE($1, '')
 			}
 		}
 	} else if fact.ConfirmationCount == 0 {
-		fact.ConfirmationCount = 1
+		if fact.Status == "confirmed" {
+			fact.ConfirmationCount = 1
+		}
 	}
 
 	_, err = s.db.ExecContext(ctx, `

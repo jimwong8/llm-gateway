@@ -47,6 +47,13 @@ func TestRolloutDashboardServiceListRows(t *testing.T) {
 	svc, store := newRolloutDashboardServiceForTest(t)
 	now := time.Now().UTC()
 
+	// Test isolation: clear stale rollouts left behind by sibling tests
+	// (e.g. TestRollbackService inserts "rollout_rollback_seam") so that
+	// this assertion-by-index test sees only its own seeded rows.
+	if _, err := store.DB().ExecContext(context.Background(), `DELETE FROM model_rollouts`); err != nil {
+		t.Fatalf("clear model_rollouts: %v", err)
+	}
+
 	seedRolloutForDashboardTest(t, store, "rollout_dashboard_1", "pv_dashboard_1", "prod", "running", 10, now.Add(-2*time.Minute))
 	seedRolloutForDashboardTest(t, store, "rollout_dashboard_2", "pv_dashboard_2", "prod", "promoted", 80, now.Add(-1*time.Minute))
 
