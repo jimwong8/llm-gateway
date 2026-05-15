@@ -146,7 +146,11 @@ func NewStore(dsn string, rc *cache.RedisCache) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Store{db: db, cache: rc}
+	s := &Store{db: db}
+	// Avoid typed-nil interface trap: only assign when concrete value is non-nil.
+	if rc != nil {
+		s.cache = rc
+	}
 	if err := s.ensureSchema(context.Background()); err != nil {
 		return nil, err
 	}

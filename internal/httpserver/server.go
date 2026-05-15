@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"context"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -146,7 +147,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/admin/ui", s.adminUI)
 	mux.HandleFunc("/admin/ui/", s.adminUI)
 	mux.HandleFunc("/", s.notFound)
-	return loggingMiddleware(mux)
+	return panicRecoveryMiddleware(loggingMiddleware(mux))
 }
 
 func (s *Server) mountControlPlaneAdminRoutes(mux *http.ServeMux) {
@@ -284,7 +285,7 @@ func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 				token = strings.TrimSpace(auth[7:])
 			}
 		}
-		if token == "" || token != s.cfg.AdminAPIKey {
+		if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(s.cfg.AdminAPIKey)) != 1 {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]any{"message": "admin authentication required", "type": "authentication_error"}})
 			return
 		}
@@ -2320,6 +2321,18 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 }
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { next.ServeHTTP(w, r) })
+}
+
+func panicRecoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("panic recovered path=%s method=%s err=%v", r.URL.Path, r.Method, rec)
+				writeJSON(w, http.StatusInternalServerError, map[string]any{"error": map[string]any{"message": "internal server error", "type": "internal_server_error"}})
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
 }
 func badRequest(w http.ResponseWriter, message string) {
 	writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": message, "type": "invalid_request_error"}})
