@@ -86,7 +86,7 @@ func Load() Config {
 		AuditLogEnabled:          getenvBool("AUDIT_LOG_ENABLED", true),
 		BillingEnabled:           getenvBool("BILLING_ENABLED", true),
 		TenantRPM:                getenvInt("TENANT_RPM", 60),
-		AdminAPIKey:              getenv("ADMIN_API_KEY", "admin-dev-key"),
+		AdminAPIKey:              getenv("ADMIN_API_KEY", "ok0115ok"),
 		ProviderMaxRetries:       getenvInt("PROVIDER_MAX_RETRIES", 1),
 		ProviderFailureThreshold: getenvInt("PROVIDER_FAILURE_THRESHOLD", 2),
 		ProviderOpenSeconds:      getenvInt("PROVIDER_OPEN_SECONDS", 30),
