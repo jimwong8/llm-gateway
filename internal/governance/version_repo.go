@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -32,7 +33,7 @@ type approvalSource struct {
 type VersionRepo struct {
 	db  *sql.DB
 	now func() time.Time
-	seq int64
+	seq atomic.Int64
 }
 
 func NewVersionRepo(store *Store) *VersionRepo {
@@ -477,6 +478,6 @@ LIMIT 1
 }
 
 func (r *VersionRepo) nextID(prefix string) string {
-	r.seq++
-	return fmt.Sprintf("%s_%d_%d", prefix, r.now().UTC().UnixNano(), r.seq)
+	n := r.seq.Add(1)
+	return fmt.Sprintf("%s_%d_%d", prefix, r.now().UTC().UnixNano(), n)
 }

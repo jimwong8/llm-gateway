@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -19,7 +20,7 @@ var (
 type RolloutRepo struct {
 	db  *sql.DB
 	now func() time.Time
-	seq int64
+	seq atomic.Int64
 }
 
 func NewRolloutRepo(store *Store) *RolloutRepo {
@@ -249,6 +250,6 @@ WHERE policy_version_id = $1
 }
 
 func (r *RolloutRepo) nextID(prefix string) string {
-	r.seq++
-	return fmt.Sprintf("%s_%d_%d", prefix, r.now().UTC().UnixNano(), r.seq)
+	n := r.seq.Add(1)
+	return fmt.Sprintf("%s_%d_%d", prefix, r.now().UTC().UnixNano(), n)
 }

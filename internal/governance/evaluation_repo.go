@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -19,7 +20,7 @@ var (
 type EvaluationRepo struct {
 	db  *sql.DB
 	now func() time.Time
-	seq int64
+	seq atomic.Int64
 }
 
 func NewEvaluationRepo(store *Store) *EvaluationRepo {
@@ -239,6 +240,6 @@ func (r *EvaluationRepo) UpdateRunStatus(ctx context.Context, runID string, stat
 }
 
 func (r *EvaluationRepo) nextID(prefix string) string {
-	r.seq++
-	return fmt.Sprintf("%s_%d_%d", prefix, r.now().UTC().UnixNano(), r.seq)
+	n := r.seq.Add(1)
+	return fmt.Sprintf("%s_%d_%d", prefix, r.now().UTC().UnixNano(), n)
 }

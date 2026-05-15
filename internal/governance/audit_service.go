@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -26,7 +27,7 @@ const (
 type GovernanceAuditRepo struct {
 	db  *sql.DB
 	now func() time.Time
-	seq int64
+	seq atomic.Int64
 }
 
 func NewGovernanceAuditRepo(store *Store) *GovernanceAuditRepo {
@@ -73,8 +74,8 @@ INSERT INTO governance_audit_logs (
 }
 
 func (r *GovernanceAuditRepo) nextID(prefix string) string {
-	r.seq++
-	return fmt.Sprintf("%s_%d_%d", prefix, r.now().UTC().UnixNano(), r.seq)
+	n := r.seq.Add(1)
+	return fmt.Sprintf("%s_%d_%d", prefix, r.now().UTC().UnixNano(), n)
 }
 
 // GovernanceAuditService 对治理事件提供薄封装。
