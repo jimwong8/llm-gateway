@@ -76,6 +76,9 @@ func BuildRuntimeApplyPayload(version controlplane.ConfigVersion) RuntimeApplyPa
 	if policyPayload, ok := buildPolicyModulePayload(version); ok {
 		modulePayloads["policy"] = policyPayload
 	}
+	if preprocessPayload, ok := buildPreprocessModulePayload(version); ok {
+		modulePayloads["preprocess"] = preprocessPayload
+	}
 	return RuntimeApplyPayload{
 		Module:         version.Module,
 		Scope:          version.Scope,
@@ -159,6 +162,21 @@ func buildQuotaModulePayload(version controlplane.ConfigVersion) (map[string]any
 		return nil, false
 	}
 	return map[string]any{"rpm": rpm}, true
+}
+
+func buildPreprocessModulePayload(version controlplane.ConfigVersion) (map[string]any, bool) {
+	if len(version.Config) == 0 {
+		return nil, false
+	}
+	raw := strings.TrimSpace(version.Config["preprocess"])
+	if raw == "" {
+		return nil, false
+	}
+	var out map[string]any
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return nil, false
+	}
+	return out, true
 }
 
 func buildReleasedPayloadRef(version controlplane.ConfigVersion) string {

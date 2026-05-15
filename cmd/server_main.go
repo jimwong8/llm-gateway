@@ -5,7 +5,10 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"llm-gateway/gateway/internal/admin"
@@ -177,7 +180,28 @@ func main() {
 			WithModelRuntimeHandler(modelRuntimeHandler)
 	}
 	log.Printf("starting %s on %s mock_mode=%v redis=%s audit=%v semantic=%v memory=%v billing=%v governance=%v", cfg.AppName, cfg.Addr(), cfg.MockMode, cfg.RedisAddr, auditStore != nil, semanticCache != nil, memoryStore != nil, billingStore != nil, governanceStore != nil)
-	if err := http.ListenAndServe(cfg.Addr(), srv.Handler()); err != nil {
+
+	httpServer := &http.Server{
+		Addr:    cfg.Addr(),
+		Handler: srv.Handler(),
+	}
+
+	go func() {
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
+		sig := <-sigChan
+		log.Printf("received signal %v, initiating graceful shutdown", sig)
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			log.Printf("graceful shutdown error: %v", err)
+		}
+	}()
+
+	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("server stopped: %v", err)
 	}
+	log.Printf("server exited gracefully")
 }

@@ -10,17 +10,25 @@ import (
 )
 
 type Event struct {
-	RequestID       string         `json:"request_id"`
-	RouteMode       string         `json:"route_mode"`
-	RouteTask       string         `json:"route_task"`
-	RouteModel      string         `json:"route_model"`
-	RouteProvider   string         `json:"route_provider"`
-	RouteReason     string         `json:"route_reason"`
-	RouteScore      string         `json:"route_score"`
-	CacheStatus     string         `json:"cache_status"`
-	FallbackUsed    bool           `json:"fallback_used"`
-	RequestPayload  map[string]any `json:"request_payload"`
-	ResponsePayload map[string]any `json:"response_payload"`
+	RequestID          string         `json:"request_id"`
+	RouteMode          string         `json:"route_mode"`
+	RouteTask          string         `json:"route_task"`
+	RouteModel         string         `json:"route_model"`
+	RouteProvider      string         `json:"route_provider"`
+	RouteReason        string         `json:"route_reason"`
+	RouteScore         string         `json:"route_score"`
+	RouteTier          string         `json:"route_tier"`
+	CacheStatus        string         `json:"cache_status"`
+	FallbackUsed       bool           `json:"fallback_used"`
+	PreprocessApplied  bool           `json:"preprocess_applied"`
+	CanonicalHash      string         `json:"canonical_hash"`
+	SummaryApplied     bool           `json:"summary_applied"`
+	SummaryRatio       float64        `json:"summary_ratio"`
+	TaskHint           string         `json:"task_hint"`
+	Complexity         string         `json:"complexity"`
+	ComplexityConfidence float64      `json:"complexity_confidence"`
+	RequestPayload     map[string]any `json:"request_payload"`
+	ResponsePayload    map[string]any `json:"response_payload"`
 }
 
 type BusinessAuditEvent struct {

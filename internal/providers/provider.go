@@ -8,19 +8,21 @@ type ChatMessage struct {
 }
 
 type ChatCompletionRequest struct {
-	Model           string        `json:"model"`
-	Messages        []ChatMessage `json:"messages"`
-	RouteMode       string        `json:"route_mode,omitempty"`
-	RouteChannel    string        `json:"route_channel,omitempty"`
-	RouteAbilities  []string      `json:"route_abilities,omitempty"`
-	RoutePolicyKey  string        `json:"route_policy_key,omitempty"`
-	PreferredModel  string        `json:"preferred_model,omitempty"`
-	CandidateModels []string      `json:"candidate_models,omitempty"`
-	TaskHint        string        `json:"task_hint,omitempty"`
-	SessionID       string        `json:"session_id,omitempty"`
-	UserID          string        `json:"user_id,omitempty"`
-	TenantID        string        `json:"tenant_id,omitempty"`
-	MaxTokens       int           `json:"max_tokens,omitempty"`
+	Model                  string        `json:"model"`
+	Messages               []ChatMessage `json:"messages"`
+	RouteMode              string        `json:"route_mode,omitempty"`
+	RouteChannel           string        `json:"route_channel,omitempty"`
+	RouteAbilities         []string      `json:"route_abilities,omitempty"`
+	RoutePolicyKey         string        `json:"route_policy_key,omitempty"`
+	PreferredModel         string        `json:"preferred_model,omitempty"`
+	CandidateModels        []string      `json:"candidate_models,omitempty"`
+	TaskHint               string        `json:"task_hint,omitempty"`
+	SessionID              string        `json:"session_id,omitempty"`
+	UserID                 string        `json:"user_id,omitempty"`
+	TenantID               string        `json:"tenant_id,omitempty"`
+	MaxTokens              int           `json:"max_tokens,omitempty"`
+	Complexity             string        `json:"complexity,omitempty"`
+	ComplexityConfidence   float64       `json:"complexity_confidence,omitempty"`
 }
 
 type ChatCompletionResponse struct {
