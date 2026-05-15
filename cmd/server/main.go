@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"log/slog"
 	"os"
 	"net/http"
@@ -31,6 +30,7 @@ func main() {
 
 	openaiProvider := providers.NewOpenAIProvider(cfg.OpenAIBaseURL, cfg.OpenAIAPIKey, cfg.OpenAITimeoutSec)
 	xstxProvider := providers.NewXSTXProvider(cfg.XSTXBaseURL, cfg.XSTXAPIKey, cfg.XSTXTimeoutSec)
+	anthropicProvider := providers.NewAnthropicProvider(cfg.AnthropicBaseURL, cfg.AnthropicAPIKey, cfg.AnthropicTimeoutSec)
 	defaultMock := providers.NewMockProvider(cfg.DefaultProvider, cfg.DefaultModel)
 	codeMock := providers.NewMockProvider("mock-code", "deepseek-coder")
 	analysisMock := providers.NewMockProvider("mock-analysis", "claude-sonnet")
@@ -41,7 +41,7 @@ func main() {
 		fallback = openaiProvider
 	}
 
-	registry := providers.NewRegistry(cfg, fallback, defaultMock, codeMock, analysisMock, failMock, openaiProvider, xstxProvider)
+	registry := providers.NewRegistry(cfg, fallback, defaultMock, codeMock, analysisMock, failMock, openaiProvider, xstxProvider, anthropicProvider)
 	redisCache := cache.NewRedis(cfg.RedisAddr, time.Duration(cfg.L1CacheTTLSeconds)*time.Second)
 	modelRouter := router.New(cfg.DefaultProvider, cfg.DefaultModel)
 	if err := modelRouter.BootstrapFromFile(cfg.RouterBootstrapPath); err != nil {
@@ -125,6 +125,6 @@ func main() {
 		WithControlPlane(controlPlaneService, controlPlaneAudit, runtimePublisher, runtimeManager)
 	slog.Info("starting", "app", cfg.AppName, "addr", cfg.Addr(), "mock", cfg.MockMode, "redis", cfg.RedisAddr, "audit", auditStore != nil, "semantic", semanticCache != nil, "memory", memoryStore != nil, "billing", billingStore != nil)
 	if err := http.ListenAndServe(cfg.Addr(), srv.Handler()); err != nil {
-		log.Fatalf("server stopped: %v", err)
+		slog.Error("server stopped: %v", err)
 	}
 }
