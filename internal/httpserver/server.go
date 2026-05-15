@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strconv"
@@ -1103,7 +1103,7 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	req, sessionSource := normalizeRequestIdentity(req, r)
 	w.Header().Set(sessionIDHeader, req.SessionID)
-	log.Printf("session_id resolved: source=%s session_id=%s", sessionSource, req.SessionID)
+	slog.Info("session_id resolved", "source", sessionSource, "session_id", req.SessionID)
 
 	if s.policy != nil && req.TenantID != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -1113,7 +1113,7 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		role, roleErr := s.policy.RoleFor(ctx, req.TenantID, currentSubject(r))
 		cancel()
 		if err != nil {
-			log.Printf("policy lookup failed: %v", err)
+			slog.Warn("policy lookup failed: %v", "err", err)
 		} else if len(allowedModels) > 0 {
 			req.CandidateModels = intersectCandidateModels(req.CandidateModels, allowedModels)
 			if req.PreferredModel != "" && !containsFold(allowedModels, req.PreferredModel) {
@@ -1177,7 +1177,7 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	if s.quota != nil && req.TenantID != "" {
 		allowed, used, err := s.quota.Allow(r.Context(), req.TenantID)
 		if err != nil {
-			log.Printf("quota check failed: %v", err)
+			slog.Warn("quota check failed: %v", "err", err)
 		} else {
 			w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%d", s.quota.RPM()))
 			w.Header().Set("X-RateLimit-Used", fmt.Sprintf("%d", used))
@@ -1198,7 +1198,7 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		activeFacts, err := s.memory.GetProjectFacts(ctx, req.TenantID, req.UserID)
 		cancel()
 		if err != nil {
-			log.Printf("project facts load failed: %v", err)
+			slog.Warn("project facts load failed: %v", "err", err)
 		} else if len(activeFacts) > 0 {
 			activeFacts = rerankProjectFactsForRecall(activeFacts, time.Now().UTC())
 			if factBlock := memory.FormatProjectFacts(activeFacts); factBlock != "" {
@@ -1210,7 +1210,7 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		prefs, err := s.memory.GetUserPreferences(ctx, req.TenantID, req.UserID)
 		cancel()
 		if err != nil {
-			log.Printf("user preferences load failed: %v", err)
+			slog.Warn("user preferences load failed: %v", "err", err)
 		} else if len(prefs) > 0 {
 			prefs = rerankUserPreferencesForRecall(prefs, time.Now().UTC())
 			if prefBlock := memory.FormatUserPreferences(prefs); prefBlock != "" {
@@ -1222,7 +1222,7 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		summary, err := s.memory.GetSessionSummary(ctx, req.TenantID, req.UserID, req.SessionID)
 		cancel()
 		if err != nil {
-			log.Printf("session summary load failed: %v", err)
+			slog.Warn("session summary load failed: %v", "err", err)
 		} else if sessionSummaryHasContent(summary) && remainingDynamicBudget > 0 {
 			summaryBudget := minInt(1200, remainingDynamicBudget)
 			summaryBlock := truncateRunes(memory.FormatSessionSummary(summary), summaryBudget)
@@ -1237,7 +1237,7 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		memories, err := s.memory.Recent(ctx, req.TenantID, req.UserID, req.SessionID, recentLimit)
 		cancel()
 		if err != nil {
-			log.Printf("memory load failed: %v", err)
+			slog.Warn("memory load failed: %v", "err", err)
 		} else if len(memories) > 0 && remainingDynamicBudget > 0 {
 			recentBudget := minInt(1000, remainingDynamicBudget)
 			recentBlock, injectedCount := formatRecentMemoryBlock(memories, 180, recentBudget)
@@ -1319,14 +1319,14 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err != nil {
-			log.Printf("redis get failed: %v", err)
+			slog.Warn("redis get failed: %v", "err", err)
 		}
 	}
 
 	if s.semantic != nil {
 		hit, err := s.semantic.Search(r.Context(), req)
 		if err != nil {
-			log.Printf("semantic search failed: %v", err)
+			slog.Warn("semantic search failed: %v", "err", err)
 		} else if hit != nil {
 			cacheStatus = "SEMANTIC_HIT"
 			w.Header().Set("X-Cache", cacheStatus)
@@ -1366,7 +1366,7 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		key, keyErr := s.cache.BuildKey(req)
 		if keyErr == nil {
 			if err := s.cache.Set(r.Context(), key, &resp); err != nil {
-				log.Printf("redis set failed: %v", err)
+				slog.Warn("redis set failed: %v", "err", err)
 			}
 		}
 	}
@@ -1375,7 +1375,7 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 			if err := s.semantic.Upsert(ctx, req, resp); err != nil {
-				log.Printf("semantic upsert failed: %v", err)
+				slog.Warn("semantic upsert failed: %v", "err", err)
 			}
 		}(req, resp)
 	}
@@ -1388,22 +1388,22 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 				writeReq.Messages = append(writeReq.Messages, providers.ChatMessage{Role: "assistant", Content: resp.Choices[0].Message.Content})
 			}
 			if err := s.memory.AppendFromRequest(ctx, writeReq); err != nil {
-				log.Printf("memory append failed: %v", err)
+				slog.Warn("memory append failed: %v", "err", err)
 				return
 			}
 			if err := s.memory.RefreshSessionSummary(ctx, req.TenantID, req.UserID, req.SessionID); err != nil {
-				log.Printf("session summary refresh failed: %v", err)
+				slog.Warn("session summary refresh failed: %v", "err", err)
 			}
 			prefs := extractExplicitUserPreferences(writeReq)
 			for _, pref := range prefs {
 				if err := s.memory.UpsertUserPreference(ctx, pref); err != nil {
-					log.Printf("user preference upsert failed: key=%s err=%v", pref.Key, err)
+					slog.Warn("user preference upsert failed", "key", pref.Key, "err", err)
 				}
 			}
 			facts := extractConfirmedProjectFacts(writeReq)
 			for _, fact := range facts {
 				if err := s.memory.UpsertProjectFact(ctx, fact); err != nil {
-					log.Printf("project fact upsert failed: key=%s err=%v", fact.Key, err)
+					slog.Warn("project fact upsert failed", "key", fact.Key, "err", err)
 				}
 			}
 		}(req, resp)
@@ -1433,13 +1433,13 @@ func (s *Server) injectAssetContext(ctx context.Context, req providers.ChatCompl
 		Limit:       1,
 	})
 	if err != nil {
-		log.Printf("asset lookup failed: %v", err)
+		slog.Warn("asset lookup failed: %v", "err", err)
 		return req, nil
 	}
 	if len(assets) == 0 {
 		assets, err = s.admin.ListAssets(ctx, admin.AssetFilter{TenantID: req.TenantID, TaskType: strings.TrimSpace(taskType), SourceModel: strings.TrimSpace(sourceModel), Limit: 1})
 		if err != nil {
-			log.Printf("asset fallback lookup failed: %v", err)
+			slog.Warn("asset fallback lookup failed: %v", "err", err)
 			return req, nil
 		}
 	}
@@ -1469,7 +1469,7 @@ func (s *Server) writeAssetReuseAuditAsync(requestID string, req providers.ChatC
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		if err := s.admin.RecordReuse(ctx, req.TenantID, assetID, requestID, routeModel, routeTask, hitSource); err != nil {
-			log.Printf("asset reuse audit failed: %v", err)
+			slog.Warn("asset reuse audit failed: %v", "err", err)
 		}
 	}()
 }
@@ -1501,7 +1501,7 @@ func (s *Server) writeAssetAsync(requestID string, req providers.ChatCompletionR
 			SourceRequestID: requestID,
 		})
 		if err != nil {
-			log.Printf("asset write failed: %v", err)
+			slog.Warn("asset write failed: %v", "err", err)
 		}
 	}()
 }
@@ -1647,7 +1647,7 @@ func (s *Server) buildLightweightHistoryRecallMessage(req providers.ChatCompleti
 
 	results, err := s.memory.SearchMessages(ctx, req.TenantID, query, searchLimit, 0)
 	if err != nil {
-		log.Printf("memory recall search failed: %v", err)
+		slog.Warn("memory recall search failed: %v", "err", err)
 		return nil, 0, 0
 	}
 	if len(results) == 0 {
@@ -1671,7 +1671,7 @@ func (s *Server) buildLightweightHistoryRecallMessage(req providers.ChatCompleti
 
 		around, aroundErr := s.memory.GetMessagesAroundAnchor(ctx, result.SessionID, result.Seq, messagesPerFragment)
 		if aroundErr != nil {
-			log.Printf("memory recall around-anchor failed: session_id=%s seq=%d err=%v", result.SessionID, result.Seq, aroundErr)
+			slog.Warn("memory recall around-anchor failed", "session_id", result.SessionID, "seq", result.Seq, "err", aroundErr)
 			continue
 		}
 		if len(around) == 0 {
@@ -2238,7 +2238,7 @@ func (s *Server) writeAuditAsync(event audit.Event) {
 		child, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		if err := s.audit.Insert(child, event); err != nil {
-			log.Printf("audit insert failed: %v", err)
+			slog.Warn("audit insert failed: %v", "err", err)
 		}
 	}()
 }
@@ -2254,7 +2254,7 @@ func (s *Server) writeBillingAsync(event billing.UsageEvent) {
 			event.EstimatedCost = estimateCost(event.TotalTokens)
 		}
 		if err := s.billing.Insert(child, event); err != nil {
-			log.Printf("billing insert failed: %v", err)
+			slog.Warn("billing insert failed: %v", "err", err)
 		}
 	}()
 }
@@ -2327,7 +2327,7 @@ func panicRecoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				log.Printf("panic recovered path=%s method=%s err=%v", r.URL.Path, r.Method, rec)
+				slog.Warn("panic recovered", "path", r.URL.Path, "method", r.Method, "err", rec)
 				writeJSON(w, http.StatusInternalServerError, map[string]any{"error": map[string]any{"message": "internal server error", "type": "internal_server_error"}})
 			}
 		}()
