@@ -32,7 +32,10 @@ type Config struct {
 	OpenAITimeoutSec         int
 	XSTXBaseURL              string
 	XSTXAPIKey               string
-	XSTXTimeoutSec           int
+	XSTXTimeoutSec         int
+	AnthropicBaseURL        string
+	AnthropicAPIKey         string
+	AnthropicTimeoutSec     int
 	AuditLogEnabled          bool
 	BillingEnabled           bool
 	TenantRPM                int
@@ -76,7 +79,10 @@ func Load() Config {
 		OpenAITimeoutSec:         getenvInt("OPENAI_TIMEOUT_SEC", 120),
 		XSTXBaseURL:              strings.TrimRight(getenv("XSTX_BASE_URL", "https://api.xstx.info/v1"), "/"),
 		XSTXAPIKey:               getenv("XSTX_API_KEY", ""),
-		XSTXTimeoutSec:           getenvInt("XSTX_TIMEOUT_SEC", 120),
+		XSTXTimeoutSec:         getenvInt("XSTX_TIMEOUT_SEC", 120),
+		AnthropicBaseURL:    strings.TrimRight(getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com/v1"), "/"),
+		AnthropicAPIKey:     getenv("ANTHROPIC_API_KEY", ""),
+		AnthropicTimeoutSec: getenvInt("ANTHROPIC_TIMEOUT_SEC", 120),
 		AuditLogEnabled:          getenvBool("AUDIT_LOG_ENABLED", true),
 		BillingEnabled:           getenvBool("BILLING_ENABLED", true),
 		TenantRPM:                getenvInt("TENANT_RPM", 60),
