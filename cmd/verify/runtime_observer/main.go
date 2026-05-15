@@ -31,7 +31,7 @@ func main() {
 
 	environment := "verify-runtime-observer"
 	policyVersionID := "pv_verify_runtime_observer"
-	requestID := "req_verify_runtime_observer"
+	requestID := fmt.Sprintf("req_verify_runtime_observer_%d", time.Now().UnixNano())
 	eventID := "event_verify_runtime_observer"
 	baseTime := time.Date(2026, 4, 19, 12, 0, 0, 0, time.UTC)
 
@@ -41,7 +41,7 @@ func main() {
 
 	resolver := governance.NewRuntimeResolver(store)
 	_, err = resolver.Resolve(context.Background(), governance.ResolveInput{
-		RequestID:   "req_verify_runtime_observer_cache_prime",
+		RequestID:   fmt.Sprintf("req_verify_runtime_observer_cache_prime_%d", time.Now().UnixNano()),
 		Environment: environment,
 		AgentID:     "agent-verify",
 		TenantID:    "tenant-verify",
