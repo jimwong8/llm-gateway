@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+env:
+  POSTGRES_DSN: "postgres://postgres:postgres@localhost:5432/llmgateway_ci?sslmode=disable"
+  GOVERNANCE_TEST_POSTGRES_DSN: "postgres://postgres:postgres@localhost:5432/llmgateway_ci?sslmode=disable"
+  MOCK_MODE: "true"
+  ADMIN_API_KEY: "admin-ci-key"
+  REDIS_ADDR: ""
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go-build:
+    name: Go Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - run: go build ./...
+      - run: go vet ./...
+
+  web-admin:
+    name: Web Admin Build + Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web/admin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: web/admin/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+  integration:
+    name: Integration Tests (PG)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: llmgateway_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Run migrations
+        env:
+          PGPASSWORD: postgres
+        run: |
+          for f in internal/db/migrations/*.sql; do
+            echo "Running $f ..."
+            psql -h localhost -U postgres -d llmgateway_ci -f "$f"
+          done
+
+      - name: Run go test
+        run: go test ./... -v -count=1 2>&1 | tail -80
+
+      - name: Run smoke_plus
+        run: go run ./cmd/verify/smoke_plus 2>&1
