@@ -41,6 +41,12 @@ type Config struct {
 	ProviderFailureThreshold int
 	ProviderOpenSeconds      int
 	ProviderHealthTimeoutSec int
+	ModelGovernanceEnabled   bool
+	ModelGovernanceCacheTTLSeconds int
+	ModelGovernanceRolloutMaxErrorRate float64
+	ModelGovernanceRolloutMaxP95MS int
+	ModelGovernanceRolloutMaxFallbackRate float64
+	ModelGovernanceMinSampleCount int
 }
 
 func Load() Config {
@@ -79,6 +85,12 @@ func Load() Config {
 		ProviderFailureThreshold: getenvInt("PROVIDER_FAILURE_THRESHOLD", 2),
 		ProviderOpenSeconds:      getenvInt("PROVIDER_OPEN_SECONDS", 30),
 		ProviderHealthTimeoutSec: getenvInt("PROVIDER_HEALTH_TIMEOUT_SEC", 5),
+		ModelGovernanceEnabled:   getenvBool("MODEL_GOVERNANCE_ENABLED", true),
+		ModelGovernanceCacheTTLSeconds: getenvInt("MODEL_GOVERNANCE_CACHE_TTL_SECONDS", 60),
+		ModelGovernanceRolloutMaxErrorRate: getenvFloat("MODEL_GOVERNANCE_ROLLOUT_MAX_ERROR_RATE", 0.02),
+		ModelGovernanceRolloutMaxP95MS: getenvInt("MODEL_GOVERNANCE_ROLLOUT_MAX_P95_MS", 1200),
+		ModelGovernanceRolloutMaxFallbackRate: getenvFloat("MODEL_GOVERNANCE_ROLLOUT_MAX_FALLBACK_RATE", 0.15),
+		ModelGovernanceMinSampleCount: getenvInt("MODEL_GOVERNANCE_MIN_SAMPLE_COUNT", 200),
 	}
 	return cfg
 }

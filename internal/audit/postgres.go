@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+
 	_ "github.com/lib/pq"
 )
 
@@ -20,6 +21,14 @@ type Event struct {
 	FallbackUsed    bool           `json:"fallback_used"`
 	RequestPayload  map[string]any `json:"request_payload"`
 	ResponsePayload map[string]any `json:"response_payload"`
+}
+
+type BusinessAuditEvent struct {
+	TenantID   string `json:"tenant_id"`
+	Action     string `json:"action"`
+	TargetType string `json:"target_type"`
+	TargetID   string `json:"target_id"`
+	ActorID    string `json:"actor_id"`
 }
 
 type Store struct{ db *sql.DB }
@@ -55,6 +64,18 @@ CREATE TABLE IF NOT EXISTS request_audit_logs (
 );
 CREATE INDEX IF NOT EXISTS idx_request_audit_logs_created_at ON request_audit_logs (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_request_audit_logs_request_id ON request_audit_logs (request_id);
+
+CREATE TABLE IF NOT EXISTS business_audit_logs (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id TEXT,
+    action TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id TEXT,
+    actor_id TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_business_audit_logs_tenant_created_at ON business_audit_logs (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_business_audit_logs_target ON business_audit_logs (target_type, target_id);
 `)
 	return err
 }
@@ -73,6 +94,15 @@ INSERT INTO request_audit_logs (
  request_id, route_mode, route_task, route_model, route_provider, route_reason, route_score, cache_status, fallback_used, request_payload, response_payload
 ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 `, event.RequestID, event.RouteMode, event.RouteTask, event.RouteModel, event.RouteProvider, event.RouteReason, event.RouteScore, event.CacheStatus, event.FallbackUsed, req, resp)
+	return err
+}
+
+func (s *Store) InsertBusinessAudit(ctx context.Context, event BusinessAuditEvent) error {
+	_, err := s.db.ExecContext(ctx, `
+INSERT INTO business_audit_logs (
+ tenant_id, action, target_type, target_id, actor_id
+) VALUES ($1,$2,$3,$4,$5)
+`, event.TenantID, event.Action, event.TargetType, event.TargetID, event.ActorID)
 	return err
 }
 

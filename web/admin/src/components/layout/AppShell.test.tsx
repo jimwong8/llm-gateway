@@ -24,6 +24,14 @@ describe('AppShell', () => {
               </AppShell>
             }
           />
+          <Route
+            path="/runtime-observer"
+            element={
+              <AppShell title="Runtime Observer" description="观察运行时策略状态。">
+                <div>Runtime Observer Content</div>
+              </AppShell>
+            }
+          />
         </Routes>
       </MemoryRouter>,
     )
@@ -62,5 +70,15 @@ describe('AppShell', () => {
 
     expect(await screen.findByRole('heading', { name: 'Config Center', level: 1 })).toBeInTheDocument()
     expect(screen.getByText('Config Center Content')).toBeInTheDocument()
+  })
+
+  it('includes runtime observer navigation entry', async () => {
+    const user = userEvent.setup()
+    renderShell()
+
+    await user.click(screen.getAllByRole('button', { name: 'Runtime Observer' })[0])
+
+    expect(await screen.findByRole('heading', { name: 'Runtime Observer', level: 1 })).toBeInTheDocument()
+    expect(screen.getByText('Runtime Observer Content')).toBeInTheDocument()
   })
 })

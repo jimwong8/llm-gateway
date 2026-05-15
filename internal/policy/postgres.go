@@ -223,7 +223,7 @@ func normalizeRoleBindings(bindings []TenantRoleBinding) map[string]string {
 		if subject == "" {
 			continue
 		}
-		if role != "admin" && role != "operator" && role != "readonly" {
+		if role != "admin" && role != "operator" && role != "approver" && role != "readonly" {
 			continue
 		}
 		out[subject] = role
@@ -365,7 +365,7 @@ DO UPDATE SET enabled = EXCLUDED.enabled
 
 func (s *Store) UpsertRole(ctx context.Context, tenantID, subject, role string) error {
 	role = strings.TrimSpace(strings.ToLower(role))
-	if role != "admin" && role != "operator" && role != "readonly" {
+	if role != "admin" && role != "operator" && role != "approver" && role != "readonly" {
 		return errors.New("invalid role")
 	}
 	_, err := s.db.ExecContext(ctx, `

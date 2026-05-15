@@ -53,6 +53,45 @@ func TestPolicyEngineAdminRoleHelpers(t *testing.T) {
 	}
 }
 
+func TestPolicyEngineGovernanceRoleHelpers(t *testing.T) {
+	if !roleAllowsGovernanceAction("viewer", "/admin/governance/policy-versions", http.MethodGet) {
+		t.Fatal("viewer should allow governance read")
+	}
+	if roleAllowsGovernanceAction("viewer", "/admin/governance/approvals", http.MethodPost) {
+		t.Fatal("viewer should not allow governance write")
+	}
+
+	if !roleAllowsGovernanceAction("operator", "/admin/governance/recommendations", http.MethodPost) {
+		t.Fatal("operator should allow recommendations write")
+	}
+	if roleAllowsGovernanceAction("operator", "/admin/governance/approvals", http.MethodPost) {
+		t.Fatal("operator should not allow approvals write")
+	}
+	if roleAllowsGovernanceAction("operator", "/admin/governance/recommendations-backup", http.MethodPost) {
+		t.Fatal("operator should not allow prefixed recommendation-like path")
+	}
+
+	if !roleAllowsGovernanceAction("approver", "/admin/governance/approvals", http.MethodPost) {
+		t.Fatal("approver should allow approvals write")
+	}
+	if !roleAllowsGovernanceAction("approver", "/admin/governance/rollouts/ro-1/rollback", http.MethodPost) {
+		t.Fatal("approver should allow rollout subresource write")
+	}
+	if roleAllowsGovernanceAction("approver", "/admin/governance/drifts", http.MethodPost) {
+		t.Fatal("approver should not allow drifts write")
+	}
+	if roleAllowsGovernanceAction("approver", "/admin/governance/rollbacks-archive", http.MethodPost) {
+		t.Fatal("approver should not allow prefixed rollback-like path")
+	}
+
+	if !roleAllowsAdminPath("approver", "/admin/governance/rollouts", http.MethodPost) {
+		t.Fatal("approver should allow governance rollout write through admin path")
+	}
+	if roleAllowsAdminPath("viewer", "/admin/health", http.MethodPost) {
+		t.Fatal("viewer should not allow non-governance admin write")
+	}
+}
+
 func TestPolicyEngineSensitiveHelper(t *testing.T) {
 	req := providers.ChatCompletionRequest{Messages: []providers.ChatMessage{{Role: "user", Content: "this contains secret material"}}}
 	rules := []policy.SensitiveRule{{TenantID: "t1", Pattern: "secret", Action: "block", Enabled: true}}

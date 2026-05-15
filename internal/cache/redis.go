@@ -14,9 +14,26 @@ import (
 	"llm-gateway/gateway/internal/providers"
 )
 
+const (
+	conversationMetaKeyPattern   = "conv:%s:meta"
+	conversationRecentKeyPattern = "conv:%s:recent"
+	conversationCacheTTL         = 24 * time.Hour
+)
+
 type RedisCache struct {
 	client *redis.Client
 	ttl    time.Duration
+}
+
+type ConversationMeta struct {
+	LastSeq   int64     `json:"last_seq"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type RecentMessage struct {
+	Seq     int64  `json:"seq"`
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
 
 func NewRedis(addr string, ttl time.Duration) *RedisCache {
@@ -65,6 +82,127 @@ func (c *RedisCache) Set(ctx context.Context, key string, resp *providers.ChatCo
 		return err
 	}
 	return c.client.Set(ctx, key, raw, c.ttl).Err()
+}
+
+func (c *RedisCache) CacheConversationMeta(ctx context.Context, conversationID string, meta ConversationMeta) error {
+	convID := strings.TrimSpace(conversationID)
+	if convID == "" {
+		return fmt.Errorf("conversationID is required")
+	}
+	pipe := c.client.TxPipeline()
+	metaKey := c.conversationMetaKey(convID)
+
+	pipe.HSet(ctx, metaKey,
+		"last_seq", meta.LastSeq,
+		"updated_at", meta.UpdatedAt.UTC().Format(time.RFC3339Nano),
+	)
+	pipe.Expire(ctx, metaKey, conversationCacheTTL)
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+func (c *RedisCache) GetConversationMeta(ctx context.Context, conversationID string) (*ConversationMeta, bool, error) {
+	convID := strings.TrimSpace(conversationID)
+	if convID == "" {
+		return nil, false, fmt.Errorf("conversationID is required")
+	}
+	metaKey := c.conversationMetaKey(convID)
+	values, err := c.client.HGetAll(ctx, metaKey).Result()
+	if err != nil {
+		return nil, false, err
+	}
+	if len(values) == 0 {
+		return nil, false, nil
+	}
+
+	lastSeq, err := c.client.HGet(ctx, metaKey, "last_seq").Int64()
+	if err != nil {
+		return nil, false, err
+	}
+	updatedAtRaw, ok := values["updated_at"]
+	if !ok {
+		return nil, false, fmt.Errorf("missing updated_at in meta")
+	}
+	updatedAt, err := time.Parse(time.RFC3339Nano, updatedAtRaw)
+	if err != nil {
+		return nil, false, fmt.Errorf("parse updated_at: %w", err)
+	}
+
+	return &ConversationMeta{
+		LastSeq:   lastSeq,
+		UpdatedAt: updatedAt,
+	}, true, nil
+}
+
+func (c *RedisCache) CacheRecentMessages(ctx context.Context, conversationID string, messages []RecentMessage, maxItems int64) error {
+	convID := strings.TrimSpace(conversationID)
+	if convID == "" {
+		return fmt.Errorf("conversationID is required")
+	}
+	if len(messages) == 0 {
+		return nil
+	}
+	if maxItems <= 0 {
+		maxItems = 50
+	}
+	recentKey := c.conversationRecentKey(convID)
+	pipe := c.client.TxPipeline()
+
+	for _, msg := range messages {
+		raw, err := json.Marshal(msg)
+		if err != nil {
+			return fmt.Errorf("marshal recent message: %w", err)
+		}
+		pipe.RPush(ctx, recentKey, raw)
+	}
+	pipe.LTrim(ctx, recentKey, -maxItems, -1)
+	pipe.Expire(ctx, recentKey, conversationCacheTTL)
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+func (c *RedisCache) GetRecentMessages(ctx context.Context, conversationID string, limit int64) ([]RecentMessage, error) {
+	convID := strings.TrimSpace(conversationID)
+	if convID == "" {
+		return nil, fmt.Errorf("conversationID is required")
+	}
+	if limit <= 0 {
+		return []RecentMessage{}, nil
+	}
+	recentKey := c.conversationRecentKey(convID)
+	rawItems, err := c.client.LRange(ctx, recentKey, -limit, -1).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return []RecentMessage{}, nil
+		}
+		return nil, err
+	}
+
+	items := make([]RecentMessage, 0, len(rawItems))
+	for _, raw := range rawItems {
+		var item RecentMessage
+		if err := json.Unmarshal([]byte(raw), &item); err != nil {
+			return nil, fmt.Errorf("unmarshal recent message: %w", err)
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+func (c *RedisCache) InvalidateConversationCache(ctx context.Context, conversationID string) error {
+	convID := strings.TrimSpace(conversationID)
+	if convID == "" {
+		return fmt.Errorf("conversationID is required")
+	}
+	return c.client.Del(ctx, c.conversationMetaKey(convID), c.conversationRecentKey(convID)).Err()
+}
+
+func (c *RedisCache) conversationMetaKey(conversationID string) string {
+	return fmt.Sprintf(conversationMetaKeyPattern, conversationID)
+}
+
+func (c *RedisCache) conversationRecentKey(conversationID string) string {
+	return fmt.Sprintf(conversationRecentKeyPattern, conversationID)
 }
 
 type normalizedRequest struct {

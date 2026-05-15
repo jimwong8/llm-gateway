@@ -15,6 +15,7 @@ func main() {
 	commands := []smokeCommand{
 		{name: "controlplane_runtime", args: []string{"run", "./cmd/verify/controlplane_runtime"}},
 		{name: "chat_policy", args: []string{"run", "./cmd/verify/chat_policy"}},
+		{name: "model_governance", args: []string{"run", "./cmd/verify/model_governance"}},
 	}
 
 	for _, command := range commands {
@@ -24,11 +25,11 @@ func main() {
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
 			fmt.Println("[FAIL]", command.name)
-			fmt.Printf("verify result: FAIL smoke(controlplane_runtime,chat_policy) failed_at=%s\n", command.name)
+			fmt.Printf("verify result: FAIL smoke(controlplane_runtime,chat_policy,model_governance) failed_at=%s\n", command.name)
 			os.Exit(1)
 		}
 		fmt.Println("[PASS]", command.name)
 	}
 
-	fmt.Println("verify result: PASS smoke(controlplane_runtime,chat_policy)")
+	fmt.Println("verify result: PASS smoke(controlplane_runtime,chat_policy,model_governance)")
 }

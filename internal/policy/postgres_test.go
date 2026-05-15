@@ -116,6 +116,7 @@ func TestSetRoleBindingsOverlayAndRoleForReadBack(t *testing.T) {
 		{Subject: "alice", Role: "admin"},
 		{Subject: "alice", Role: "operator"},
 		{Subject: "bob", Role: "readonly"},
+		{Subject: "eve", Role: "approver"},
 		{Subject: " ", Role: "admin"},
 		{Subject: "charlie", Role: "invalid"},
 	})
@@ -128,12 +129,12 @@ func TestSetRoleBindingsOverlayAndRoleForReadBack(t *testing.T) {
 		t.Fatalf("expected normalized/last-write role for alice=operator, got %q", role)
 	}
 
-	role, err = s.RoleFor(context.Background(), "tenant-a", "bob")
+	role, err = s.RoleFor(context.Background(), "tenant-a", "eve")
 	if err != nil {
 		t.Fatalf("RoleFor returned error: %v", err)
 	}
-	if role != "readonly" {
-		t.Fatalf("expected bob readonly role, got %q", role)
+	if role != "approver" {
+		t.Fatalf("expected eve approver role, got %q", role)
 	}
 }
 

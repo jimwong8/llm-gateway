@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"context"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -54,6 +55,9 @@ type Server struct {
 	runtimeManager                *runtime.Manager
 	runtimePublisher              *runtime.Publisher
 	controlPlaneAdmin             *AdminHandler
+	modelGovernanceAdmin          *ModelGovernanceHandler
+	modelRuntime                  *ModelRuntimeHandler
+	memoryAdmin                   *MemoryAdminHandler
 }
 
 func New(cfg config.Config, registry *providers.Registry, redisCache cache.L1Cache, rt *router.Router, auditStore *audit.Store, semanticCache semantic.L2Cache, memoryStore *memory.Store, billingStore *billing.Store, limiter *quota.Limiter, adminStore *admin.Store, policyStore *policy.Store) *Server {
@@ -100,6 +104,21 @@ func (s *Server) WithControlPlane(service *controlplane.Service, auditor *audit.
 	return s
 }
 
+func (s *Server) WithModelGovernanceHandler(handler *ModelGovernanceHandler) *Server {
+	s.modelGovernanceAdmin = handler
+	return s
+}
+
+func (s *Server) WithModelRuntimeHandler(handler *ModelRuntimeHandler) *Server {
+	s.modelRuntime = handler
+	return s
+}
+
+func (s *Server) WithMemoryAdminHandler(handler *MemoryAdminHandler) *Server {
+	s.memoryAdmin = handler
+	return s
+}
+
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.healthz)
@@ -122,10 +141,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/admin/assets/rollback", s.requireAdmin(s.adminAssetRollback))
 	mux.HandleFunc("/admin/control-plane/compensations", s.requireAdmin(s.adminCompensations))
 	s.mountControlPlaneAdminRoutes(mux)
+	s.mountModelGovernanceRoutes(mux)
+	s.mountModelRuntimeRoutes(mux)
+	s.mountMemoryAdminRoutes(mux)
 	mux.HandleFunc("/admin/ui", s.adminUI)
 	mux.HandleFunc("/admin/ui/", s.adminUI)
 	mux.HandleFunc("/", s.notFound)
-	return loggingMiddleware(mux)
+	return panicRecoveryMiddleware(loggingMiddleware(mux))
 }
 
 func (s *Server) mountControlPlaneAdminRoutes(mux *http.ServeMux) {
@@ -144,6 +166,45 @@ func (s *Server) mountControlPlaneAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/config-versions/", s.requireAdmin(s.controlPlaneRoute))
 }
 
+func (s *Server) mountModelGovernanceRoutes(mux *http.ServeMux) {
+	if s.modelGovernanceAdmin == nil {
+		return
+	}
+	mux.HandleFunc("/admin/governance/recommendations", s.requireAdmin(s.modelGovernanceRoute))
+	mux.HandleFunc("/admin/governance/approvals", s.requireAdmin(s.modelGovernanceRoute))
+	mux.HandleFunc("/admin/governance/policy-versions", s.requireAdmin(s.modelGovernanceRoute))
+	mux.HandleFunc("/admin/governance/policy-versions/", s.requireAdmin(s.modelGovernanceRoute))
+	mux.HandleFunc("/admin/governance/rollouts", s.requireAdmin(s.modelGovernanceRoute))
+	mux.HandleFunc("/admin/governance/rollouts/", s.requireAdmin(s.modelGovernanceRoute))
+	mux.HandleFunc("/admin/governance/dashboard/rollouts", s.requireAdmin(s.modelGovernanceRoute))
+	mux.HandleFunc("/admin/governance/rollbacks", s.requireAdmin(s.modelGovernanceRoute))
+	mux.HandleFunc("/admin/governance/rollbacks/", s.requireAdmin(s.modelGovernanceRoute))
+	mux.HandleFunc("/admin/governance/evaluations", s.requireAdmin(s.modelGovernanceRoute))
+	mux.HandleFunc("/admin/governance/evaluations/", s.requireAdmin(s.modelGovernanceRoute))
+	mux.HandleFunc("/admin/governance/drifts", s.requireAdmin(s.modelGovernanceRoute))
+	mux.HandleFunc("/admin/governance/drifts/", s.requireAdmin(s.modelGovernanceRoute))
+}
+
+func (s *Server) mountModelRuntimeRoutes(mux *http.ServeMux) {
+	if s.modelRuntime == nil {
+		return
+	}
+	mux.HandleFunc("/v1/runtime/resolve", s.modelRuntimeResolveRoute)
+	mux.HandleFunc("/admin/governance/runtime/resolve", s.requireAdmin(s.modelRuntimeResolveRoute))
+	mux.HandleFunc("/admin/governance/runtime-decisions", s.requireAdmin(s.modelRuntimeResolveRoute))
+	mux.HandleFunc("/admin/governance/distribution-events", s.requireAdmin(s.modelRuntimeResolveRoute))
+	mux.HandleFunc("/admin/governance/runtime-observer", s.requireAdmin(s.modelRuntimeResolveRoute))
+}
+
+func (s *Server) mountMemoryAdminRoutes(mux *http.ServeMux) {
+	if s.memoryAdmin == nil {
+		return
+	}
+	mux.HandleFunc("/admin/memory/candidate-facts", s.requireAdmin(s.memoryAdminRoute))
+	mux.HandleFunc("/admin/memory/candidate-facts/", s.requireAdmin(s.memoryAdminRoute))
+	mux.HandleFunc("/admin/memory/project-facts", s.requireAdmin(s.memoryAdminRoute))
+}
+
 func (s *Server) controlPlaneRoute(w http.ResponseWriter, r *http.Request) {
 	if s.controlPlaneAdmin == nil {
 		s.notFound(w, r)
@@ -157,8 +218,8 @@ func (s *Server) controlPlaneRoute(w http.ResponseWriter, r *http.Request) {
 			proxyReq.Header.Set("Authorization", "Bearer "+key)
 		}
 	}
-	if strings.HasPrefix(proxyReq.URL.Path, "/admin/config-versions/") {
-		versionID := strings.TrimPrefix(proxyReq.URL.Path, "/admin/config-versions/")
+	if versionPath, ok := strings.CutPrefix(proxyReq.URL.Path, "/admin/config-versions/"); ok {
+		versionID := versionPath
 		if versionID != "" {
 			versionID = strings.SplitN(versionID, "/", 2)[0]
 			proxyReq.SetPathValue("versionID", versionID)
@@ -166,6 +227,30 @@ func (s *Server) controlPlaneRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.controlPlaneAdmin.ServeHTTP(w, proxyReq)
+}
+
+func (s *Server) modelGovernanceRoute(w http.ResponseWriter, r *http.Request) {
+	if s.modelGovernanceAdmin == nil {
+		s.notFound(w, r)
+		return
+	}
+	s.modelGovernanceAdmin.ServeHTTP(w, r)
+}
+
+func (s *Server) modelRuntimeResolveRoute(w http.ResponseWriter, r *http.Request) {
+	if s.modelRuntime == nil {
+		s.notFound(w, r)
+		return
+	}
+	s.modelRuntime.ServeHTTP(w, r)
+}
+
+func (s *Server) memoryAdminRoute(w http.ResponseWriter, r *http.Request) {
+	if s.memoryAdmin == nil {
+		s.notFound(w, r)
+		return
+	}
+	s.memoryAdmin.ServeHTTP(w, r)
 }
 
 func (s *Server) syncRuntimeManagerFromPublisher() {
@@ -200,7 +285,7 @@ func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 				token = strings.TrimSpace(auth[7:])
 			}
 		}
-		if token == "" || token != s.cfg.AdminAPIKey {
+		if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(s.cfg.AdminAPIKey)) != 1 {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]any{"message": "admin authentication required", "type": "authentication_error"}})
 			return
 		}
@@ -211,9 +296,9 @@ func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				role, err := s.policy.RoleFor(ctx, tenantID, subject)
 				cancel()
-				if err == nil && role != "" && !roleAllowsMethod(role, r.Method) {
-					s.writeAuditAsync(audit.Event{RequestPayload: map[string]any{"tenant_id": tenantID, "policy": "admin_rbac_denied", "role": role, "subject": subject, "path": r.URL.Path}})
-					writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]any{"message": "role not permitted for admin endpoint", "type": "authorization_error", "tenant_id": tenantID, "role": role}})
+				if err == nil && role != "" && !roleAllowsAdminPath(role, r.URL.Path, r.Method) {
+					s.writeAuditAsync(audit.Event{RequestPayload: map[string]any{"tenant_id": tenantID, "policy": "admin_rbac_denied", "role": role, "subject": subject, "path": r.URL.Path, "method": r.Method}})
+					writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]any{"message": "role not permitted for admin endpoint", "type": "authorization_error", "tenant_id": tenantID, "role": role, "path": r.URL.Path, "method": r.Method}})
 					return
 				}
 			}
@@ -242,6 +327,57 @@ func roleAllowsMethod(role, method string) bool {
 	default:
 		return false
 	}
+}
+
+func governancePathMatches(path, base string) bool {
+	path = strings.TrimSpace(path)
+	base = strings.TrimSpace(base)
+	if path == base {
+		return true
+	}
+	return strings.HasPrefix(path, base+"/")
+}
+
+func roleAllowsGovernanceAction(role, path, method string) bool {
+	role = strings.TrimSpace(strings.ToLower(role))
+	path = strings.TrimSpace(path)
+	switch role {
+	case "admin":
+		return true
+	case "operator":
+		if method == http.MethodGet {
+			return true
+		}
+		if method != http.MethodPost {
+			return false
+		}
+		return governancePathMatches(path, "/admin/governance/recommendations") ||
+			governancePathMatches(path, "/admin/governance/evaluations") ||
+			governancePathMatches(path, "/admin/governance/drifts")
+	case "approver":
+		if method == http.MethodGet {
+			return true
+		}
+		if method != http.MethodPost {
+			return false
+		}
+		return governancePathMatches(path, "/admin/governance/approvals") ||
+			governancePathMatches(path, "/admin/governance/policy-versions") ||
+			governancePathMatches(path, "/admin/governance/rollouts") ||
+			governancePathMatches(path, "/admin/governance/rollbacks")
+	case "viewer", "readonly":
+		return method == http.MethodGet
+	default:
+		return false
+	}
+}
+
+func roleAllowsAdminPath(role, path, method string) bool {
+	path = strings.TrimSpace(path)
+	if strings.HasPrefix(path, "/admin/governance/") {
+		return roleAllowsGovernanceAction(role, path, method)
+	}
+	return roleAllowsMethod(role, method)
 }
 
 func containsSensitive(req providers.ChatCompletionRequest, rules []policy.SensitiveRule) (string, bool) {
@@ -965,7 +1101,9 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req = normalizeRequestIdentity(req, r)
+	req, sessionSource := normalizeRequestIdentity(req, r)
+	w.Header().Set(sessionIDHeader, req.SessionID)
+	log.Printf("session_id resolved: source=%s session_id=%s", sessionSource, req.SessionID)
 
 	if s.policy != nil && req.TenantID != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -1052,16 +1190,78 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	memoryCount := 0
 	if s.memory != nil && req.SessionID != "" {
+		injectedMemoryMessages := make([]providers.ChatMessage, 0, 5)
+		remainingDynamicBudget := 2800
+
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		memories, err := s.memory.Recent(ctx, req.TenantID, req.UserID, req.SessionID, s.cfg.MemoryMaxItems)
+		// Phase L: 主链路明确依赖 GetProjectFacts 的默认语义（仅返回 active facts）。
+		activeFacts, err := s.memory.GetProjectFacts(ctx, req.TenantID, req.UserID)
+		cancel()
+		if err != nil {
+			log.Printf("project facts load failed: %v", err)
+		} else if len(activeFacts) > 0 {
+			activeFacts = rerankProjectFactsForRecall(activeFacts, time.Now().UTC())
+			if factBlock := memory.FormatProjectFacts(activeFacts); factBlock != "" {
+				injectedMemoryMessages = append(injectedMemoryMessages, providers.ChatMessage{Role: "system", Content: factBlock})
+			}
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), 2*time.Second)
+		prefs, err := s.memory.GetUserPreferences(ctx, req.TenantID, req.UserID)
+		cancel()
+		if err != nil {
+			log.Printf("user preferences load failed: %v", err)
+		} else if len(prefs) > 0 {
+			prefs = rerankUserPreferencesForRecall(prefs, time.Now().UTC())
+			if prefBlock := memory.FormatUserPreferences(prefs); prefBlock != "" {
+				injectedMemoryMessages = append(injectedMemoryMessages, providers.ChatMessage{Role: "system", Content: prefBlock})
+			}
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), 2*time.Second)
+		summary, err := s.memory.GetSessionSummary(ctx, req.TenantID, req.UserID, req.SessionID)
+		cancel()
+		if err != nil {
+			log.Printf("session summary load failed: %v", err)
+		} else if sessionSummaryHasContent(summary) && remainingDynamicBudget > 0 {
+			summaryBudget := minInt(1200, remainingDynamicBudget)
+			summaryBlock := truncateRunes(memory.FormatSessionSummary(summary), summaryBudget)
+			if strings.TrimSpace(summaryBlock) != "" {
+				injectedMemoryMessages = append(injectedMemoryMessages, providers.ChatMessage{Role: "system", Content: summaryBlock})
+				remainingDynamicBudget -= len([]rune(summaryBlock))
+			}
+		}
+
+		recentLimit := clampRecentLimit(s.cfg.MemoryMaxItems, 4)
+		ctx, cancel = context.WithTimeout(context.Background(), 2*time.Second)
+		memories, err := s.memory.Recent(ctx, req.TenantID, req.UserID, req.SessionID, recentLimit)
 		cancel()
 		if err != nil {
 			log.Printf("memory load failed: %v", err)
-		} else if len(memories) > 0 {
-			req = memory.InjectMemory(req, memories)
-			memoryCount = len(memories)
-			w.Header().Set("X-Memory-Injected", fmt.Sprintf("%d", memoryCount))
+		} else if len(memories) > 0 && remainingDynamicBudget > 0 {
+			recentBudget := minInt(1000, remainingDynamicBudget)
+			recentBlock, injectedCount := formatRecentMemoryBlock(memories, 180, recentBudget)
+			if recentBlock != "" {
+				injectedMemoryMessages = append(injectedMemoryMessages, providers.ChatMessage{Role: "system", Content: recentBlock})
+				memoryCount = injectedCount
+				remainingDynamicBudget -= len([]rune(recentBlock))
+				w.Header().Set("X-Memory-Injected", fmt.Sprintf("%d", memoryCount))
+			}
 		}
+
+		if remainingDynamicBudget > 0 {
+			recallBudget := minInt(600, remainingDynamicBudget)
+			recallMessage, recallCount, recallRunes := s.buildLightweightHistoryRecallMessage(req, recallBudget)
+			if recallMessage != nil {
+				injectedMemoryMessages = append(injectedMemoryMessages, *recallMessage)
+				remainingDynamicBudget -= recallRunes
+				if recallCount > 0 {
+					w.Header().Set("X-Memory-Recall-Injected", fmt.Sprintf("%d", recallCount))
+				}
+			}
+		}
+
+		req = injectAfterLeadingSystemMessages(req, injectedMemoryMessages)
 	}
 
 	decision := s.router.Decide(req)
@@ -1189,6 +1389,22 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			}
 			if err := s.memory.AppendFromRequest(ctx, writeReq); err != nil {
 				log.Printf("memory append failed: %v", err)
+				return
+			}
+			if err := s.memory.RefreshSessionSummary(ctx, req.TenantID, req.UserID, req.SessionID); err != nil {
+				log.Printf("session summary refresh failed: %v", err)
+			}
+			prefs := extractExplicitUserPreferences(writeReq)
+			for _, pref := range prefs {
+				if err := s.memory.UpsertUserPreference(ctx, pref); err != nil {
+					log.Printf("user preference upsert failed: key=%s err=%v", pref.Key, err)
+				}
+			}
+			facts := extractConfirmedProjectFacts(writeReq)
+			for _, fact := range facts {
+				if err := s.memory.UpsertProjectFact(ctx, fact); err != nil {
+					log.Printf("project fact upsert failed: key=%s err=%v", fact.Key, err)
+				}
 			}
 		}(req, resp)
 	}
@@ -1387,11 +1603,597 @@ func assetMessageCount(req providers.ChatCompletionRequest) int {
 	return count
 }
 
-func normalizeRequestIdentity(req providers.ChatCompletionRequest, r *http.Request) providers.ChatCompletionRequest {
+func sessionSummaryHasContent(summary *memory.SessionSummary) bool {
+	if summary == nil {
+		return false
+	}
+	if strings.TrimSpace(summary.CurrentGoal) != "" {
+		return true
+	}
+	if len(summary.CompletedItems) > 0 {
+		return true
+	}
+	if len(summary.OpenItems) > 0 {
+		return true
+	}
+	if len(summary.KeyDecisions) > 0 {
+		return true
+	}
+	if len(summary.Blockers) > 0 {
+		return true
+	}
+	return false
+}
+
+func (s *Server) buildLightweightHistoryRecallMessage(req providers.ChatCompletionRequest, runeBudget int) (*providers.ChatMessage, int, int) {
+	if runeBudget <= 0 {
+		return nil, 0, 0
+	}
+	query := latestUserMessage(req)
+	if !shouldTriggerLightweightHistoryRecall(query) {
+		return nil, 0, 0
+	}
+
+	const (
+		searchLimit           = 6
+		maxInjectedFragments  = 3
+		messagesPerFragment   = 3
+		messageContentRuneMax = 180
+		snippetContentRuneMax = 120
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+
+	results, err := s.memory.SearchMessages(ctx, req.TenantID, query, searchLimit, 0)
+	if err != nil {
+		log.Printf("memory recall search failed: %v", err)
+		return nil, 0, 0
+	}
+	if len(results) == 0 {
+		return nil, 0, 0
+	}
+
+	fragments := make([]string, 0, maxInjectedFragments)
+	seenAnchors := make(map[string]struct{}, maxInjectedFragments)
+	totalRunes := 0
+
+	for _, result := range results {
+		if len(fragments) >= maxInjectedFragments || totalRunes >= runeBudget {
+			break
+		}
+
+		anchorKey := result.SessionID + ":" + strconv.FormatInt(result.Seq, 10)
+		if _, seen := seenAnchors[anchorKey]; seen {
+			continue
+		}
+		seenAnchors[anchorKey] = struct{}{}
+
+		around, aroundErr := s.memory.GetMessagesAroundAnchor(ctx, result.SessionID, result.Seq, messagesPerFragment)
+		if aroundErr != nil {
+			log.Printf("memory recall around-anchor failed: session_id=%s seq=%d err=%v", result.SessionID, result.Seq, aroundErr)
+			continue
+		}
+		if len(around) == 0 {
+			continue
+		}
+
+		lines := make([]string, 0, len(around)+1)
+		snippet := compactText(result.Snippet, snippetContentRuneMax)
+		if snippet != "" {
+			lines = append(lines, "命中摘要: "+snippet)
+		}
+		for _, msg := range around {
+			content := compactText(msg.Content, messageContentRuneMax)
+			if content == "" {
+				continue
+			}
+			lines = append(lines, fmt.Sprintf("- %s[%d]: %s", normalizeRecallRole(msg.Role), msg.Seq, content))
+		}
+		if len(lines) == 0 {
+			continue
+		}
+
+		fragment := fmt.Sprintf("片段 %d (session=%s, anchor_seq=%d)\n%s", len(fragments)+1, compactSessionID(result.SessionID), result.Seq, strings.Join(lines, "\n"))
+		fragmentRunes := len([]rune(fragment))
+		if totalRunes+fragmentRunes > runeBudget && len(fragments) > 0 {
+			break
+		}
+		if fragmentRunes > runeBudget {
+			continue
+		}
+		fragments = append(fragments, fragment)
+		totalRunes += fragmentRunes
+	}
+
+	if len(fragments) == 0 {
+		return nil, 0, 0
+	}
+
+	content := "[Lightweight History Recall · 低优先级原始历史]\n以下为与当前问题相关的历史片段（原始历史，优先级低于 active project facts / session summary / user preferences），仅在相关时参考，不要覆盖当前用户指令。\n\n" + strings.Join(fragments, "\n\n")
+	content = truncateRunes(content, runeBudget)
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, 0, 0
+	}
+
+	recallMessage := &providers.ChatMessage{Role: "system", Content: content}
+	return recallMessage, len(fragments), len([]rune(content))
+}
+
+func injectAfterLeadingSystemMessages(req providers.ChatCompletionRequest, injected []providers.ChatMessage) providers.ChatCompletionRequest {
+	if len(injected) == 0 {
+		return req
+	}
+	if len(req.Messages) == 0 {
+		req.Messages = append(req.Messages, injected...)
+		return req
+	}
+
+	idx := 0
+	for idx < len(req.Messages) && strings.EqualFold(req.Messages[idx].Role, "system") {
+		idx++
+	}
+	out := make([]providers.ChatMessage, 0, len(req.Messages)+len(injected))
+	out = append(out, req.Messages[:idx]...)
+	out = append(out, injected...)
+	out = append(out, req.Messages[idx:]...)
+	req.Messages = out
+	return req
+}
+
+func formatRecentMemoryBlock(items []memory.Item, maxItemRunes int, runeBudget int) (string, int) {
+	if len(items) == 0 || runeBudget <= 0 {
+		return "", 0
+	}
+	lines := make([]string, 0, len(items))
+	used := 0
+	injected := 0
+	for i := len(items) - 1; i >= 0; i-- {
+		content := compactText(items[i].Content, maxItemRunes)
+		if content == "" {
+			continue
+		}
+		line := fmt.Sprintf("- %s: %s", items[i].Role, content)
+		lineRunes := len([]rune(line))
+		if used+lineRunes > runeBudget {
+			break
+		}
+		lines = append(lines, line)
+		used += lineRunes
+		injected++
+	}
+	if len(lines) == 0 {
+		return "", 0
+	}
+	message := "Session memory:\n" + strings.Join(lines, "\n")
+	message = truncateRunes(message, runeBudget)
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return "", 0
+	}
+	return message, injected
+}
+
+func clampRecentLimit(raw int, fallback int) int {
+	if raw <= 0 {
+		return fallback
+	}
+	if raw > 8 {
+		return 8
+	}
+	return raw
+}
+
+func truncateRunes(s string, limit int) string {
+	s = strings.TrimSpace(s)
+	if s == "" || limit <= 0 {
+		return ""
+	}
+	runes := []rune(s)
+	if len(runes) <= limit {
+		return s
+	}
+	if limit == 1 {
+		return "…"
+	}
+	return string(runes[:limit-1]) + "…"
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func latestUserMessage(req providers.ChatCompletionRequest) string {
+	for i := len(req.Messages) - 1; i >= 0; i-- {
+		if !strings.EqualFold(req.Messages[i].Role, "user") {
+			continue
+		}
+		content := strings.TrimSpace(req.Messages[i].Content)
+		if content != "" {
+			return content
+		}
+	}
+	return ""
+}
+
+func shouldTriggerLightweightHistoryRecall(query string) bool {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return false
+	}
+	length := len([]rune(query))
+	if length >= 120 {
+		return true
+	}
+	if length < 12 {
+		return false
+	}
+	queryLower := strings.ToLower(query)
+	signals := []string{"继续", "刚才", "之前", "回到", "那个", "上次", "历史", "前面", "continue", "previous", "earlier", "back to", "last time", "history"}
+	for _, signal := range signals {
+		if strings.Contains(queryLower, strings.ToLower(signal)) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeRecallRole(role string) string {
+	role = strings.ToLower(strings.TrimSpace(role))
+	switch role {
+	case "user", "assistant", "system":
+		return role
+	default:
+		return "message"
+	}
+}
+
+func compactText(text string, maxRunes int) string {
+	text = strings.Join(strings.Fields(strings.TrimSpace(text)), " ")
+	if text == "" {
+		return ""
+	}
+	if maxRunes > 0 {
+		runes := []rune(text)
+		if len(runes) > maxRunes {
+			text = string(runes[:maxRunes]) + "…"
+		}
+	}
+	return text
+}
+
+func compactSessionID(sessionID string) string {
+	sessionID = strings.TrimSpace(sessionID)
+	if len(sessionID) <= 18 {
+		return sessionID
+	}
+	return sessionID[:9] + "..." + sessionID[len(sessionID)-6:]
+}
+
+func rerankProjectFactsForRecall(facts []memory.ProjectFact, now time.Time) []memory.ProjectFact {
+	if len(facts) <= 1 {
+		return facts
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	out := make([]memory.ProjectFact, 0, len(facts))
+	for _, fact := range facts {
+		if strings.TrimSpace(fact.Key) == "" || strings.TrimSpace(fact.Value) == "" {
+			continue
+		}
+		status := strings.ToLower(strings.TrimSpace(fact.Status))
+		if status != "" && status != "active" {
+			continue
+		}
+		out = append(out, fact)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		si := projectFactRecallScore(out[i], now)
+		sj := projectFactRecallScore(out[j], now)
+		if si != sj {
+			return si > sj
+		}
+		if !out[i].UpdatedAt.Equal(out[j].UpdatedAt) {
+			return out[i].UpdatedAt.After(out[j].UpdatedAt)
+		}
+		if !out[i].LastVerifiedAt.Equal(out[j].LastVerifiedAt) {
+			return out[i].LastVerifiedAt.After(out[j].LastVerifiedAt)
+		}
+		return out[i].Key < out[j].Key
+	})
+	return out
+}
+
+func projectFactRecallScore(fact memory.ProjectFact, now time.Time) int {
+	score := 0
+	status := strings.ToLower(strings.TrimSpace(fact.Status))
+	if status == "" || status == "active" {
+		score += 400
+	} else {
+		score -= 300
+	}
+	if strings.TrimSpace(fact.SourceText) != "" && isConfirmedProjectFactSignal(fact.SourceText) {
+		score += 220
+	}
+	if strings.TrimSpace(fact.SourceText) != "" && !isTentativeProjectFactSignal(fact.SourceText) {
+		score += 120
+	}
+
+	if !fact.LastVerifiedAt.IsZero() {
+		age := now.Sub(fact.LastVerifiedAt)
+		switch {
+		case age <= 30*24*time.Hour:
+			score += 220
+		case age <= 90*24*time.Hour:
+			score += 120
+		case age <= 180*24*time.Hour:
+			score += 40
+		default:
+			score -= 180
+		}
+	}
+	if !fact.UpdatedAt.IsZero() {
+		age := now.Sub(fact.UpdatedAt)
+		switch {
+		case age <= 7*24*time.Hour:
+			score += 120
+		case age <= 30*24*time.Hour:
+			score += 70
+		case age <= 90*24*time.Hour:
+			score += 20
+		default:
+			score -= 40
+		}
+	}
+	return score
+}
+
+func rerankUserPreferencesForRecall(prefs []memory.UserPreference, now time.Time) []memory.UserPreference {
+	if len(prefs) <= 1 {
+		return prefs
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	out := make([]memory.UserPreference, 0, len(prefs))
+	for _, pref := range prefs {
+		if strings.TrimSpace(pref.Key) == "" || strings.TrimSpace(pref.Value) == "" {
+			continue
+		}
+		out = append(out, pref)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		si := userPreferenceRecallScore(out[i], now)
+		sj := userPreferenceRecallScore(out[j], now)
+		if si != sj {
+			return si > sj
+		}
+		if !out[i].UpdatedAt.Equal(out[j].UpdatedAt) {
+			return out[i].UpdatedAt.After(out[j].UpdatedAt)
+		}
+		return out[i].Key < out[j].Key
+	})
+	return out
+}
+
+func userPreferenceRecallScore(pref memory.UserPreference, now time.Time) int {
+	score := 0
+	if strings.TrimSpace(pref.SourceText) != "" {
+		score += 180
+	}
+	if !pref.UpdatedAt.IsZero() {
+		age := now.Sub(pref.UpdatedAt)
+		switch {
+		case age <= 7*24*time.Hour:
+			score += 140
+		case age <= 30*24*time.Hour:
+			score += 80
+		case age <= 180*24*time.Hour:
+			score += 20
+		default:
+			score -= 30
+		}
+	}
+	return score
+}
+
+func extractExplicitUserPreferences(req providers.ChatCompletionRequest) []memory.UserPreference {
+	if strings.TrimSpace(req.UserID) == "" {
+		return nil
+	}
+
+	byKey := map[string]memory.UserPreference{}
+	for _, msg := range req.Messages {
+		if !strings.EqualFold(msg.Role, "user") {
+			continue
+		}
+		sourceText := normalizePreferenceSignalText(msg.Content)
+		if sourceText == "" {
+			continue
+		}
+
+		if value, ok := extractExplicitLanguagePreference(sourceText); ok {
+			byKey["language"] = memory.UserPreference{TenantID: req.TenantID, UserID: req.UserID, Key: "language", Value: value, SourceText: sourceText}
+		}
+		if value, ok := extractExplicitVerbosityPreference(sourceText); ok {
+			byKey["verbosity"] = memory.UserPreference{TenantID: req.TenantID, UserID: req.UserID, Key: "verbosity", Value: value, SourceText: sourceText}
+		}
+		if value, ok := extractExplicitConfirmationPreference(sourceText); ok {
+			byKey["confirmation"] = memory.UserPreference{TenantID: req.TenantID, UserID: req.UserID, Key: "confirmation", Value: value, SourceText: sourceText}
+		}
+	}
+
+	orderedKeys := []string{"language", "verbosity", "confirmation"}
+	out := make([]memory.UserPreference, 0, len(byKey))
+	for _, key := range orderedKeys {
+		pref, ok := byKey[key]
+		if ok {
+			out = append(out, pref)
+		}
+	}
+	return out
+}
+
+func extractConfirmedProjectFacts(req providers.ChatCompletionRequest) []memory.ProjectFact {
+	if strings.TrimSpace(req.UserID) == "" {
+		return nil
+	}
+
+	byKey := map[string]memory.ProjectFact{}
+	for _, msg := range req.Messages {
+		if !strings.EqualFold(msg.Role, "user") && !strings.EqualFold(msg.Role, "assistant") {
+			continue
+		}
+		sourceText := normalizePreferenceSignalText(msg.Content)
+		if sourceText == "" {
+			continue
+		}
+		key, value, ok := extractProjectFactKV(sourceText)
+		if !ok {
+			continue
+		}
+		if !isConfirmedProjectFactSignal(sourceText) {
+			continue
+		}
+		if isTentativeProjectFactSignal(sourceText) {
+			continue
+		}
+		byKey[key] = memory.ProjectFact{
+			TenantID:   req.TenantID,
+			UserID:     req.UserID,
+			Key:        key,
+			Value:      value,
+			SourceText: sourceText,
+		}
+	}
+
+	orderedKeys := []string{"pg_truth", "redis_role", "oracle_review_mode"}
+	out := make([]memory.ProjectFact, 0, len(byKey))
+	for _, key := range orderedKeys {
+		fact, ok := byKey[key]
+		if ok {
+			out = append(out, fact)
+		}
+	}
+	return out
+}
+
+func extractProjectFactKV(content string) (string, string, bool) {
+	lower := strings.ToLower(strings.TrimSpace(content))
+	if lower == "" {
+		return "", "", false
+	}
+
+	pgTruthSignals := []string{"pg is truth", "postgres is truth", "postgresql is truth", "pg作为truth", "pg 是 truth", "以 pg 为准", "postgres 为准", "postgres 是事实来源"}
+	if hasAnySignal(lower, pgTruthSignals) {
+		return "pg_truth", "PG is Truth", true
+	}
+	redisHotSignals := []string{"redis 只做热层", "redis只做热层", "redis only for hot layer", "redis only as hot cache", "redis 仅做缓存热层", "redis 仅作热层"}
+	if hasAnySignal(lower, redisHotSignals) {
+		return "redis_role", "Redis 只做热层", true
+	}
+	oracleParallelSignals := []string{"oracle 审查默认拆小并行", "oracle审查默认拆小并行", "oracle review defaults to small parallel tasks", "oracle review default split into parallel"}
+	if hasAnySignal(lower, oracleParallelSignals) {
+		return "oracle_review_mode", "Oracle 审查默认拆小并行", true
+	}
+	return "", "", false
+}
+
+func isConfirmedProjectFactSignal(content string) bool {
+	lower := strings.ToLower(strings.TrimSpace(content))
+	if lower == "" {
+		return false
+	}
+	confirmedSignals := []string{"已确认", "已定", "最终决定", "已经落地", "确定采用", "结论：", "confirm", "confirmed", "decided", "we use", "is truth", "只做", "默认"}
+	return hasAnySignal(lower, confirmedSignals)
+}
+
+func isTentativeProjectFactSignal(content string) bool {
+	lower := strings.ToLower(strings.TrimSpace(content))
+	if lower == "" {
+		return false
+	}
+	tentativeSignals := []string{"考虑", "候选", "可能", "试试", "暂定", "先这样", "maybe", "might", "proposal", "proposed", "option", "候选方案", "讨论"}
+	return hasAnySignal(lower, tentativeSignals)
+}
+
+func normalizePreferenceSignalText(content string) string {
+	content = strings.Join(strings.Fields(strings.TrimSpace(content)), " ")
+	if content == "" {
+		return ""
+	}
+	runes := []rune(content)
+	if len(runes) > 240 {
+		content = string(runes[:240])
+	}
+	return content
+}
+
+func extractExplicitLanguagePreference(content string) (string, bool) {
+	lower := strings.ToLower(strings.TrimSpace(content))
+	explicitSignals := []string{
+		"以后都用中文", "以后用中文", "今后都用中文", "后续都用中文", "之后都用中文",
+		"请一直用中文", "请始终用中文", "默认用中文", "都用中文回答", "一直用中文回答",
+		"from now on", "always use chinese", "respond in chinese",
+	}
+	if hasAnySignal(lower, explicitSignals) {
+		return "zh-CN", true
+	}
+	return "", false
+}
+
+func extractExplicitVerbosityPreference(content string) (string, bool) {
+	lower := strings.ToLower(strings.TrimSpace(content))
+	negativeSignals := []string{"不要简短", "别太简短", "不要太简洁", "详细一点", "说详细", "展开讲"}
+	if hasAnySignal(lower, negativeSignals) {
+		return "", false
+	}
+	explicitSignals := []string{
+		"回答简洁", "回答简短", "请简洁", "请简短", "简洁一点", "简短一点", "尽量简洁", "尽量简短",
+		"be concise", "keep it brief",
+	}
+	if hasAnySignal(lower, explicitSignals) {
+		return "low", true
+	}
+	return "", false
+}
+
+func extractExplicitConfirmationPreference(content string) (string, bool) {
+	lower := strings.ToLower(strings.TrimSpace(content))
+	explicitSignals := []string{
+		"不要频繁确认", "不用频繁确认", "不要每次都确认", "不用每次确认", "减少确认", "少确认",
+		"不要总是确认", "不要反复确认", "don't ask for confirmation too often", "minimal confirmation",
+	}
+	if hasAnySignal(lower, explicitSignals) {
+		return "minimal", true
+	}
+	return "", false
+}
+
+func hasAnySignal(content string, signals []string) bool {
+	for _, signal := range signals {
+		signal = strings.TrimSpace(strings.ToLower(signal))
+		if signal == "" {
+			continue
+		}
+		if strings.Contains(content, signal) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeRequestIdentity(req providers.ChatCompletionRequest, r *http.Request) (providers.ChatCompletionRequest, sessionIDSource) {
 	req.TenantID = firstNonEmpty(strings.TrimSpace(req.TenantID), strings.TrimSpace(r.Header.Get("X-Tenant-Id")))
 	req.UserID = firstNonEmpty(strings.TrimSpace(req.UserID), strings.TrimSpace(r.Header.Get("X-User-Id")))
-	req.SessionID = firstNonEmpty(strings.TrimSpace(req.SessionID), strings.TrimSpace(r.Header.Get("X-Session-Id")))
-	return req
+	var source sessionIDSource
+	req.SessionID, source = resolveOrCreateSessionID(req.SessionID, r)
+	return req, source
 }
 
 func firstNonEmpty(values ...string) string {
@@ -1519,6 +2321,18 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 }
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { next.ServeHTTP(w, r) })
+}
+
+func panicRecoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("panic recovered path=%s method=%s err=%v", r.URL.Path, r.Method, rec)
+				writeJSON(w, http.StatusInternalServerError, map[string]any{"error": map[string]any{"message": "internal server error", "type": "internal_server_error"}})
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
 }
 func badRequest(w http.ResponseWriter, message string) {
 	writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": message, "type": "invalid_request_error"}})
