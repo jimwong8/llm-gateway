@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"time"
 
 	"llm-gateway/gateway/internal/config"
 	"llm-gateway/gateway/internal/governance"
@@ -120,11 +122,108 @@ func (s *driftServiceStub) Resolve(_ context.Context, driftID, reason string) (g
 	return governance.PolicyDrift{ID: driftID, Status: governance.PolicyDriftStatusResolved}, nil
 }
 
+type governanceSQLSource interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
 type runtimeResolverStub struct{}
 
 type governanceQueryerStub struct{}
 
 type memoryAdminStoreStub struct{}
+
+func governanceVerifyDSN() string {
+	if dsn := strings.TrimSpace(os.Getenv("POSTGRES_DSN")); dsn != "" {
+		return dsn
+	}
+	if dsn := strings.TrimSpace(os.Getenv("GOVERNANCE_TEST_POSTGRES_DSN")); dsn != "" {
+		return dsn
+	}
+	return ""
+}
+
+func maybeBuildGovernanceRuntimeQueryer() (governanceSQLSource, bool, error) {
+	dsn := governanceVerifyDSN()
+	if dsn == "" {
+		return &governanceQueryerStub{}, false, nil
+	}
+	store, err := governance.NewStore(dsn)
+	if err != nil {
+		return nil, false, err
+	}
+	seedGovernanceRuntimeObserverData(store)
+	return store.DB(), true, nil
+}
+
+func seedGovernanceRuntimeObserverData(store *governance.Store) {
+	if store == nil || store.DB() == nil {
+		return
+	}
+	db := store.DB()
+	ctx := context.Background()
+	environment := "prod"
+	policyVersionID := "pv-verify-runtime"
+	activatedAt := time.Date(2026, 4, 19, 12, 0, 0, 0, time.UTC)
+
+	policyRaw, err := json.Marshal(governance.RuntimePolicy{
+		Version:      1,
+		Environment:  environment,
+		DefaultModel: "model-a",
+	})
+	if err == nil {
+		_, _ = db.ExecContext(ctx, `
+INSERT INTO model_policy_versions (
+	policy_version_id,
+	environment,
+	status,
+	policy_json,
+	created_by,
+	approved_by,
+	created_at,
+	approved_at,
+	activated_at
+) VALUES ($1, $2, 'active', $3::jsonb, 'verify', 'verify', $4, $4, $4)
+ON CONFLICT (policy_version_id) DO NOTHING
+`, policyVersionID, environment, string(policyRaw), activatedAt)
+	}
+
+	matchedScopeRaw := `{"environment":"prod"}`
+	fallbackRaw := `[]`
+	_, _ = db.ExecContext(ctx, `
+INSERT INTO runtime_decision_snapshots (
+	request_id,
+	policy_version_id,
+	rollout_id,
+	environment,
+	tenant_id,
+	agent_id,
+	task_type,
+	matched_scope_type,
+	matched_scope,
+	resolved_model,
+	fallback_chain,
+	policy_fallback_used,
+	system_fallback_used,
+	success,
+	created_at
+) VALUES ($1, $2, 'ro-verify', $3, 'tenant-verify', 'agent-verify', 'chat', 'environment', $4::jsonb, $5, $6::jsonb, false, false, true, $7)
+ON CONFLICT (request_id) DO NOTHING
+`, "req-verify-runtime", policyVersionID, environment, matchedScopeRaw, "model-a", fallbackRaw, activatedAt.Add(30*time.Second))
+
+	payloadRaw := `{"rollout_percent":100,"triggered_by":"verify"}`
+	_, _ = db.ExecContext(ctx, `
+INSERT INTO model_distribution_events (
+	event_id,
+	policy_version_id,
+	rollout_id,
+	environment,
+	event_type,
+	payload,
+	created_at
+) VALUES ($1, $2, 'ro-verify', $3, 'policy_distribution.activated', $4::jsonb, $5)
+ON CONFLICT (event_id) DO NOTHING
+`, "event-verify-runtime", policyVersionID, environment, payloadRaw, activatedAt.Add(time.Minute))
+}
 
 func (s *memoryAdminStoreStub) ListCandidateFacts(_ context.Context, tenantID, userID, status string) ([]memory.CandidateFact, error) {
 	return []memory.CandidateFact{{ID: 1, TenantID: tenantID, UserID: userID, Key: "repo", Value: "mono", Status: firstNonEmpty(status, "pending")}}, nil
@@ -168,6 +267,12 @@ func (s *runtimeResolverStub) ObserverSnapshot() governance.RuntimeResolverObser
 }
 
 func main() {
+	queryer, realRuntimeQueries, err := maybeBuildGovernanceRuntimeQueryer()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "build governance runtime queryer failed: %v\n", err)
+		os.Exit(1)
+	}
+
 	srv := httpserver.New(config.Config{AdminAPIKey: adminToken}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil).
 		WithModelGovernanceHandler(httpserver.NewModelGovernanceHandler().
 			WithRecommendationService(&recommendationServiceStub{}).
@@ -179,7 +284,7 @@ func main() {
 			WithRollbackRecordStore(&rollbackRecordStoreStub{}).
 			WithEvaluationService(&evaluationServiceStub{}).
 			WithDriftService(&driftServiceStub{})).
-		WithModelRuntimeHandler(httpserver.NewModelRuntimeHandler().WithResolver(&runtimeResolverStub{}).WithQueryer(&governanceQueryerStub{})).
+		WithModelRuntimeHandler(httpserver.NewModelRuntimeHandler().WithResolver(&runtimeResolverStub{}).WithQueryer(queryer)).
 		WithMemoryAdminHandler(httpserver.NewMemoryAdminHandler(&memoryAdminStoreStub{}))
 
 	handler := srv.Handler()
@@ -204,9 +309,15 @@ func main() {
 	assertStatus(handler, http.MethodPost, "/admin/governance/drifts", `{"environment":"prod","agent_id":"a1"}`, http.StatusOK, true)
 	assertStatus(handler, http.MethodPost, "/admin/governance/drifts/drift-1/acknowledge", `{"reason":"ok"}`, http.StatusOK, true)
 	assertStatus(handler, http.MethodPost, "/admin/governance/drifts/drift-1/resolve", `{"reason":"fixed"}`, http.StatusOK, true)
-	assertStatus(handler, http.MethodGet, "/admin/governance/runtime-decisions", ``, http.StatusInternalServerError, true)
-	assertStatus(handler, http.MethodGet, "/admin/governance/distribution-events", ``, http.StatusInternalServerError, true)
-	assertStatus(handler, http.MethodGet, "/admin/governance/runtime-observer", ``, http.StatusInternalServerError, true)
+	if realRuntimeQueries {
+		assertStatus(handler, http.MethodGet, "/admin/governance/runtime-decisions?limit=5", ``, http.StatusOK, true)
+		assertStatus(handler, http.MethodGet, "/admin/governance/distribution-events?limit=5", ``, http.StatusOK, true)
+		assertStatus(handler, http.MethodGet, "/admin/governance/runtime-observer?environment=prod&limit=5", ``, http.StatusOK, true)
+	} else {
+		assertStatus(handler, http.MethodGet, "/admin/governance/runtime-decisions", ``, http.StatusInternalServerError, true)
+		assertStatus(handler, http.MethodGet, "/admin/governance/distribution-events", ``, http.StatusInternalServerError, true)
+		assertStatus(handler, http.MethodGet, "/admin/governance/runtime-observer", ``, http.StatusInternalServerError, true)
+	}
 	assertStatus(handler, http.MethodGet, "/admin/memory/candidate-facts?tenant_id=t1&user_id=u1&status=pending", ``, http.StatusOK, true)
 	assertStatus(handler, http.MethodGet, "/admin/memory/project-facts?tenant_id=t1&user_id=u1&status=active", ``, http.StatusOK, true)
 	assertStatus(handler, http.MethodPost, "/admin/memory/candidate-facts/repo/confirm", `{"tenant_id":"t1","user_id":"u1"}`, http.StatusOK, true)
