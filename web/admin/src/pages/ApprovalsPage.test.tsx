@@ -204,9 +204,37 @@ describe('ApprovalsPage', () => {
 
     expect(await screen.findByText('审批失败：decision invalid')).toBeInTheDocument()
   })
+  it('prefills recommendation context from query params', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          object: 'list',
+          data: [
+            {
+              id: 'rec-1',
+              agent_id: 'agent-a',
+              task_type: 'chat',
+              environment: 'prod',
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    )
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderPage('/approvals?recommendationId=rec-1&environment=staging')
+
+    expect(await screen.findByDisplayValue('rec-1')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('staging')).toBeInTheDocument()
+  })
 })
 
-function renderPage() {
+function renderPage(initialEntry = '/approvals') {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -216,7 +244,7 @@ function renderPage() {
   })
 
   return render(
-    <MemoryRouter initialEntries={['/approvals']}>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <QueryClientProvider client={queryClient}>
         <ApprovalsPage />
       </QueryClientProvider>

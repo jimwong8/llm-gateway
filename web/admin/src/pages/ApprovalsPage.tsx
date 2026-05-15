@@ -4,6 +4,7 @@ import { AppShell } from '../components/layout/AppShell'
 import { ApiError } from '../lib/http'
 import type { ApprovalRequest } from '../types/recommendation'
 import { createGovernanceApproval, listGovernanceRecommendations } from '../lib/recommendations'
+import { Link, useSearchParams } from 'react-router-dom'
 
 type ApprovalFormState = {
   recommendationID: string
@@ -39,7 +40,14 @@ function formatDate(value?: string) {
 }
 
 export function ApprovalsPage() {
-  const [form, setForm] = useState<ApprovalFormState>(initialForm)
+  const [searchParams] = useSearchParams()
+  const initialRecommendationID = searchParams.get('recommendationId') ?? ''
+  const initialEnvironment = searchParams.get('environment') ?? initialForm.environment
+  const [form, setForm] = useState<ApprovalFormState>({
+    ...initialForm,
+    recommendationID: initialRecommendationID,
+    environment: initialEnvironment,
+  })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
@@ -168,9 +176,16 @@ export function ApprovalsPage() {
               <h2>Approval Console</h2>
               <p>选择 recommendation 后提交决策；override 需要 final model，reject 需要审批理由。</p>
             </div>
-            <button type="submit" disabled={submitting}>
-              {submitting ? '提交中…' : '提交审批'}
-            </button>
+            <div className="policy-actions">
+              {successMessage ? (
+                <Link className="rollouts-action" to={`/policy-versions?environment=${encodeURIComponent(form.environment || 'prod')}`}>
+                  去策略版本页
+                </Link>
+              ) : null}
+              <button type="submit" disabled={submitting}>
+                {submitting ? '提交中…' : '提交审批'}
+              </button>
+            </div>
           </div>
 
           <div className="release-panel__grid">

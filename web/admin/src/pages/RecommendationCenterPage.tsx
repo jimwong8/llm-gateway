@@ -1,6 +1,7 @@
 import type { FormEvent } from 'react'
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { AppShell } from '../components/layout/AppShell'
 import { ApiError } from '../lib/http'
 import { createGovernanceApproval, listGovernanceRecommendations } from '../lib/recommendations'
@@ -176,9 +177,17 @@ export function RecommendationCenterPage() {
                       </td>
                       <td>{formatDate(row.updated_at)}</td>
                       <td>
-                        <button type="button" className="rollouts-action" onClick={() => openApprovalDialog(row)}>
-                          审批
-                        </button>
+                        <div className="policy-actions">
+                          <button type="button" className="rollouts-action" onClick={() => openApprovalDialog(row)}>
+                            审批
+                          </button>
+                          <Link
+                            className="rollouts-action"
+                            to={`/approvals?recommendationId=${encodeURIComponent(row.id)}&environment=${encodeURIComponent(row.environment || 'prod')}`}
+                          >
+                            去审批页
+                          </Link>
+                        </div>
                       </td>
                     </tr>
                   ))}

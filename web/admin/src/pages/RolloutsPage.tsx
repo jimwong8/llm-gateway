@@ -5,6 +5,7 @@ import { AppShell } from '../components/layout/AppShell'
 import { ApiError } from '../lib/http'
 import { createGovernanceRollback, listRolloutDashboard } from '../lib/rollouts'
 import type { RolloutRow } from '../types/rollout'
+import { useSearchParams } from 'react-router-dom'
 
 type RollbackDialogState = {
   rolloutID: string
@@ -81,6 +82,8 @@ function getRolloutHealth(row: RolloutRow): RolloutHealth {
 }
 
 export function RolloutsPage() {
+  const [searchParams] = useSearchParams()
+  const highlightedPolicyVersionID = searchParams.get('policyVersionId') ?? ''
   const [dialogState, setDialogState] = useState<RollbackDialogState>({
     rolloutID: '',
     environment: 'prod',
@@ -285,7 +288,7 @@ export function RolloutsPage() {
                   {rollouts.map((row) => {
                     const health = getRolloutHealth(row)
                     return (
-                      <tr key={row.id}>
+                      <tr key={row.id} data-highlighted={highlightedPolicyVersionID !== '' && row.policy_version_id === highlightedPolicyVersionID ? 'true' : 'false'}>
                         <td>{row.id}</td>
                         <td>{row.policy_version_id}</td>
                         <td>{row.environment}</td>

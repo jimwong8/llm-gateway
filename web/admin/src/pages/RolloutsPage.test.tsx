@@ -191,9 +191,57 @@ describe('RolloutsPage', () => {
 
     expect(await screen.findByText('已触发回滚：rb-1')).toBeInTheDocument()
   })
+  it('highlights rollout row from policy version query param', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          object: 'list',
+          data: [
+            {
+              id: 'ro-1',
+              policy_version_id: 'pv-1',
+              environment: 'prod',
+              rollout_mode: 'progressive',
+              rollout_percent: 50,
+              status: 'running',
+              triggered_by: 'ops-bot',
+              error_rate: 0.012,
+              p95_latency: 640,
+              fallback_rate: 0.008,
+              sample_count: 1200,
+            },
+            {
+              id: 'ro-2',
+              policy_version_id: 'pv-2',
+              environment: 'prod',
+              rollout_mode: 'progressive',
+              rollout_percent: 100,
+              status: 'promoted',
+              triggered_by: 'ops-bot',
+              error_rate: 0.062,
+              p95_latency: 1620,
+              fallback_rate: 0.041,
+              sample_count: 2300,
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderPage('/rollouts?policyVersionId=pv-2')
+
+    await screen.findByText('ro-2')
+    const highlightedRow = screen.getByText('ro-2').closest('tr')
+    expect(highlightedRow).toHaveAttribute('data-highlighted', 'true')
+  })
 })
 
-function renderPage() {
+function renderPage(initialEntry = '/rollouts') {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -203,7 +251,7 @@ function renderPage() {
   })
 
   return render(
-    <MemoryRouter initialEntries={['/rollouts']}>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <QueryClientProvider client={queryClient}>
         <RolloutsPage />
       </QueryClientProvider>

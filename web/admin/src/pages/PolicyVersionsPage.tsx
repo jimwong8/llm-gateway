@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AppShell } from '../components/layout/AppShell'
 import {
   activatePolicyVersion,
@@ -8,6 +8,7 @@ import {
   listPolicyVersions,
 } from '../lib/policyVersions'
 import type { PolicyVersionDiffPayload, PolicyVersionRow } from '../types/policyVersion'
+import { Link, useSearchParams } from 'react-router-dom'
 
 function formatDate(value?: string) {
   if (!value) {
@@ -35,6 +36,7 @@ function formatDiffPayload(payload: PolicyVersionDiffPayload | undefined) {
 }
 
 export function PolicyVersionsPage() {
+  const [searchParams] = useSearchParams()
   const [selectedVersionID, setSelectedVersionID] = useState('')
   const [actionMessage, setActionMessage] = useState('')
   const [actionError, setActionError] = useState('')
@@ -52,6 +54,28 @@ export function PolicyVersionsPage() {
 
   const selectedVersionEffective = selectedVersion ?? versions[0] ?? null
   const selectedVersionEffectiveID = selectedVersionEffective?.id ?? ''
+
+  useEffect(() => {
+    if (versions.length === 0) {
+      return
+    }
+    const versionIDFromQuery = searchParams.get('versionId') ?? ''
+    if (versionIDFromQuery) {
+      const matchedVersion = versions.find((item) => item.id === versionIDFromQuery)
+      if (matchedVersion && matchedVersion.id !== selectedVersionID) {
+        setSelectedVersionID(matchedVersion.id)
+      }
+      return
+    }
+    const environmentFromQuery = searchParams.get('environment') ?? ''
+    if (!environmentFromQuery || selectedVersionID) {
+      return
+    }
+    const matchedEnvironmentVersion = versions.find((item) => item.environment === environmentFromQuery)
+    if (matchedEnvironmentVersion) {
+      setSelectedVersionID(matchedEnvironmentVersion.id)
+    }
+  }, [versions, searchParams, selectedVersionID])
 
   const diffQuery = useQuery({
     queryKey: ['governance-policy-version-diff', selectedVersionEffectiveID],
@@ -191,6 +215,14 @@ export function PolicyVersionsPage() {
                               >
                                 {pending && canActivate ? '激活中…' : 'Activate'}
                               </button>
+                              {(row.status === 'approved' || row.status === 'active') ? (
+                                <Link
+                                  className="rollouts-action"
+                                  to={`/rollouts?policyVersionId=${encodeURIComponent(row.id)}&environment=${encodeURIComponent(row.environment || 'prod')}`}
+                                >
+                                  Go to Rollouts
+                                </Link>
+                              ) : null}
                             </div>
                           </td>
                         </tr>

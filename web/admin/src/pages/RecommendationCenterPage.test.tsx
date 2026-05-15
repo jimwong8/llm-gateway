@@ -128,6 +128,8 @@ describe('RecommendationCenterPage', () => {
     renderPage()
 
     await screen.findByText('rec-1')
+    expect(screen.getByRole('link', { name: '去审批页' })).toHaveAttribute('href', '/approvals?recommendationId=rec-1&environment=prod')
+
     await user.click(screen.getByRole('button', { name: '审批' }))
 
     const dialog = screen.getByRole('dialog', { name: '审批 Recommendation' })

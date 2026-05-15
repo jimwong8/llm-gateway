@@ -268,9 +268,55 @@ describe('PolicyVersionsPage', () => {
     expect(await screen.findByRole('button', { name: 'pv-1' })).toBeInTheDocument()
     expect(await screen.findByText('版本差异暂不可用（diff API 尚未就绪或返回异常）。')).toBeInTheDocument()
   })
+  it('selects version from environment query and offers rollout deep link', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            object: 'list',
+            data: [
+              {
+                id: 'pv-staging',
+                environment: 'staging',
+                status: 'approved',
+                created_by: 'ops',
+              },
+              {
+                id: 'pv-prod',
+                environment: 'prod',
+                status: 'active',
+                created_by: 'ops',
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ diff: 'staging diff payload' }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      )
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderPage('/policy-versions?environment=staging')
+
+    expect(await screen.findByText('Current Selected')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'pv-staging' })).toBeInTheDocument()
+    expect(screen.getAllByRole('link', { name: 'Go to Rollouts' })[0]).toHaveAttribute('href', '/rollouts?policyVersionId=pv-staging&environment=staging')
+  })
 })
 
-function renderPage() {
+function renderPage(initialEntry = '/policy-versions') {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -280,7 +326,7 @@ function renderPage() {
   })
 
   return render(
-    <MemoryRouter initialEntries={['/policy-versions']}>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <QueryClientProvider client={queryClient}>
         <PolicyVersionsPage />
       </QueryClientProvider>
