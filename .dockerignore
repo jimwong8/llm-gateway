@@ -10,8 +10,5 @@ bin
 *.log
 env
 .env*
-MISS: cache_status
-HANDOFF_CONTEXT.md
 *.md~
 *.orig
-自进化混合认知架构*
