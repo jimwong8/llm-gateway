@@ -20,6 +20,7 @@ type ChatCompletionRequest struct {
 	SessionID       string        `json:"session_id,omitempty"`
 	UserID          string        `json:"user_id,omitempty"`
 	TenantID        string        `json:"tenant_id,omitempty"`
+	MaxTokens       int           `json:"max_tokens,omitempty"`
 }
 
 type ChatCompletionResponse struct {
