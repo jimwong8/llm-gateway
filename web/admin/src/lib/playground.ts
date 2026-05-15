@@ -9,18 +9,24 @@ export type PlaygroundResult = {
 
 export async function sendPlaygroundRequest(payload: PlaygroundRequest): Promise<PlaygroundResult> {
   const startedAt = performance.now()
+  
+  // Use bare fetch to get access to response headers
+  const token = ''
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+  
   const response = await fetch('/v1/chat/completions', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify(payload),
   })
   const elapsedMs = Math.round(performance.now() - startedAt)
 
-  const headers: Record<string, string> = {}
+  const respHeaders: Record<string, string> = {}
   response.headers.forEach((value, key) => {
-    headers[key] = value
+    respHeaders[key] = value
   })
 
   const contentType = response.headers.get('Content-Type') ?? ''
@@ -28,10 +34,10 @@ export async function sendPlaygroundRequest(payload: PlaygroundRequest): Promise
     ? ((await response.json()) as PlaygroundResponse | Record<string, unknown>)
     : { message: await response.text() }
 
-  return {
-    body,
-    status: response.status,
-    headers,
-    elapsedMs,
+  if (!response.ok) {
+    const errMsg = (body as Record<string, unknown>)?.message ?? response.statusText
+    throw new Error(`Playground request failed: ${errMsg}`)
   }
+
+  return { body, status: response.status, headers: respHeaders, elapsedMs }
 }

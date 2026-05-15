@@ -1,16 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
 import { AppShell } from '../components/layout/AppShell'
+import { DashboardAdminOverviewSection } from '../components/dashboard/DashboardAdminOverviewSection'
+import { DashboardSessionOpsSection } from '../components/dashboard/DashboardSessionOpsSection'
 import { apiRequest } from '../lib/http'
 import type { BillingSummary } from '../types/observability'
+import type { SessionAdminDashboard } from '../types/sessionDashboard'
+import { formatPercent } from '../lib/format'
 
 type AdminHealth = {
   service?: string
   admin_auth?: string
   time?: string
-}
-
-function formatPercent(value: number | undefined) {
-  return `${((value ?? 0) * 100).toFixed(1)}%`
 }
 
 export function DashboardPage() {
@@ -24,6 +24,12 @@ export function DashboardPage() {
     queryFn: () => apiRequest<BillingSummary>('/admin/observability/summary'),
   })
 
+  const sessionQuery = useQuery({
+    queryKey: ['dashboard-session'],
+    queryFn: () => apiRequest<SessionAdminDashboard>('/admin/dashboard'),
+    retry: false,
+  })
+
   const loading = healthQuery.isLoading || summaryQuery.isLoading
   const hasError = healthQuery.error || summaryQuery.error
 
@@ -34,36 +40,24 @@ export function DashboardPage() {
     >
       <div className="events-page">
         {loading ? <div className="event-state">正在加载首页概览…</div> : null}
-        {hasError ? <div className="config-error">首页概览加载失败，请检查后端接口状态。</div> : null}
+        {hasError ? <div className="config-error" role="alert">首页概览加载失败，请检查后端接口状态。</div> : null}
 
         {!loading && !hasError ? (
-          <div className="summary-card-grid">
-            <section className="summary-card">
-              <span>Service</span>
-              <strong>{healthQuery.data?.service ?? '—'}</strong>
-            </section>
-            <section className="summary-card">
-              <span>Admin Auth</span>
-              <strong>{healthQuery.data?.admin_auth ?? '—'}</strong>
-            </section>
-            <section className="summary-card">
-              <span>Requests</span>
-              <strong>{summaryQuery.data?.requests ?? 0}</strong>
-            </section>
-            <section className="summary-card">
-              <span>Cache Hit Rate</span>
-              <strong>{formatPercent(summaryQuery.data?.cache_hit_rate)}</strong>
-            </section>
-            <section className="summary-card">
-              <span>Provider Error Rate</span>
-              <strong>{formatPercent(summaryQuery.data?.provider_error_rate)}</strong>
-            </section>
-            <section className="summary-card">
-              <span>Total Tokens</span>
-              <strong>{summaryQuery.data?.total_tokens ?? 0}</strong>
-            </section>
-          </div>
+          <DashboardAdminOverviewSection
+            service={healthQuery.data?.service ?? '—'}
+            adminAuth={healthQuery.data?.admin_auth ?? '—'}
+            requests={summaryQuery.data?.requests ?? 0}
+            cacheHitRate={formatPercent(summaryQuery.data?.cache_hit_rate)}
+            providerErrorRate={formatPercent(summaryQuery.data?.provider_error_rate)}
+            totalTokens={summaryQuery.data?.total_tokens ?? 0}
+          />
         ) : null}
+
+        <DashboardSessionOpsSection
+          loading={sessionQuery.isLoading}
+          hasError={!!sessionQuery.error}
+          data={sessionQuery.data}
+        />
       </div>
     </AppShell>
   )

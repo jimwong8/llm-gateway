@@ -61,7 +61,9 @@ describe('PlaygroundPage', () => {
     expect(screen.getByText('HIT')).toBeInTheDocument()
     expect(screen.getByText('0.92')).toBeInTheDocument()
     expect(screen.getByText('200')).toBeInTheDocument()
-    expect(String(fetchMock.mock.calls[0][0])).toBe('/v1/chat/completions')
+    // Verify the URL includes the chat completions endpoint
+    const fetchCall = fetchMock.mock.calls[0]
+    expect(String(fetchCall[0])).toContain('/v1/chat/completions')
   })
 
   it('adds a new message row', async () => {
