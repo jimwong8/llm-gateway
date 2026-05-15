@@ -16,6 +16,13 @@ import (
 	"llm-gateway/gateway/internal/providers"
 )
 
+// EmbeddingClient 嵌入客户端接口
+type EmbeddingClient interface {
+	Embed(ctx context.Context, text string) ([]float64, error)
+	Dimensions() int
+}
+
+// Cache 语义缓存
 type Cache struct {
 	baseURL    string
 	apiKey     string
@@ -23,6 +30,7 @@ type Cache struct {
 	vectorSize int
 	threshold  float64
 	client     *http.Client
+	embedder   EmbeddingClient // 可选的真嵌入客户端
 }
 
 type SearchHit struct {
@@ -43,6 +51,14 @@ func New(baseURL, apiKey, collection string, vectorSize int, threshold float64) 
 		threshold = 0.85
 	}
 	return &Cache{baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey, collection: collection, vectorSize: vectorSize, threshold: threshold, client: &http.Client{Timeout: 10 * time.Second}}
+}
+
+// SetEmbedder 设置真嵌入客户端
+func (c *Cache) SetEmbedder(embedder EmbeddingClient) {
+	c.embedder = embedder
+	if embedder != nil {
+		c.vectorSize = embedder.Dimensions()
+	}
 }
 
 func (c *Cache) EnsureCollection(ctx context.Context) error {
@@ -74,7 +90,21 @@ func (c *Cache) EnsureCollection(ctx context.Context) error {
 
 func (c *Cache) Search(ctx context.Context, reqPayload providers.ChatCompletionRequest) (*SearchHit, error) {
 	prompt := flattenPrompt(reqPayload)
-	vector := embed(prompt, c.vectorSize)
+	
+	var vector []float64
+	if c.embedder != nil {
+		// 使用真嵌入
+		var err error
+		vector, err = c.embedder.Embed(ctx, prompt)
+		if err != nil {
+			// 降级到 FNV 伪嵌入
+			vector = embed(prompt, c.vectorSize)
+		}
+	} else {
+		// 使用 FNV 伪嵌入
+		vector = embed(prompt, c.vectorSize)
+	}
+	
 	body := map[string]any{"vector": vector, "limit": 1, "with_payload": true, "filter": buildFilter(reqPayload)}
 	raw, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/collections/"+c.collection+"/points/search", bytes.NewReader(raw))
@@ -120,7 +150,18 @@ func (c *Cache) Search(ctx context.Context, reqPayload providers.ChatCompletionR
 
 func (c *Cache) Upsert(ctx context.Context, reqPayload providers.ChatCompletionRequest, respPayload providers.ChatCompletionResponse) error {
 	prompt := flattenPrompt(reqPayload)
-	vector := embed(prompt, c.vectorSize)
+	
+	var vector []float64
+	if c.embedder != nil {
+		var err error
+		vector, err = c.embedder.Embed(ctx, prompt)
+		if err != nil {
+			vector = embed(prompt, c.vectorSize)
+		}
+	} else {
+		vector = embed(prompt, c.vectorSize)
+	}
+	
 	id := pointID(reqPayload.TenantID + "|" + reqPayload.UserID + "|" + reqPayload.SessionID + "|" + prompt + "|" + reqPayload.Model)
 	body := map[string]any{"points": []map[string]any{{"id": id, "vector": vector, "payload": map[string]any{"tenant_id": reqPayload.TenantID, "user_id": reqPayload.UserID, "session_id": reqPayload.SessionID, "prompt": prompt, "model": reqPayload.Model, "response": respPayload, "created_at": time.Now().UTC().Format(time.RFC3339)}}}}
 	raw, _ := json.Marshal(body)
@@ -180,6 +221,7 @@ func flattenPrompt(req providers.ChatCompletionRequest) string {
 
 var wordRe = regexp.MustCompile(`[\p{L}\p{N}_]+`)
 
+// embed FNV 伪嵌入（降级方案）
 func embed(text string, size int) []float64 {
 	vec := make([]float64, size)
 	tokens := wordRe.FindAllString(strings.ToLower(text), -1)
