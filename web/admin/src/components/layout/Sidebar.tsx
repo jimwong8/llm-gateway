@@ -29,6 +29,7 @@ export const navGroups: NavGroup[] = [
     label: '管理',
     children: [
       { label: '渠道管理', path: '/channels' },
+      { label: '资产管理', path: '/assets' },
       { label: '配置中心', path: '/config-center' },
       { label: '发布管理', path: '/releases' },
     ],

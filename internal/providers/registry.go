@@ -223,3 +223,71 @@ func max(a, b int) int {
 	}
 	return b
 }
+
+type FallbackRoute struct {
+	Model    string
+	Provider string
+	Reason   string
+}
+
+type FallbackResult struct {
+	UsedFallback  bool
+	Attempts      int
+	FinalProvider string
+	FinalModel    string
+}
+
+func (r *Registry) ChatCompletionWithFallback(ctx context.Context, chain []FallbackRoute, req ChatCompletionRequest) (ChatCompletionResponse, FallbackResult, error) {
+	result := FallbackResult{}
+	if len(chain) == 0 {
+		return ChatCompletionResponse{}, result, fmt.Errorf("fallback chain is empty")
+	}
+	var lastErr error
+	for i, route := range chain {
+		providerName := route.Provider
+		if providerName == "" {
+			providerName = r.Resolve(route.Model).Name()
+		}
+		provider := r.Resolve(providerName)
+		if provider == nil {
+			lastErr = fmt.Errorf("provider not found: %s", providerName)
+			continue
+		}
+		name := strings.ToLower(strings.TrimSpace(provider.Name()))
+		if err := r.beforeCall(name); err != nil {
+			lastErr = err
+			continue
+		}
+		attempts := r.maxRetries + 1
+		if attempts < 1 {
+			attempts = 1
+		}
+		for attempt := 1; attempt <= attempts; attempt++ {
+			started := time.Now()
+			resp, err := provider.ChatCompletion(ctx, req)
+			latency := time.Since(started)
+			if err == nil {
+				r.recordSuccess(name, latency)
+				result.Attempts = i + 1
+				result.FinalProvider = provider.Name()
+				result.FinalModel = route.Model
+				result.UsedFallback = i > 0
+				return resp, result, nil
+			}
+			lastErr = err
+			r.recordFailure(name, latency, err)
+			if attempt == attempts || ctx.Err() != nil || !shouldRetry(name) {
+				break
+			}
+			time.Sleep(time.Duration(attempt) * 200 * time.Millisecond)
+			if err := r.beforeCall(name); err != nil {
+				lastErr = err
+				break
+			}
+		}
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("all fallback providers failed")
+	}
+	return ChatCompletionResponse{}, result, lastErr
+}

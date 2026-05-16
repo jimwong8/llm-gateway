@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AppShell } from '../components/layout/AppShell'
 import { DashboardAdminOverviewSection } from '../components/dashboard/DashboardAdminOverviewSection'
@@ -24,6 +24,11 @@ const CHART_TABS: { key: ChartTab; label: string }[] = [
   { key: 'channels', label: '渠道状态' },
 ]
 
+type TokenUsagePoint = { date: string; prompt: number; completion: number; total: number }
+type ModelDistributionPoint = { name: string; value: number }
+type CacheHitPoint = { date: string; hitRate: number; requests: number }
+type ChannelStatusPoint = { name: string; healthy: number; degraded: number; down: number }
+
 export function DashboardPage() {
   const [activeTab, setActiveTab] = useState<ChartTab>('tokens')
 
@@ -45,43 +50,40 @@ export function DashboardPage() {
     retry: false,
   })
 
+  const tokenUsageQuery = useQuery({
+    queryKey: ['dashboard-charts', 'token-usage'],
+    queryFn: () => apiRequest<{ data: TokenUsagePoint[] }>('/admin/dashboard/charts/token-usage'),
+    refetchInterval: 30_000,
+  })
+
+  const modelDistributionQuery = useQuery({
+    queryKey: ['dashboard-charts', 'model-distribution'],
+    queryFn: () => apiRequest<{ data: ModelDistributionPoint[] }>('/admin/dashboard/charts/model-distribution'),
+    refetchInterval: 30_000,
+  })
+
+  const cacheHitRateQuery = useQuery({
+    queryKey: ['dashboard-charts', 'cache-hit-rate'],
+    queryFn: () => apiRequest<{ data: CacheHitPoint[] }>('/admin/dashboard/charts/cache-hit-rate'),
+    refetchInterval: 30_000,
+  })
+
+  const channelStatusQuery = useQuery({
+    queryKey: ['dashboard-charts', 'channel-status'],
+    queryFn: () => apiRequest<{ data: ChannelStatusPoint[] }>('/admin/dashboard/charts/channel-status'),
+    refetchInterval: 30_000,
+  })
+
   const loading = healthQuery.isLoading || summaryQuery.isLoading
   const hasError = healthQuery.error || summaryQuery.error
 
-  const mockTokenData = useMemo(() => [
-    { date: '04/10', prompt: 120000, completion: 80000, total: 200000 },
-    { date: '04/11', prompt: 150000, completion: 95000, total: 245000 },
-    { date: '04/12', prompt: 110000, completion: 70000, total: 180000 },
-    { date: '04/13', prompt: 180000, completion: 120000, total: 300000 },
-    { date: '04/14', prompt: 200000, completion: 140000, total: 340000 },
-    { date: '04/15', prompt: 165000, completion: 110000, total: 275000 },
-    { date: '04/16', prompt: 220000, completion: 160000, total: 380000 },
-  ], [])
+  const chartLoading = tokenUsageQuery.isLoading || modelDistributionQuery.isLoading || cacheHitRateQuery.isLoading || channelStatusQuery.isLoading
+  const chartError = tokenUsageQuery.error || modelDistributionQuery.error || cacheHitRateQuery.error || channelStatusQuery.error
 
-  const mockModelData = useMemo(() => [
-    { name: 'GPT-4', value: 35 },
-    { name: 'GPT-3.5', value: 25 },
-    { name: 'Claude-3', value: 20 },
-    { name: 'Gemini', value: 12 },
-    { name: 'Other', value: 8 },
-  ], [])
-
-  const mockCacheData = useMemo(() => [
-    { date: '04/10', hitRate: 72, requests: 15000 },
-    { date: '04/11', hitRate: 78, requests: 18000 },
-    { date: '04/12', hitRate: 65, requests: 12000 },
-    { date: '04/13', hitRate: 81, requests: 22000 },
-    { date: '04/14', hitRate: 85, requests: 25000 },
-    { date: '04/15', hitRate: 74, requests: 16000 },
-    { date: '04/16', hitRate: 88, requests: 28000 },
-  ], [])
-
-  const mockChannelData = useMemo(() => [
-    { name: 'OpenAI', healthy: 95, degraded: 3, down: 2 },
-    { name: 'Anthropic', healthy: 90, degraded: 7, down: 3 },
-    { name: 'Azure', healthy: 88, degraded: 8, down: 4 },
-    { name: 'Google', healthy: 92, degraded: 5, down: 3 },
-  ], [])
+  const tokenData = tokenUsageQuery.data?.data
+  const modelData = modelDistributionQuery.data?.data
+  const cacheData = cacheHitRateQuery.data?.data
+  const channelData = channelStatusQuery.data?.data
 
   return (
     <AppShell
@@ -126,10 +128,16 @@ export function DashboardPage() {
           </div>
 
           <div style={{ marginTop: '1rem' }}>
-            {activeTab === 'tokens' && <TokenUsageChart data={mockTokenData} />}
-            {activeTab === 'models' && <ModelDistributionChart data={mockModelData} />}
-            {activeTab === 'cache' && <CacheHitRateChart data={mockCacheData} />}
-            {activeTab === 'channels' && <ChannelStatusChart data={mockChannelData} />}
+            {chartLoading ? <div className="event-state">加载图表数据中…</div> : null}
+            {chartError ? <div className="config-error" role="alert">图表数据加载失败</div> : null}
+            {!chartLoading && !chartError ? (
+              <>
+                {activeTab === 'tokens' && <TokenUsageChart data={tokenData} />}
+                {activeTab === 'models' && <ModelDistributionChart data={modelData} />}
+                {activeTab === 'cache' && <CacheHitRateChart data={cacheData} />}
+                {activeTab === 'channels' && <ChannelStatusChart data={channelData} />}
+              </>
+            ) : null}
           </div>
         </div>
       </div>

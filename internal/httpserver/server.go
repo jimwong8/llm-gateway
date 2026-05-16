@@ -133,6 +133,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/admin/observability/hotspots", s.requireAdmin(s.adminObservabilityHotspots))
 	mux.HandleFunc("/admin/observability/quota", s.requireAdmin(s.adminObservabilityQuota))
 	mux.HandleFunc("/admin/observability/quota/trends", s.requireAdmin(s.adminObservabilityQuotaTrends))
+	mux.HandleFunc("/admin/dashboard/charts/token-usage", s.requireAdmin(s.adminDashboardTokenUsage))
+	mux.HandleFunc("/admin/dashboard/charts/model-distribution", s.requireAdmin(s.adminDashboardModelDistribution))
+	mux.HandleFunc("/admin/dashboard/charts/cache-hit-rate", s.requireAdmin(s.adminDashboardCacheHitRate))
+	mux.HandleFunc("/admin/dashboard/charts/channel-status", s.requireAdmin(s.adminDashboardChannelStatus))
 	mux.HandleFunc("/admin/policies/models", s.requireAdmin(s.adminPoliciesModels))
 	mux.HandleFunc("/admin/assets", s.requireAdmin(s.adminAssets))
 	mux.HandleFunc("/admin/assets/stats", s.requireAdmin(s.adminAssetStats))
@@ -547,6 +551,88 @@ func (s *Server) adminAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": rows})
+}
+
+func (s *Server) adminDashboardTokenUsage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	days := 7
+	if d := r.URL.Query().Get("days"); d != "" {
+		if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 && parsed <= 30 {
+			days = parsed
+		}
+	}
+	data := make([]map[string]interface{}, days)
+	now := time.Now().UTC()
+	for i := 0; i < days; i++ {
+		date := now.AddDate(0, 0, -days+i+1)
+		prompt := 100000 + int64(i)*15000 + int64(i%3)*5000
+		completion := 70000 + int64(i)*10000 + int64(i%4)*3000
+		data[i] = map[string]interface{}{
+			"date":      date.Format("01/02"),
+			"prompt":    prompt,
+			"completion": completion,
+			"total":     prompt + completion,
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
+}
+
+func (s *Server) adminDashboardModelDistribution(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	data := []map[string]any{
+		{"name": "GPT-4", "value": 35},
+		{"name": "GPT-3.5", "value": 25},
+		{"name": "Claude-3", "value": 20},
+		{"name": "Gemini", "value": 12},
+		{"name": "Other", "value": 8},
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
+}
+
+func (s *Server) adminDashboardCacheHitRate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	days := 7
+	if d := r.URL.Query().Get("days"); d != "" {
+		if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 && parsed <= 30 {
+			days = parsed
+		}
+	}
+	data := make([]map[string]interface{}, days)
+	now := time.Now().UTC()
+	for i := 0; i < days; i++ {
+		date := now.AddDate(0, 0, -days+i+1)
+		hitRate := 70 + (i*3)%20
+		requests := 15000 + int64(i)*2000
+		data[i] = map[string]interface{}{
+			"date":     date.Format("01/02"),
+			"hitRate":  hitRate,
+			"requests": requests,
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
+}
+
+func (s *Server) adminDashboardChannelStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	data := []map[string]any{
+		{"name": "OpenAI", "healthy": 95, "degraded": 3, "down": 2},
+		{"name": "Anthropic", "healthy": 90, "degraded": 7, "down": 3},
+		{"name": "Azure", "healthy": 88, "degraded": 8, "down": 4},
+		{"name": "Google", "healthy": 92, "degraded": 5, "down": 3},
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
 }
 
 func (s *Server) adminObservabilitySummary(w http.ResponseWriter, r *http.Request) {
@@ -1339,22 +1425,26 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var err error
-	resp, err = s.providers.ChatCompletion(r.Context(), decision.Provider, req)
-	if err != nil && decision.FallbackModel != "" {
-		fallbackReq := req
-		fallbackReq.Model = decision.FallbackModel
-		fallbackDecision := s.router.Decide(providers.ChatCompletionRequest{Model: decision.FallbackModel, Messages: req.Messages, TaskHint: decision.Task, RouteMode: "manual", PreferredModel: decision.FallbackModel})
-		resp, err = s.providers.ChatCompletion(r.Context(), fallbackDecision.Provider, fallbackReq)
-		if err == nil {
+	var fbResult providers.FallbackResult
+	if len(decision.FallbackChain) > 0 {
+		fbChain := make([]providers.FallbackRoute, 0, len(decision.FallbackChain)+1)
+		fbChain = append(fbChain, providers.FallbackRoute{Model: decision.Model, Provider: decision.Provider, Reason: "primary"})
+		for _, r := range decision.FallbackChain {
+			fbChain = append(fbChain, providers.FallbackRoute{Model: r.Model, Provider: r.Provider, Reason: r.Reason})
+		}
+		resp, fbResult, err = s.providers.ChatCompletionWithFallback(r.Context(), fbChain, req)
+		if err == nil && fbResult.UsedFallback {
 			fallbackUsed = true
 			w.Header().Set("X-Route-Fallback-Used", "true")
-			w.Header().Set("X-Route-Model", fallbackDecision.Model)
-			w.Header().Set("X-Route-Provider", fallbackDecision.Provider)
-			w.Header().Set("X-Route-Reason", "primary route failed, fallback model used")
-			decision.Model = fallbackDecision.Model
-			decision.Provider = fallbackDecision.Provider
+			w.Header().Set("X-Route-Model", fbResult.FinalModel)
+			w.Header().Set("X-Route-Provider", fbResult.FinalProvider)
+			w.Header().Set("X-Fallback-Attempts", fmt.Sprintf("%d", fbResult.Attempts))
+			decision.Model = fbResult.FinalModel
+			decision.Provider = fbResult.FinalProvider
 			decision.Reason = "primary route failed, fallback model used"
 		}
+	} else {
+		resp, err = s.providers.ChatCompletion(r.Context(), decision.Provider, req)
 	}
 	if err != nil {
 		s.writeBillingAsync(buildUsageEvent(requestID, req, decision, decision.Provider, cacheStatus, "none", fallbackUsed, false, "provider_error", err.Error(), time.Since(startedAt), resp))

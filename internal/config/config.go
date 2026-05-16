@@ -50,6 +50,8 @@ type Config struct {
 	ModelGovernanceRolloutMaxP95MS int
 	ModelGovernanceRolloutMaxFallbackRate float64
 	ModelGovernanceMinSampleCount int
+	FallbackMaxDepth         int
+	FallbackMinScoreRatio    float64
 }
 
 func Load() Config {
@@ -97,6 +99,8 @@ func Load() Config {
 		ModelGovernanceRolloutMaxP95MS: getenvInt("MODEL_GOVERNANCE_ROLLOUT_MAX_P95_MS", 1200),
 		ModelGovernanceRolloutMaxFallbackRate: getenvFloat("MODEL_GOVERNANCE_ROLLOUT_MAX_FALLBACK_RATE", 0.15),
 		ModelGovernanceMinSampleCount: getenvInt("MODEL_GOVERNANCE_MIN_SAMPLE_COUNT", 200),
+		FallbackMaxDepth:             getenvInt("FALLBACK_MAX_DEPTH", 3),
+		FallbackMinScoreRatio:        getenvFloat("FALLBACK_MIN_SCORE_RATIO", 0.5),
 	}
 	return cfg
 }

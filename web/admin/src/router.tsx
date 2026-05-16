@@ -18,6 +18,7 @@ import { RolloutsPage } from './pages/RolloutsPage'
 import { RuntimeObserverPage } from './pages/RuntimeObserverPage'
 import { SystemPage } from './pages/SystemPage'
 import { ChannelsPage } from './pages/ChannelsPage'
+import { AssetsPage } from './pages/AssetsPage'
 
 export const router = createBrowserRouter([
   {
@@ -50,6 +51,10 @@ export const router = createBrowserRouter([
       {
         path: 'channels',
         element: <ChannelsPage />,
+      },
+      {
+        path: 'assets',
+        element: <AssetsPage />,
       },
       {
         path: 'system',

@@ -29,6 +29,12 @@ type CandidateScore struct {
 	Reason     string  `json:"reason"`
 }
 
+type FallbackRoute struct {
+	Model    string `json:"model"`
+	Provider string `json:"provider"`
+	Reason   string `json:"reason"`
+}
+
 type Decision struct {
 	Model         string           `json:"model"`
 	Provider      string           `json:"provider"`
@@ -39,6 +45,7 @@ type Decision struct {
 	Reason        string           `json:"reason"`
 	Scores        []CandidateScore `json:"scores,omitempty"`
 	FallbackModel string           `json:"fallback_model,omitempty"`
+	FallbackChain []FallbackRoute  `json:"fallback_chain,omitempty"`
 }
 
 type Channel struct {
@@ -179,6 +186,11 @@ func (r *Router) Decide(req providers.ChatCompletionRequest) Decision {
 	decision := Decision{Model: best.Model, Provider: best.Provider, Task: task, RouteMode: mode, Reason: best.Reason, Scores: scores}
 	if len(scores) > 1 {
 		decision.FallbackModel = scores[1].Model
+		chain := make([]FallbackRoute, 0, len(scores)-1)
+		for _, s := range scores[1:] {
+			chain = append(chain, FallbackRoute{Model: s.Model, Provider: s.Provider, Reason: s.Reason})
+		}
+		decision.FallbackChain = chain
 	}
 	return decision
 }
