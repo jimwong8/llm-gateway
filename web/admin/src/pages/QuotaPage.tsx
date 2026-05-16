@@ -59,7 +59,7 @@ export function QuotaPage() {
         <form className="config-filters" aria-label="配额筛选" onSubmit={handleSubmit}>
           <label>
             租户 ID
-            <input value={draftFilters.tenantID} onChange={(event) => setDraftFilters((prev) => ({ ...prev, tenantID: event.target.value }))} placeholder="tenant-a" />
+            <input value={draftFilters.tenantID} onChange={(event) => setDraftFilters((prev) => ({ ...prev, tenantID: event.target.value }))} placeholder="租户-a" />
           </label>
           <label>
             时间窗口（分钟）

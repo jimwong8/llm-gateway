@@ -197,7 +197,7 @@ export function RolloutsPage() {
     >
       <div className="events-page">
         {rolloutsQuery.isLoading ? <div className="event-state">正在加载 rollout 列表…</div> : null}
-        {rolloutsQuery.error ? <div className="config-error">rollout 列表加载失败，请检查 governance 接口状态。</div> : null}
+        {rolloutsQuery.error ? <div className="config-error">发布列表加载失败，请检查治理 接口状态。</div> : null}
         {rollbackError ? <div className="config-error">{rollbackError}</div> : null}
         {rollbackSuccess ? <div className="event-state">{rollbackSuccess}</div> : null}
 

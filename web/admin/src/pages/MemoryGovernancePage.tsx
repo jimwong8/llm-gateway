@@ -614,7 +614,7 @@ export function MemoryGovernancePage() {
             <input
               value={draftFilters.tenant_id}
               onChange={(event) => setDraftFilters((previous) => ({ ...previous, tenant_id: event.target.value }))}
-              placeholder="tenant-a"
+              placeholder="租户-a"
             />
           </label>
           <label>
@@ -622,7 +622,7 @@ export function MemoryGovernancePage() {
             <input
               value={draftFilters.user_id}
               onChange={(event) => setDraftFilters((previous) => ({ ...previous, user_id: event.target.value }))}
-              placeholder="user-1"
+              placeholder="用户-1"
             />
           </label>
           <label>
@@ -780,7 +780,7 @@ export function MemoryGovernancePage() {
                       <input
                         value={candidateLocalQuery}
                         onChange={(event) => setCandidateLocalQuery(event.target.value)}
-                        placeholder="搜索 key / value / source / tenant / user / status"
+                        placeholder="搜索键值/来源/租户/用户/状态"
                       />
                     </label>
                     <label>
@@ -1062,7 +1062,7 @@ export function MemoryGovernancePage() {
                       <input
                         value={projectLocalQuery}
                         onChange={(event) => setProjectLocalQuery(event.target.value)}
-                        placeholder="搜索 key / value / source / tenant / user / status"
+                        placeholder="搜索键值/来源/租户/用户/状态"
                       />
                     </label>
                     <label>

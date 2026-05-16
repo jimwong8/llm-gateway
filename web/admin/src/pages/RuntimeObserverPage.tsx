@@ -45,7 +45,7 @@ export function RuntimeObserverPage() {
         <form className="config-filters" aria-label="运行时观测筛选" onSubmit={handleSubmit}>
           <label>
             环境
-            <input value={draftEnvironment} onChange={(event) => setDraftEnvironment(event.target.value)} placeholder="prod" />
+            <input value={draftEnvironment} onChange={(event) => setDraftEnvironment(event.target.value)} placeholder="生产环境" />
           </label>
           <div className="config-filters__actions">
             <button type="submit">刷新观察数据</button>

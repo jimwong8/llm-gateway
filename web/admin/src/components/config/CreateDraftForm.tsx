@@ -90,35 +90,35 @@ export function CreateDraftForm({ onCreated }: CreateDraftFormProps) {
       <div className="draft-form__grid">
           <label>
             模块
-            <input value={form.module} onChange={(event) => setForm((prev) => ({ ...prev, module: event.target.value }))} placeholder="router" />
+            <input value={form.module} onChange={(event) => setForm((prev) => ({ ...prev, module: event.target.value }))} placeholder="路由模块" />
           </label>
           <label>
             租户 ID
-            <input value={form.tenantID} onChange={(event) => setForm((prev) => ({ ...prev, tenantID: event.target.value }))} placeholder="tenant-a" />
+            <input value={form.tenantID} onChange={(event) => setForm((prev) => ({ ...prev, tenantID: event.target.value }))} placeholder="租户-a" />
           </label>
           <label>
             作用域
-            <input value={form.scope} onChange={(event) => setForm((prev) => ({ ...prev, scope: event.target.value }))} placeholder="tenant" />
+            <input value={form.scope} onChange={(event) => setForm((prev) => ({ ...prev, scope: event.target.value }))} placeholder="租户" />
           </label>
           <label>
             项目 ID
-            <input value={form.projectID} onChange={(event) => setForm((prev) => ({ ...prev, projectID: event.target.value }))} placeholder="project-x" />
+            <input value={form.projectID} onChange={(event) => setForm((prev) => ({ ...prev, projectID: event.target.value }))} placeholder="项目-x" />
           </label>
           <label>
             来源环境
-            <input value={form.sourceEnvironment} onChange={(event) => setForm((prev) => ({ ...prev, sourceEnvironment: event.target.value }))} placeholder="staging" />
+            <input value={form.sourceEnvironment} onChange={(event) => setForm((prev) => ({ ...prev, sourceEnvironment: event.target.value }))} placeholder="预发布环境" />
           </label>
           <label>
             目标环境
-            <input value={form.targetEnvironment} onChange={(event) => setForm((prev) => ({ ...prev, targetEnvironment: event.target.value }))} placeholder="prod" />
+            <input value={form.targetEnvironment} onChange={(event) => setForm((prev) => ({ ...prev, targetEnvironment: event.target.value }))} placeholder="生产环境" />
           </label>
           <label>
             执行人
-            <input value={form.actor} onChange={(event) => setForm((prev) => ({ ...prev, actor: event.target.value }))} placeholder="release-bot" />
+            <input value={form.actor} onChange={(event) => setForm((prev) => ({ ...prev, actor: event.target.value }))} placeholder="发布机器人" />
           </label>
           <label>
             原因
-            <input value={form.reason} onChange={(event) => setForm((prev) => ({ ...prev, reason: event.target.value }))} placeholder="prepare prod draft" />
+            <input value={form.reason} onChange={(event) => setForm((prev) => ({ ...prev, reason: event.target.value }))} placeholder="准备生产环境草稿" />
           </label>
       </div>
 

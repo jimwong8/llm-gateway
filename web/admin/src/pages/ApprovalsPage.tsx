@@ -63,19 +63,19 @@ export function ApprovalsPage() {
     event.preventDefault()
 
     if (!form.recommendationID.trim() || !form.approvedBy.trim() || !form.scope.trim() || !form.environment.trim()) {
-      setError('请填写 recommendation、审批人和生效范围信息。')
+      setError('请填写推荐、审批人和生效范围信息。')
       setSuccessMessage('')
       return
     }
 
     if (form.decision === 'overridden' && !form.finalModel.trim()) {
-      setError('override 决策必须填写 final model。')
+      setError('覆盖决策必须填写最终模型。')
       setSuccessMessage('')
       return
     }
 
     if (form.decision === 'rejected' && !form.approvalReason.trim()) {
-      setError('reject 决策必须填写审批原因。')
+      setError('拒绝决策必须填写审批原因。')
       setSuccessMessage('')
       return
     }
@@ -163,7 +163,7 @@ export function ApprovalsPage() {
               ))}
               {recommendations.length === 0 && !recommendationsQuery.isLoading ? (
                 <tr>
-                  <td colSpan={8}>暂无 recommendation 数据</td>
+                  <td colSpan={8}>暂无推荐数据</td>
                 </tr>
               ) : null}
             </tbody>
@@ -194,7 +194,7 @@ export function ApprovalsPage() {
               <input
                 value={form.recommendationID}
                 onChange={(event) => setForm((previous) => ({ ...previous, recommendationID: event.target.value }))}
-                placeholder="rec-1"
+                placeholder="推荐-1"
               />
             </label>
             <label>
@@ -222,7 +222,7 @@ export function ApprovalsPage() {
               <input
                 value={form.approvalReason}
                 onChange={(event) => setForm((previous) => ({ ...previous, approvalReason: event.target.value }))}
-                placeholder="reason"
+                placeholder="原因"
               />
             </label>
             <label>
@@ -230,7 +230,7 @@ export function ApprovalsPage() {
               <input
                 value={form.approvedBy}
                 onChange={(event) => setForm((previous) => ({ ...previous, approvedBy: event.target.value }))}
-                placeholder="ops-bot"
+                placeholder="运维机器人"
               />
             </label>
             <label>
@@ -249,7 +249,7 @@ export function ApprovalsPage() {
               <input
                 value={form.environment}
                 onChange={(event) => setForm((previous) => ({ ...previous, environment: event.target.value }))}
-                placeholder="prod"
+                placeholder="生产环境"
               />
             </label>
             <label>
@@ -257,7 +257,7 @@ export function ApprovalsPage() {
               <input
                 value={form.projectID}
                 onChange={(event) => setForm((previous) => ({ ...previous, projectID: event.target.value }))}
-                placeholder="project-x"
+                placeholder="项目-x"
               />
             </label>
           </div>

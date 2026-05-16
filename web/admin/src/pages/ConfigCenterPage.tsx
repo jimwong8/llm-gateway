@@ -46,7 +46,7 @@ export function ConfigCenterPage() {
             <input
               value={draftFilters.module}
               onChange={(event) => setDraftFilters((prev) => ({ ...prev, module: event.target.value }))}
-              placeholder="router"
+              placeholder="路由模块"
             />
           </label>
           <label>
@@ -54,7 +54,7 @@ export function ConfigCenterPage() {
             <input
               value={draftFilters.tenantID}
               onChange={(event) => setDraftFilters((prev) => ({ ...prev, tenantID: event.target.value }))}
-              placeholder="tenant-a"
+              placeholder="租户-a"
             />
           </label>
           <label>
@@ -62,7 +62,7 @@ export function ConfigCenterPage() {
             <input
               value={draftFilters.environment}
               onChange={(event) => setDraftFilters((prev) => ({ ...prev, environment: event.target.value }))}
-              placeholder="prod"
+              placeholder="生产环境"
             />
           </label>
           <label>
@@ -70,7 +70,7 @@ export function ConfigCenterPage() {
             <input
               value={draftFilters.scope}
               onChange={(event) => setDraftFilters((prev) => ({ ...prev, scope: event.target.value }))}
-              placeholder="tenant"
+              placeholder="租户"
             />
           </label>
           <label>
@@ -78,7 +78,7 @@ export function ConfigCenterPage() {
             <input
               value={draftFilters.projectID}
               onChange={(event) => setDraftFilters((prev) => ({ ...prev, projectID: event.target.value }))}
-              placeholder="project-x"
+              placeholder="项目-x"
             />
           </label>
           <div className="config-filters__actions">

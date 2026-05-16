@@ -47,25 +47,25 @@ export function RecommendationCenterPage() {
   const [approvalError, setApprovalError] = useState('')
   const [approvalSuccess, setApprovalSuccess] = useState('')
 
-  const recommendationsQuery = useQuery({
-    queryKey: ['governance-recommendations'],
+  const 推荐Query = useQuery({
+    queryKey: ['governance-推荐'],
     queryFn: listGovernanceRecommendations,
   })
 
-  const recommendations = useMemo(() => recommendationsQuery.data?.data ?? [], [recommendationsQuery.data])
+  const 推荐 = useMemo(() => 推荐Query.data?.data ?? [], [推荐Query.data])
 
   const metrics = useMemo(() => {
-    const total = recommendations.length
-    const pending = recommendations.filter((item) => item.status === 'pending').length
-    const approved = recommendations.filter((item) => item.status === 'approved').length
+    const total = 推荐.length
+    const pending = 推荐.filter((item) => item.status === 'pending').length
+    const approved = 推荐.filter((item) => item.status === 'approved').length
 
     return {
       total,
       pending,
       approved,
-      uniqueAgents: new Set(recommendations.map((item) => item.agent_id).filter(Boolean)).size,
+      uniqueAgents: new Set(推荐.map((item) => item.agent_id).filter(Boolean)).size,
     }
-  }, [recommendations])
+  }, [推荐])
 
   function openApprovalDialog(row: RecommendationRow) {
     setApprovalError('')
@@ -106,7 +106,7 @@ export function RecommendationCenterPage() {
 
       setApprovalSuccess(`已创建审批：${response.id}`)
       setDialogState((previous) => ({ ...previous, open: false }))
-      void recommendationsQuery.refetch()
+      void 推荐Query.refetch()
     } catch (unknownError) {
       if (unknownError instanceof ApiError) {
         setApprovalError(`审批失败：${unknownError.message}`)
@@ -124,12 +124,12 @@ export function RecommendationCenterPage() {
       description="查看治理推荐列表与摘要，并直接为推荐创建审批动作。"
     >
       <div className="events-page">
-        {recommendationsQuery.isLoading ? <div className="event-state">正在加载推荐列表…</div> : null}
-        {recommendationsQuery.error ? <div className="config-error">推荐列表加载失败，请检查 governance 接口状态。</div> : null}
+        {推荐Query.isLoading ? <div className="event-state">正在加载推荐列表…</div> : null}
+        {推荐Query.error ? <div className="config-error">推荐列表加载失败，请检查 governance 接口状态。</div> : null}
         {approvalError ? <div className="config-error">{approvalError}</div> : null}
         {approvalSuccess ? <div className="event-state">{approvalSuccess}</div> : null}
 
-        {!recommendationsQuery.isLoading && !recommendationsQuery.error ? (
+        {!推荐Query.isLoading && !推荐Query.error ? (
           <>
             <div className="summary-card-grid">
               <section className="summary-card">
@@ -165,7 +165,7 @@ export function RecommendationCenterPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {recommendations.map((row) => (
+                  {推荐.map((row) => (
                     <tr key={row.id}>
                       <td>{row.id}</td>
                       <td>{row.agent_id || '—'}</td>

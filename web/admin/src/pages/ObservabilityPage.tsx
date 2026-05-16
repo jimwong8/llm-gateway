@@ -73,7 +73,7 @@ export function ObservabilityPage() {
         <form className="config-filters" aria-label="可观测性筛选" onSubmit={handleSubmit}>
           <label>
             租户 ID
-            <input value={draftFilters.tenantID} onChange={(event) => setDraftFilters((prev) => ({ ...prev, tenantID: event.target.value }))} placeholder="tenant-a" />
+            <input value={draftFilters.tenantID} onChange={(event) => setDraftFilters((prev) => ({ ...prev, tenantID: event.target.value }))} placeholder="租户-a" />
           </label>
           <label>
             Provider

@@ -38,7 +38,7 @@ export function ReleaseDraftPanel({ onReleased }: ReleaseDraftPanelProps) {
     event.preventDefault()
 
     if (!form.module.trim() || !form.tenantID.trim() || !form.environment.trim() || !form.scope.trim() || !form.versionID.trim()) {
-      setError('请填写 Release 必填字段')
+      setError('请填写发布必填字段')
       setSuccessMessage('')
       return
     }
@@ -62,7 +62,7 @@ export function ReleaseDraftPanel({ onReleased }: ReleaseDraftPanelProps) {
       setSuccessMessage(`已发布 ${released.version_id}`)
       onReleased?.(released)
     } catch (unknownError) {
-      const message = unknownError instanceof Error ? unknownError.message : '发布 Draft 失败'
+      const message = unknownError instanceof Error ? unknownError.message : '发布草稿 失败'
       setError(message)
     } finally {
       setSubmitting(false)
@@ -70,49 +70,49 @@ export function ReleaseDraftPanel({ onReleased }: ReleaseDraftPanelProps) {
   }
 
   return (
-    <form className="release-panel" aria-label="发布 Draft 表单" onSubmit={handleSubmit}>
+    <form className="release-panel" aria-label="发布草稿表单" onSubmit={handleSubmit}>
       <div className="release-panel__header">
         <div>
-          <h2>发布 Draft</h2>
+          <h2>发布草稿</h2>
           <p>将目标环境的 Draft 发布为 Released，触发后续运行时生效链路。</p>
         </div>
         <button type="submit" disabled={submitting}>
-          {submitting ? '发布中…' : '发布 Draft'}
+          {submitting ? '发布中…' : '发布草稿'}
         </button>
       </div>
 
       <div className="release-panel__grid">
           <label>
             模块
-            <input value={form.module} onChange={(event) => setForm((prev) => ({ ...prev, module: event.target.value }))} placeholder="router" />
+            <input value={form.module} onChange={(event) => setForm((prev) => ({ ...prev, module: event.target.value }))} placeholder="路由模块" />
           </label>
           <label>
             租户 ID
-            <input value={form.tenantID} onChange={(event) => setForm((prev) => ({ ...prev, tenantID: event.target.value }))} placeholder="tenant-a" />
+            <input value={form.tenantID} onChange={(event) => setForm((prev) => ({ ...prev, tenantID: event.target.value }))} placeholder="租户-a" />
           </label>
           <label>
             环境
-            <input value={form.environment} onChange={(event) => setForm((prev) => ({ ...prev, environment: event.target.value }))} placeholder="prod" />
+            <input value={form.environment} onChange={(event) => setForm((prev) => ({ ...prev, environment: event.target.value }))} placeholder="生产环境" />
           </label>
           <label>
             作用域
-            <input value={form.scope} onChange={(event) => setForm((prev) => ({ ...prev, scope: event.target.value }))} placeholder="tenant" />
+            <input value={form.scope} onChange={(event) => setForm((prev) => ({ ...prev, scope: event.target.value }))} placeholder="租户" />
           </label>
           <label>
             项目 ID
-            <input value={form.projectID} onChange={(event) => setForm((prev) => ({ ...prev, projectID: event.target.value }))} placeholder="project-x" />
+            <input value={form.projectID} onChange={(event) => setForm((prev) => ({ ...prev, projectID: event.target.value }))} placeholder="项目-x" />
           </label>
           <label>
             版本 ID
-            <input value={form.versionID} onChange={(event) => setForm((prev) => ({ ...prev, versionID: event.target.value }))} placeholder="cfg_101" />
+            <input value={form.versionID} onChange={(event) => setForm((prev) => ({ ...prev, versionID: event.target.value }))} placeholder="配置版本-101" />
           </label>
           <label>
             执行人
-            <input value={form.actor} onChange={(event) => setForm((prev) => ({ ...prev, actor: event.target.value }))} placeholder="release-bot" />
+            <input value={form.actor} onChange={(event) => setForm((prev) => ({ ...prev, actor: event.target.value }))} placeholder="发布机器人" />
           </label>
           <label>
             原因
-            <input value={form.reason} onChange={(event) => setForm((prev) => ({ ...prev, reason: event.target.value }))} placeholder="approve prod draft" />
+            <input value={form.reason} onChange={(event) => setForm((prev) => ({ ...prev, reason: event.target.value }))} placeholder="批准生产环境草稿" />
           </label>
       </div>
 

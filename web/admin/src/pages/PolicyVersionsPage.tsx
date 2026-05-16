@@ -122,7 +122,7 @@ export function PolicyVersionsPage() {
     >
       <div className="policy-version-center">
         {versionsQuery.isLoading ? <div className="event-state">正在加载策略版本列表…</div> : null}
-        {versionsQuery.error ? <div className="config-error">策略版本列表加载失败，请检查 governance 接口状态。</div> : null}
+        {versionsQuery.error ? <div className="config-error">策略版本列表加载失败，请检查治理接口状态。</div> : null}
         {actionError ? <div className="config-error">操作失败：{actionError}</div> : null}
         {actionMessage ? <div className="event-state">{actionMessage}</div> : null}
 

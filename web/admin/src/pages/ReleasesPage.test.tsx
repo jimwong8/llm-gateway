@@ -18,7 +18,7 @@ describe('ReleasesPage', () => {
     render(<ReleasesPage />)
 
     expect(screen.getByRole('heading', { name: '发布管理', level: 1 })).toBeInTheDocument()
-    expect(screen.getByRole('form', { name: '发布 Draft 表单' })).toBeInTheDocument()
+    expect(screen.getByRole('form', { name: '发布草稿表单' })).toBeInTheDocument()
     expect(screen.getByRole('form', { name: '推广表单' })).toBeInTheDocument()
   })
 
@@ -46,14 +46,14 @@ describe('ReleasesPage', () => {
 
     render(<ReleasesPage />)
 
-    const releaseForm = screen.getByRole('form', { name: '发布 Draft 表单' })
+    const releaseForm = screen.getByRole('form', { name: '发布草稿表单' })
     await user.type(within(releaseForm).getByLabelText('模块'), 'router')
     await user.type(within(releaseForm).getByLabelText('租户 ID'), 'tenant-a')
     await user.type(within(releaseForm).getByLabelText('环境'), 'prod')
     await user.clear(within(releaseForm).getByLabelText('作用域'))
     await user.type(within(releaseForm).getByLabelText('作用域'), 'tenant')
     await user.type(within(releaseForm).getByLabelText('版本 ID'), 'cfg_201')
-    await user.click(within(releaseForm).getByRole('button', { name: '发布 Draft' }))
+    await user.click(within(releaseForm).getByRole('button', { name: '发布草稿' }))
 
     expect(await screen.findByText('已发布 cfg_201')).toBeInTheDocument()
     expect(screen.getByText('最近一次操作结果')).toBeInTheDocument()

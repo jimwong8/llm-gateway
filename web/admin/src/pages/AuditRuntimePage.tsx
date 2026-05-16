@@ -44,15 +44,15 @@ export function AuditRuntimePage() {
         <form className="config-filters" aria-label="事件筛选" onSubmit={handleSubmit}>
           <label>
             租户 ID
-            <input value={draftFilters.tenantID} onChange={(event) => setDraftFilters((prev) => ({ ...prev, tenantID: event.target.value }))} placeholder="tenant-a" />
+            <input value={draftFilters.tenantID} onChange={(event) => setDraftFilters((prev) => ({ ...prev, tenantID: event.target.value }))} placeholder="租户-a" />
           </label>
           <label>
             环境
-            <input value={draftFilters.environment} onChange={(event) => setDraftFilters((prev) => ({ ...prev, environment: event.target.value }))} placeholder="prod" />
+            <input value={draftFilters.environment} onChange={(event) => setDraftFilters((prev) => ({ ...prev, environment: event.target.value }))} placeholder="生产环境" />
           </label>
           <label>
             条数限制
-            <input value={draftFilters.limit} onChange={(event) => setDraftFilters((prev) => ({ ...prev, limit: event.target.value }))} placeholder="20" />
+            <input value={draftFilters.limit} onChange={(event) => setDraftFilters((prev) => ({ ...prev, limit: event.target.value }))} placeholder="20条" />
           </label>
           <label className="toggle-field">
             <span>摘要视图</span>

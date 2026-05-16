@@ -193,7 +193,7 @@ describe('ApprovalsPage', () => {
     await user.selectOptions(within(form).getByLabelText('决策'), 'overridden')
     await user.click(within(form).getByRole('button', { name: '提交审批' }))
 
-    expect(await screen.findByText('override 决策必须填写 final model。')).toBeInTheDocument()
+    expect(await screen.findByText('覆盖决策必须填写最终模型。')).toBeInTheDocument()
 
     await user.type(within(form).getByLabelText('最终模型'), 'gpt-4o-mini')
     await user.click(within(form).getByRole('button', { name: '提交审批' }))
