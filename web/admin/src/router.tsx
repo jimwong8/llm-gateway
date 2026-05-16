@@ -17,6 +17,7 @@ import { ReleasesPage } from './pages/ReleasesPage'
 import { RolloutsPage } from './pages/RolloutsPage'
 import { RuntimeObserverPage } from './pages/RuntimeObserverPage'
 import { SystemPage } from './pages/SystemPage'
+import { ChannelsPage } from './pages/ChannelsPage'
 
 export const router = createBrowserRouter([
   {
@@ -45,6 +46,10 @@ export const router = createBrowserRouter([
       {
         path: 'audit-runtime',
         element: <AuditRuntimePage />,
+      },
+      {
+        path: 'channels',
+        element: <ChannelsPage />,
       },
       {
         path: 'system',

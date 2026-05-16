@@ -13,24 +13,57 @@ type NavItem = {
   path?: string
 }
 
-export const navItems: NavItem[] = [
-  { label: '仪表盘', path: '/dashboard' },
-  { label: '配置中心', path: '/config-center' },
-  { label: '发布管理', path: '/releases' },
-  { label: '审计与运行时', path: '/audit-runtime' },
-  { label: '在线测试', path: '/playground' },
-  { label: '可观测性', path: '/observability' },
-  { label: '配额管理', path: '/quota' },
-  { label: '策略管理', path: '/policies' },
-  { label: '记忆治理', path: '/memory-governance' },
-  { label: '推荐管理', path: '/recommendations' },
-  { label: '审批管理', path: '/approvals' },
-  { label: '策略版本', path: '/policy-versions' },
-  { label: '灰度发布', path: '/rollouts' },
-  { label: '运行时观测', path: '/runtime-observer' },
-  { label: '漂移仪表盘', path: '/drifts' },
-  { label: '系统状态', path: '/system' },
+type NavGroup = {
+  label: string
+  children: NavItem[]
+}
+
+export const navGroups: NavGroup[] = [
+  {
+    label: '概览',
+    children: [
+      { label: '仪表盘', path: '/dashboard' },
+    ],
+  },
+  {
+    label: '管理',
+    children: [
+      { label: '渠道管理', path: '/channels' },
+      { label: '配置中心', path: '/config-center' },
+      { label: '发布管理', path: '/releases' },
+    ],
+  },
+  {
+    label: '监控',
+    children: [
+      { label: '审计与运行时', path: '/audit-runtime' },
+      { label: '可观测性', path: '/observability' },
+      { label: '漂移仪表盘', path: '/drifts' },
+      { label: '运行时观测', path: '/runtime-observer' },
+    ],
+  },
+  {
+    label: '策略',
+    children: [
+      { label: '策略管理', path: '/policies' },
+      { label: '策略版本', path: '/policy-versions' },
+      { label: '审批管理', path: '/approvals' },
+      { label: '灰度发布', path: '/rollouts' },
+    ],
+  },
+  {
+    label: '系统',
+    children: [
+      { label: '配额管理', path: '/quota' },
+      { label: '记忆治理', path: '/memory-governance' },
+      { label: '推荐管理', path: '/recommendations' },
+      { label: '在线测试', path: '/playground' },
+      { label: '系统状态', path: '/system' },
+    ],
+  },
 ]
+
+export const navItems: NavItem[] = navGroups.flatMap((g) => g.children)
 
 export function Sidebar({ mobile = false, open = false, onClose, currentPath, onNavigate }: SidebarProps) {
   const inRouter = useInRouterContext()
@@ -72,26 +105,28 @@ function SidebarLayout({ mobile = false, open = false, onClose, currentPath = ''
         ) : null}
       </div>
       <nav className="app-sidebar__nav">
-        {navItems.map((item) => {
-          const isActive = item.path ? currentPath === item.path : false
-
-          return (
-            <button
-              key={item.label}
-              type="button"
-              className={isActive ? 'nav-item active' : 'nav-item'}
-              onClick={() => {
-                if (!item.path) {
-                  return
-                }
-                onNavigate(item.path)
-                onClose?.()
-              }}
-            >
-              {item.label}
-            </button>
-          )
-        })}
+        {navGroups.map((group) => (
+          <div key={group.label} className="nav-group">
+            <span className="nav-group-label">{group.label}</span>
+            {group.children.map((item) => {
+              const isActive = item.path ? currentPath === item.path : false
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  className={isActive ? 'nav-item active' : 'nav-item'}
+                  onClick={() => {
+                    if (!item.path) return
+                    onNavigate(item.path)
+                    onClose?.()
+                  }}
+                >
+                  {item.label}
+                </button>
+              )
+            })}
+          </div>
+        ))}
       </nav>
     </aside>
   )
