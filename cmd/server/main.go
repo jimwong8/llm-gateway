@@ -26,6 +26,7 @@ import (
 	"llm-gateway/gateway/internal/router"
 	"llm-gateway/gateway/internal/runtime"
 	"llm-gateway/gateway/internal/semantic"
+	"llm-gateway/gateway/internal/tenant"
 )
 
 func main() {
@@ -102,6 +103,13 @@ func main() {
 		}
 	}
 
+	var tenantKeyStore *tenant.Store
+	if store, err := tenant.NewStore(cfg.PostgresDSN, cfg.AdminAPIKey); err != nil {
+		slog.Warn("tenant key store init failed", "err", err)
+	} else {
+		tenantKeyStore = store
+	}
+
 	controlPlaneAudit := audit.NewRecorder()
 	runtimeBus := runtime.NewInProcessBus()
 	runtimePublisher := runtime.NewPublisher()
@@ -164,7 +172,8 @@ func main() {
 	}
 
 	srv := httpserver.New(cfg, registry, redisCache, modelRouter, auditStore, semanticCache, memoryStore, billingStore, limiter, adminStore, policyStore).
-		WithControlPlane(controlPlaneService, controlPlaneAudit, runtimePublisher, runtimeManager)
+		WithControlPlane(controlPlaneService, controlPlaneAudit, runtimePublisher, runtimeManager).
+		WithTenantKeys(tenantKeyStore)
 	if memoryStore != nil {
 		srv = srv.WithMemoryAdminHandler(httpserver.NewMemoryAdminHandler(memoryStore))
 	}
@@ -190,6 +199,23 @@ func main() {
 	slog.Info("starting", "app", cfg.AppName, "addr", cfg.Addr(), "mock", cfg.MockMode, "redis", cfg.RedisAddr,
 		"audit", auditStore != nil, "semantic", semanticCache != nil, "memory", memoryStore != nil,
 		"billing", billingStore != nil, "governance", governanceStore != nil)
+
+	if auditStore != nil && cfg.AuditRetentionDays > 0 {
+		go func() {
+			ticker := time.NewTicker(24 * time.Hour)
+			defer ticker.Stop()
+			for range ticker.C {
+				ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+				affected, err := auditStore.DeleteOldEvents(ctx, cfg.AuditRetentionDays)
+				cancel()
+				if err != nil {
+					slog.Warn("audit cleanup failed", "err", err)
+				} else if affected > 0 {
+					slog.Info("audit cleanup completed", "deleted", affected, "retention_days", cfg.AuditRetentionDays)
+				}
+			}
+		}()
+	}
 
 	httpServer := &http.Server{
 		Addr:    cfg.Addr(),

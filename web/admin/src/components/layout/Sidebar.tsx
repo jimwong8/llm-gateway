@@ -38,6 +38,7 @@ export const navGroups: NavGroup[] = [
     label: '监控',
     children: [
       { label: '审计与运行时', path: '/audit-runtime' },
+      { label: '审计导出', path: '/audit-export' },
       { label: '可观测性', path: '/observability' },
       { label: '漂移仪表盘', path: '/drifts' },
       { label: '运行时观测', path: '/runtime-observer' },
@@ -58,6 +59,7 @@ export const navGroups: NavGroup[] = [
       { label: '配额管理', path: '/quota' },
       { label: '记忆治理', path: '/memory-governance' },
       { label: '推荐管理', path: '/recommendations' },
+      { label: '租户密钥', path: '/tenant-keys' },
       { label: '在线测试', path: '/playground' },
       { label: '系统状态', path: '/system' },
     ],

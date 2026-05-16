@@ -52,6 +52,7 @@ type Config struct {
 	ModelGovernanceMinSampleCount int
 	FallbackMaxDepth         int
 	FallbackMinScoreRatio    float64
+	AuditRetentionDays       int
 }
 
 func Load() Config {
@@ -101,6 +102,7 @@ func Load() Config {
 		ModelGovernanceMinSampleCount: getenvInt("MODEL_GOVERNANCE_MIN_SAMPLE_COUNT", 200),
 		FallbackMaxDepth:             getenvInt("FALLBACK_MAX_DEPTH", 3),
 		FallbackMinScoreRatio:        getenvFloat("FALLBACK_MIN_SCORE_RATIO", 0.5),
+		AuditRetentionDays:           getenvInt("AUDIT_RETENTION_DAYS", 90),
 	}
 	return cfg
 }

@@ -28,6 +28,7 @@ import (
 	"llm-gateway/gateway/internal/router"
 	"llm-gateway/gateway/internal/runtime"
 	"llm-gateway/gateway/internal/semantic"
+	"llm-gateway/gateway/internal/tenant"
 )
 
 type runtimeCompensationReader interface {
@@ -58,6 +59,7 @@ type Server struct {
 	modelGovernanceAdmin          *ModelGovernanceHandler
 	modelRuntime                  *ModelRuntimeHandler
 	memoryAdmin                   *MemoryAdminHandler
+	tenantKeys                    *tenant.Store
 }
 
 func New(cfg config.Config, registry *providers.Registry, redisCache cache.L1Cache, rt *router.Router, auditStore *audit.Store, semanticCache semantic.L2Cache, memoryStore *memory.Store, billingStore *billing.Store, limiter *quota.Limiter, adminStore *admin.Store, policyStore *policy.Store) *Server {
@@ -114,6 +116,11 @@ func (s *Server) WithModelRuntimeHandler(handler *ModelRuntimeHandler) *Server {
 	return s
 }
 
+func (s *Server) WithTenantKeys(store *tenant.Store) *Server {
+	s.tenantKeys = store
+	return s
+}
+
 func (s *Server) WithMemoryAdminHandler(handler *MemoryAdminHandler) *Server {
 	s.memoryAdmin = handler
 	return s
@@ -144,6 +151,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/admin/assets/versions", s.requireAdmin(s.adminAssetVersions))
 	mux.HandleFunc("/admin/assets/rollback", s.requireAdmin(s.adminAssetRollback))
 	mux.HandleFunc("/admin/control-plane/compensations", s.requireAdmin(s.adminCompensations))
+	mux.HandleFunc("/admin/tenant-keys", s.requireAdmin(s.adminTenantKeys))
+	mux.HandleFunc("/admin/tenant-keys/", s.requireAdmin(s.adminTenantKeyDelete))
+	mux.HandleFunc("/admin/audit/export", s.requireAdmin(s.adminAuditExport))
+	mux.HandleFunc("/admin/audit/cleanup", s.requireAdmin(s.adminAuditCleanup))
+	mux.HandleFunc("/admin/audit/retention", s.requireAdmin(s.adminAuditRetention))
 	s.mountControlPlaneAdminRoutes(mux)
 	s.mountModelGovernanceRoutes(mux)
 	s.mountModelRuntimeRoutes(mux)
@@ -1102,6 +1114,129 @@ func (s *Server) adminAssetRollback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, row)
+}
+
+func (s *Server) adminTenantKeys(w http.ResponseWriter, r *http.Request) {
+	if s.tenantKeys == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "tenant key store unavailable"})
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
+		if tenantID == "" {
+			keys, err := s.tenantKeys.ListAllKeys(r.Context())
+			if err != nil {
+				internalError(w, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": keys})
+		} else {
+			keys, err := s.tenantKeys.ListKeys(r.Context(), tenantID)
+			if err != nil {
+				internalError(w, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": keys})
+		}
+	case http.MethodPost:
+		var body struct {
+			TenantID string `json:"tenant_id"`
+			Provider string `json:"provider"`
+			APIKey   string `json:"api_key"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			badRequest(w, "invalid JSON body")
+			return
+		}
+		if body.TenantID == "" || body.Provider == "" || body.APIKey == "" {
+			badRequest(w, "tenant_id, provider and api_key are required")
+			return
+		}
+		if err := s.tenantKeys.PutKey(r.Context(), body.TenantID, body.Provider, body.APIKey); err != nil {
+			internalError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+	default:
+		methodNotAllowed(w, r)
+	}
+}
+
+func (s *Server) adminTenantKeyDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		methodNotAllowed(w, r)
+		return
+	}
+	if s.tenantKeys == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "tenant key store unavailable"})
+		return
+	}
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/admin/tenant-keys/"), "/")
+	if len(parts) < 2 {
+		badRequest(w, "tenant_id and provider required in path")
+		return
+	}
+	if err := s.tenantKeys.DeleteKey(r.Context(), parts[0], parts[1]); err != nil {
+		internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
+func (s *Server) adminAuditExport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	if s.audit == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "audit store unavailable"})
+		return
+	}
+	tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
+	if tenantID == "" {
+		badRequest(w, "tenant_id is required")
+		return
+	}
+	records, err := s.audit.ExportTenantData(r.Context(), tenantID)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=audit-export-%s.json", tenantID))
+	json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": records, "total": len(records)})
+}
+
+func (s *Server) adminAuditCleanup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, r)
+		return
+	}
+	if s.audit == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "audit store unavailable"})
+		return
+	}
+	retentionDays := s.cfg.AuditRetentionDays
+	if d := r.URL.Query().Get("retention_days"); d != "" {
+		if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 {
+			retentionDays = parsed
+		}
+	}
+	affected, err := s.audit.DeleteOldEvents(r.Context(), retentionDays)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "deleted": affected, "retention_days": retentionDays})
+}
+
+func (s *Server) adminAuditRetention(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"retention_days": s.cfg.AuditRetentionDays})
 }
 
 func parseBoolQuery(r *http.Request, key string) bool {
