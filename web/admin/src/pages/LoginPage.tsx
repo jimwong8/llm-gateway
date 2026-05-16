@@ -26,8 +26,8 @@ export function LoginPage() {
       return
     }
 
-    if (normalized.length < 10) {
-      setError('Token 格式无效，长度至少 10 个字符')
+    if (normalized.length < 4) {
+      setError('Token 格式无效，长度至少 4 个字符')
       return
     }
 
