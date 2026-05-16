@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"strings"
 	"time"
 
@@ -14,6 +17,7 @@ import (
 	"llm-gateway/gateway/internal/cache"
 	"llm-gateway/gateway/internal/config"
 	"llm-gateway/gateway/internal/controlplane"
+	"llm-gateway/gateway/internal/governance"
 	"llm-gateway/gateway/internal/httpserver"
 	"llm-gateway/gateway/internal/memory"
 	"llm-gateway/gateway/internal/policy"
@@ -125,11 +129,90 @@ func main() {
 		slog.Warn("policy startup replay skipped", "err", err)
 	}
 
+	var governanceStore *governance.Store
+	var governanceRecommendationService *governance.RecommendationService
+	var governanceApprovalService *governance.ApprovalService
+	var governanceVersionService *governance.VersionService
+	var governanceRolloutService *governance.RolloutService
+	var governanceRolloutDashboardService *governance.RolloutDashboardService
+	var governanceRollbackService *governance.RollbackService
+	var governanceRollbackRecordRepo *governance.RollbackRecordRepo
+	var governanceEvaluationService *governance.EvaluationService
+	var governanceDriftService *governance.DriftService
+	var governanceRuntimeResolver *governance.RuntimeResolver
+	var governanceQueryDB *sql.DB
+	if cfg.ModelGovernanceEnabled {
+		if store, err := governance.NewStore(cfg.PostgresDSN); err != nil {
+			slog.Warn("governance init failed", "err", err)
+		} else {
+			governanceStore = store
+			governanceQueryDB = store.DB()
+			governanceAuditRepo := governance.NewGovernanceAuditRepo(store)
+			governanceAuditSvc := governance.NewGovernanceAuditService(governanceAuditRepo)
+			governanceRecommendationService = governance.NewRecommendationService(governance.NewRecommendationRepo(store))
+			governanceApprovalService = governance.NewApprovalService(store).WithAuditEmitter(governanceAuditRepo)
+			governanceVersionService = governance.NewVersionService(store)
+			governanceRuntimeResolver = governance.NewRuntimeResolver(store)
+			governanceRolloutService = governance.NewRolloutService(store).WithAuditEmitter(governanceAuditRepo).WithInvalidator(governanceRuntimeResolver)
+			governanceRolloutDashboardService = governance.NewRolloutDashboardService(store)
+			governanceRollbackService = governance.NewRollbackService(store).WithAuditEmitter(governanceAuditRepo).WithInvalidator(governanceRuntimeResolver)
+			governanceRollbackRecordRepo = governance.NewRollbackRecordRepo(store)
+			governanceEvaluationService = governance.NewEvaluationService(store)
+			governanceDriftService = governance.NewDriftService(store)
+			_ = governanceAuditSvc
+		}
+	}
+
 	srv := httpserver.New(cfg, registry, redisCache, modelRouter, auditStore, semanticCache, memoryStore, billingStore, limiter, adminStore, policyStore).
 		WithControlPlane(controlPlaneService, controlPlaneAudit, runtimePublisher, runtimeManager)
-	slog.Info("starting", "app", cfg.AppName, "addr", cfg.Addr(), "mock", cfg.MockMode, "redis", cfg.RedisAddr, "audit", auditStore != nil, "semantic", semanticCache != nil, "memory", memoryStore != nil, "billing", billingStore != nil)
-	if err := http.ListenAndServe(cfg.Addr(), srv.Handler()); err != nil {
+	if memoryStore != nil {
+		srv = srv.WithMemoryAdminHandler(httpserver.NewMemoryAdminHandler(memoryStore))
+	}
+	if cfg.ModelGovernanceEnabled && governanceStore != nil {
+		modelGovernanceHandler := httpserver.NewModelGovernanceHandler().
+			WithRecommendationService(governanceRecommendationService).
+			WithApprovalService(governanceApprovalService).
+			WithVersionService(governanceVersionService).
+			WithRolloutService(governanceRolloutService).
+			WithRolloutDashboardService(governanceRolloutDashboardService).
+			WithRollbackService(governanceRollbackService).
+			WithRollbackRecordStore(governanceRollbackRecordRepo).
+			WithEvaluationService(governanceEvaluationService).
+			WithDriftService(governanceDriftService).
+			WithQueryer(governanceQueryDB)
+		modelRuntimeHandler := httpserver.NewModelRuntimeHandler().
+			WithResolver(governanceRuntimeResolver).
+			WithQueryer(governanceQueryDB)
+		srv = srv.WithModelGovernanceHandler(modelGovernanceHandler).
+			WithModelRuntimeHandler(modelRuntimeHandler)
+	}
+
+	slog.Info("starting", "app", cfg.AppName, "addr", cfg.Addr(), "mock", cfg.MockMode, "redis", cfg.RedisAddr,
+		"audit", auditStore != nil, "semantic", semanticCache != nil, "memory", memoryStore != nil,
+		"billing", billingStore != nil, "governance", governanceStore != nil)
+
+	httpServer := &http.Server{
+		Addr:    cfg.Addr(),
+		Handler: srv.Handler(),
+	}
+
+	go func() {
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
+		sig := <-sigChan
+		slog.Info("received signal, initiating graceful shutdown", "signal", sig)
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			slog.Warn("graceful shutdown error", "err", err)
+		}
+	}()
+
+	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		slog.Error("server stopped", "err", err)
 		os.Exit(1)
 	}
+	slog.Info("server exited gracefully")
 }
