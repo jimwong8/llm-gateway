@@ -604,13 +604,13 @@ export function MemoryGovernancePage() {
 
   return (
     <AppShell
-      title="Memory Governance"
-      description="查看 candidate facts 与 project facts，按 tenant/user/status 过滤，并直接确认、拒绝或提升候选事实。"
+      title="记忆治理"
+      description="查看候选事实与项目事实，按租户/用户/状态过滤，并直接确认、拒绝或提升候选事实。"
     >
       <div className="events-page">
-        <form className="config-filters" aria-label="Memory Governance Filters" onSubmit={handleSubmit}>
+        <form className="config-filters" aria-label="记忆治理筛选" onSubmit={handleSubmit}>
           <label>
-            Tenant ID
+            租户 ID
             <input
               value={draftFilters.tenant_id}
               onChange={(event) => setDraftFilters((previous) => ({ ...previous, tenant_id: event.target.value }))}
@@ -618,7 +618,7 @@ export function MemoryGovernancePage() {
             />
           </label>
           <label>
-            User ID
+            用户 ID
             <input
               value={draftFilters.user_id}
               onChange={(event) => setDraftFilters((previous) => ({ ...previous, user_id: event.target.value }))}
@@ -626,7 +626,7 @@ export function MemoryGovernancePage() {
             />
           </label>
           <label>
-            Candidate Status
+            候选状态
             <select value={draftCandidateStatus} onChange={(event) => setDraftCandidateStatus(event.target.value)}>
               {candidateStatuses.map((status) => (
                 <option key={status || 'all'} value={status}>
@@ -636,7 +636,7 @@ export function MemoryGovernancePage() {
             </select>
           </label>
           <label>
-            Project Status
+            项目状态
             <select value={draftProjectStatus} onChange={(event) => setDraftProjectStatus(event.target.value)}>
               {projectStatuses.map((status) => (
                 <option key={status || 'all'} value={status}>
@@ -646,16 +646,16 @@ export function MemoryGovernancePage() {
             </select>
           </label>
           <div className="config-filters__actions">
-            <button type="submit">刷新 Memory Facts</button>
+            <button type="submit">刷新记忆事实</button>
             <button type="button" className="rollouts-action" onClick={handleResetFilters}>
               重置筛选
             </button>
           </div>
         </form>
 
-        {candidateFactsQuery.isLoading || projectFactsQuery.isLoading ? <div className="event-state">正在加载 memory facts…</div> : null}
-        {candidateFactsQuery.error ? <div className="config-error">candidate facts 加载失败，请检查 memory admin 接口状态。</div> : null}
-        {projectFactsQuery.error ? <div className="config-error">project facts 加载失败，请检查 memory admin 接口状态。</div> : null}
+        {candidateFactsQuery.isLoading || projectFactsQuery.isLoading ? <div className="event-state">正在加载记忆事实…</div> : null}
+        {candidateFactsQuery.error ? <div className="config-error">候选事实加载失败，请检查记忆管理接口状态。</div> : null}
+        {projectFactsQuery.error ? <div className="config-error">项目事实加载失败，请检查记忆管理接口状态。</div> : null}
         {actionError ? <div className="config-error">{actionError}</div> : null}
         {actionSuccess ? (
           <div className="event-state memory-governance__feedback" role="status" aria-live="polite">
@@ -669,53 +669,53 @@ export function MemoryGovernancePage() {
           <>
             <div className="summary-card-grid">
               <section className="summary-card">
-                <span>Candidate Facts</span>
+                <span>候选事实</span>
                 <strong>{metrics.totalCandidates}</strong>
               </section>
               <section className="summary-card">
-                <span>Pending</span>
+                <span>待处理</span>
                 <strong>{metrics.pendingCandidates}</strong>
               </section>
               <section className="summary-card">
-                <span>Confirmed</span>
+                <span>已确认</span>
                 <strong>{metrics.confirmedCandidates}</strong>
               </section>
               <section className="summary-card">
-                <span>Promoted</span>
+                <span>已提升</span>
                 <strong>{metrics.promotedCandidates}</strong>
-                <small>Rejected {metrics.rejectedCandidates}</small>
+                <small>已拒绝 {metrics.rejectedCandidates}</small>
               </section>
             </div>
 
             <div className="summary-card-grid">
               <section className="summary-card">
-                <span>Project Facts</span>
+                <span>项目事实</span>
                 <strong>{metrics.totalProjectFacts}</strong>
               </section>
               <section className="summary-card">
-                <span>Active Project Facts</span>
+                <span>活跃项目事实</span>
                 <strong>{metrics.activeProjectFacts}</strong>
               </section>
               <section className="summary-card">
-                <span>Superseded Facts</span>
+                <span>已取代的事实</span>
                 <strong>{metrics.supersededProjectFacts}</strong>
               </section>
               <section className="summary-card">
-                <span>Current Filters</span>
-                <strong>{candidateFilters.tenant_id || 'all tenants'}</strong>
+                <span>当前筛选</span>
+                <strong>{candidateFilters.tenant_id || '全部租户'}</strong>
                 <small>
-                  User {candidateFilters.user_id || 'all users'} · Candidate {candidateFilters.status || 'all'} · Project {projectFilters.status || 'all'}
+                  用户 {candidateFilters.user_id || '全部用户'} · 候选 {candidateFilters.status || '全部'} · 项目 {projectFilters.status || '全部'}
                 </small>
               </section>
             </div>
 
             <div className="memory-governance__content">
               <div className="memory-governance__candidate-panel">
-                <section className="event-state memory-governance__batch-toolbar" aria-label="Candidate Fact Batch Actions">
-                  <div>
-                    <strong>批量操作</strong>
-                    <div>
-                      已选当前可见 {selectedVisibleCandidateFacts.length} / {pagedCandidateFacts.length} · 本地命中 {filteredCandidateFacts.length} · 已拉取 {candidateFacts.length} · 可确认 {selectedCandidateMetrics.confirm} · 可拒绝 {selectedCandidateMetrics.reject} · 可提升 {selectedCandidateMetrics.promote}
+                <section className="event-state memory-governance__batch-toolbar" aria-label="候选事实批量操作">
+                      <div>
+                        <strong>批量操作</strong>
+                        <div>
+                          已选当前可见 {selectedVisibleCandidateFacts.length} / {pagedCandidateFacts.length} · 本地筛选 {filteredCandidateFacts.length} · 已拉取 {candidateFacts.length} · 可确认 {selectedCandidateMetrics.confirm} · 可拒绝 {selectedCandidateMetrics.reject} · 可提升 {selectedCandidateMetrics.promote}
                     </div>
                   </div>
                   <div className="policy-actions">
@@ -773,7 +773,7 @@ export function MemoryGovernancePage() {
                   </div>
                 </section>
 
-                <section className="event-state memory-governance__table-toolbar" aria-label="Candidate Fact Local Controls">
+                <section className="event-state memory-governance__table-toolbar" aria-label="候选事实本地控制">
                   <div className="memory-governance__table-toolbar-fields">
                     <label>
                       本地搜索
@@ -784,7 +784,7 @@ export function MemoryGovernancePage() {
                       />
                     </label>
                     <label>
-                      Rows per page
+                       每页条数
                       <select value={String(candidatePageSize)} onChange={(event) => setCandidatePageSize(Number(event.target.value))}>
                         {pageSizeOptions.map((size) => (
                           <option key={size} value={size}>
@@ -797,12 +797,12 @@ export function MemoryGovernancePage() {
                   <div className="memory-governance__scope-summary">
                     <strong>当前可见范围</strong>
                     <span>
-                      显示第 {candidatePagination.start}-{candidatePagination.end} 条，共 {candidatePagination.total} 条本地命中结果（后端已拉取 {candidateFacts.length} 条）。
+                      显示第 {candidatePagination.start}-{candidatePagination.end} 条，共 {candidatePagination.total} 条本地筛选结果（后端已拉取 {candidateFacts.length} 条）。
                     </span>
                   </div>
                 </section>
 
-                <section className="event-table" aria-label="Candidate Facts Table">
+                <section className="event-table" aria-label="候选事实表">
                   <table>
                     <thead>
                       <tr>
@@ -815,10 +815,10 @@ export function MemoryGovernancePage() {
                             aria-label="选择当前可见候选事实"
                           />
                         </th>
-                        <th>Fact Key</th>
-                        <th>Value</th>
-                        <th>Tenant</th>
-                        <th>User</th>
+                        <th>事实键</th>
+                        <th>值</th>
+                        <th>租户</th>
+                        <th>用户</th>
                         <th>
                           <button
                             type="button"
@@ -832,8 +832,8 @@ export function MemoryGovernancePage() {
                             状态 {sortIndicator(candidateSortField, candidateSortDirection, 'status')}
                           </button>
                         </th>
-                        <th>Confirmations</th>
-                        <th>Source Seq</th>
+                        <th>确认次数</th>
+                        <th>来源序号</th>
                         <th>
                           <button
                             type="button"
@@ -844,10 +844,10 @@ export function MemoryGovernancePage() {
                               setCandidateSortField('updated_at')
                             }}
                           >
-                            Updated At {sortIndicator(candidateSortField, candidateSortDirection, 'updated_at')}
+                            更新时间 {sortIndicator(candidateSortField, candidateSortDirection, 'updated_at')}
                           </button>
                         </th>
-                        <th>Action</th>
+                        <th>操作</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -951,9 +951,9 @@ export function MemoryGovernancePage() {
                   </table>
                 </section>
 
-                <div className="memory-governance__pager" role="group" aria-label="Candidate Fact Pagination">
+                <div className="memory-governance__pager" role="group" aria-label="候选事实分页">
                   <span>
-                    Page {candidatePage} / {candidatePageCount} · 显示第 {candidatePagination.start}-{candidatePagination.end} 条，共 {candidatePagination.total} 条
+                    第 {candidatePage} / {candidatePageCount} 页 · 显示第 {candidatePagination.start}-{candidatePagination.end} 条，共 {candidatePagination.total} 条
                   </span>
                   <div className="policy-actions">
                     <button
@@ -962,7 +962,7 @@ export function MemoryGovernancePage() {
                       onClick={() => setCandidatePage((value) => Math.max(1, value - 1))}
                       disabled={candidatePage === 1}
                     >
-                      Previous
+                      上一页
                     </button>
                     <button
                       type="button"
@@ -970,7 +970,7 @@ export function MemoryGovernancePage() {
                       onClick={() => setCandidatePage((value) => Math.min(candidatePageCount, value + 1))}
                       disabled={candidatePage === candidatePageCount}
                     >
-                      Next
+                      下一页
                     </button>
                   </div>
                 </div>
@@ -1055,7 +1055,7 @@ export function MemoryGovernancePage() {
               </section>
 
               <div className="memory-governance__project-panel">
-                <section className="event-state memory-governance__table-toolbar" aria-label="Project Fact Local Controls">
+                <section className="event-state memory-governance__table-toolbar" aria-label="项目事实本地控制">
                   <div className="memory-governance__table-toolbar-fields">
                     <label>
                       本地搜索
@@ -1066,7 +1066,7 @@ export function MemoryGovernancePage() {
                       />
                     </label>
                     <label>
-                      Rows per page
+                       每页条数
                       <select value={String(projectPageSize)} onChange={(event) => setProjectPageSize(Number(event.target.value))}>
                         {pageSizeOptions.map((size) => (
                           <option key={size} value={size}>
@@ -1079,19 +1079,19 @@ export function MemoryGovernancePage() {
                   <div className="memory-governance__scope-summary">
                     <strong>当前可见范围</strong>
                     <span>
-                      显示第 {projectPagination.start}-{projectPagination.end} 条，共 {projectPagination.total} 条本地命中结果（后端已拉取 {projectFacts.length} 条）。
+                      显示第 {projectPagination.start}-{projectPagination.end} 条，共 {projectPagination.total} 条本地筛选结果（后端已拉取 {projectFacts.length} 条）。
                     </span>
                   </div>
                 </section>
 
-                <section className="event-table" aria-label="Project Facts Table">
+                <section className="event-table" aria-label="项目事实表">
                   <table>
                     <thead>
                       <tr>
-                        <th>Fact Key</th>
-                        <th>Value</th>
-                        <th>Tenant</th>
-                        <th>User</th>
+                        <th>事实键</th>
+                        <th>值</th>
+                        <th>租户</th>
+                        <th>用户</th>
                         <th>
                           <button
                             type="button"
@@ -1105,8 +1105,8 @@ export function MemoryGovernancePage() {
                             状态 {sortIndicator(projectSortField, projectSortDirection, 'status')}
                           </button>
                         </th>
-                        <th>Source Seq</th>
-                        <th>Last Verified</th>
+                        <th>来源序号</th>
+                        <th>最后验证</th>
                         <th>
                           <button
                             type="button"
@@ -1117,7 +1117,7 @@ export function MemoryGovernancePage() {
                               setProjectSortField('updated_at')
                             }}
                           >
-                            Updated At {sortIndicator(projectSortField, projectSortDirection, 'updated_at')}
+                            更新时间 {sortIndicator(projectSortField, projectSortDirection, 'updated_at')}
                           </button>
                         </th>
                       </tr>
@@ -1167,9 +1167,9 @@ export function MemoryGovernancePage() {
                   </table>
                 </section>
 
-                <div className="memory-governance__pager" role="group" aria-label="Project Fact Pagination">
+                <div className="memory-governance__pager" role="group" aria-label="项目事实分页">
                   <span>
-                    Page {projectPage} / {projectPageCount} · 显示第 {projectPagination.start}-{projectPagination.end} 条，共 {projectPagination.total} 条
+                    第 {projectPage} / {projectPageCount} 页 · 显示第 {projectPagination.start}-{projectPagination.end} 条，共 {projectPagination.total} 条
                   </span>
                   <div className="policy-actions">
                     <button
@@ -1178,7 +1178,7 @@ export function MemoryGovernancePage() {
                       onClick={() => setProjectPage((value) => Math.max(1, value - 1))}
                       disabled={projectPage === 1}
                     >
-                      Previous
+                      上一页
                     </button>
                     <button
                       type="button"
@@ -1186,7 +1186,7 @@ export function MemoryGovernancePage() {
                       onClick={() => setProjectPage((value) => Math.min(projectPageCount, value + 1))}
                       disabled={projectPage === projectPageCount}
                     >
-                      Next
+                      下一页
                     </button>
                   </div>
                 </div>
@@ -1194,7 +1194,7 @@ export function MemoryGovernancePage() {
             </div>
 
             <div className="event-state memory-governance__hint">
-              <strong>Operator Notes</strong>
+              <strong>运维备注</strong>
               <div>候选事实表强调“值 + 来源摘录 + 状态/确认数”，便于快速决定确认、拒绝或提升。</div>
               <div>本地搜索与分页只作用于前端已拉取的数据，不会改变后端筛选条件，也不会触发额外接口变更。</div>
               <div>批量选择与批量操作严格限定在当前可见候选事实页，翻页或调整本地搜索后会自动收敛到新的可见范围。</div>

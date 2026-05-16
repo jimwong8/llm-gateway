@@ -43,7 +43,7 @@ describe('DashboardPage', () => {
 
     renderPage()
 
-    expect(await screen.findByRole('heading', { name: 'Dashboard', level: 1 })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '仪表盘', level: 1 })).toBeInTheDocument()
     expect(await screen.findByText('llm-gateway')).toBeInTheDocument()
     expect(screen.getByText('88.0%')).toBeInTheDocument()
     expect(screen.getByText('12.5%')).toBeInTheDocument()

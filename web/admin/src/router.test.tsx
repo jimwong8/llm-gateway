@@ -21,7 +21,7 @@ describe('router protection', () => {
 
     renderWithProviders(router)
 
-    expect(await screen.findByText('Admin Console Login')).toBeTruthy()
+    expect(await screen.findByText('管理员控制台登录')).toBeTruthy()
   })
 
   it('allows authenticated users to access dashboard', async () => {
@@ -33,7 +33,7 @@ describe('router protection', () => {
 
     renderWithProviders(router)
 
-    expect(await screen.findByRole('heading', { name: 'Dashboard', level: 1 })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: '仪表盘', level: 1 })).toBeTruthy()
   })
 
   it('allows authenticated users to access memory governance page', async () => {
@@ -79,7 +79,7 @@ describe('router protection', () => {
 
     renderWithProviders(router)
 
-    expect(await screen.findByRole('heading', { name: 'Memory Governance', level: 1 })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: '记忆治理', level: 1 })).toBeTruthy()
   })
 
   it('allows authenticated users to access runtime observer page', async () => {
@@ -107,7 +107,7 @@ describe('router protection', () => {
 
     renderWithProviders(router)
 
-    expect(await screen.findByRole('heading', { name: 'Runtime Observer', level: 1 })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: '运行时观测', level: 1 })).toBeTruthy()
   })
 
   it('allows authenticated users to access runtime observer page', async () => {
@@ -135,7 +135,7 @@ describe('router protection', () => {
 
     renderWithProviders(router)
 
-    expect(await screen.findByRole('heading', { name: 'Runtime Observer', level: 1 })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '运行时观测', level: 1 })).toBeInTheDocument()
   })
 })
 

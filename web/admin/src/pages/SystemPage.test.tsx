@@ -50,8 +50,8 @@ describe('SystemPage', () => {
 
     expect(await screen.findByText('llm-gateway')).toBeInTheDocument()
     expect(screen.getByText('enabled')).toBeInTheDocument()
-    expect(screen.getByText('Usage Items')).toBeInTheDocument()
-    expect(screen.getByText('Audit Items')).toBeInTheDocument()
+    expect(screen.getByText('用量条目数')).toBeInTheDocument()
+    expect(screen.getByText('审计条目数')).toBeInTheDocument()
     expect(screen.getAllByText('1').length).toBeGreaterThanOrEqual(2)
   })
 })

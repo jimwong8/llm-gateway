@@ -18,15 +18,15 @@ export function RuntimeTable({ data, loading }: RuntimeTableProps) {
     return (
       <div className="summary-card-grid">
         <div className="summary-card">
-          <span>Total</span>
+          <span>总数</span>
           <strong>{data.total}</strong>
         </div>
         <div className="summary-card">
-          <span>By Type</span>
+          <span>按类型</span>
           <strong>{Object.keys(data.by_type).join(', ') || '—'}</strong>
         </div>
         <div className="summary-card">
-          <span>By Environment</span>
+          <span>按环境</span>
           <strong>{Object.keys(data.by_environment).join(', ') || '—'}</strong>
         </div>
       </div>
@@ -42,11 +42,11 @@ export function RuntimeTable({ data, loading }: RuntimeTableProps) {
       <table>
         <thead>
           <tr>
-            <th>Version</th>
-            <th>Environment</th>
-            <th>Module</th>
-            <th>Tenant</th>
-            <th>Source</th>
+            <th>版本</th>
+            <th>环境</th>
+            <th>模块</th>
+            <th>租户</th>
+            <th>来源</th>
           </tr>
         </thead>
         <tbody>

@@ -17,7 +17,7 @@ export function PoliciesPage() {
 
   return (
     <AppShell
-      title="Policies"
+      title="策略管理"
       description="查看当前允许的模型列表，为后续策略编辑功能保留最小可用入口。"
     >
       <div className="events-page">

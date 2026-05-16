@@ -34,9 +34,9 @@ describe('QuotaPage', () => {
 
     renderPage()
 
-    expect(await screen.findByRole('heading', { name: 'Quota', level: 1 })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '配额管理', level: 1 })).toBeInTheDocument()
     expect(await screen.findByText('tenant-a')).toBeInTheDocument()
-    expect(screen.getByText('Remaining')).toBeInTheDocument()
+    expect(screen.getByText('剩余')).toBeInTheDocument()
     expect(screen.getByText('2026-03-25T00:00:00Z')).toBeInTheDocument()
   })
 
@@ -51,10 +51,10 @@ describe('QuotaPage', () => {
 
     renderPage()
 
-    const form = screen.getByRole('form', { name: 'Quota Filters' })
-    await userEvent.clear(within(form).getByLabelText('Window Minutes'))
-    await userEvent.type(within(form).getByLabelText('Window Minutes'), '30')
-    await userEvent.click(within(form).getByRole('button', { name: '应用筛选' }))
+    const form = screen.getByRole('form', { name: '配额筛选' })
+    await userEvent.clear(within(form).getByLabelText('时间窗口（分钟）'))
+    await userEvent.type(within(form).getByLabelText('时间窗口（分钟）'), '30')
+    await userEvent.click(within(form).getByRole('button', { name: '筛选' }))
 
     await waitFor(() => {
       const urls = fetchMock.mock.calls.map((call) => String(call[0]))

@@ -32,8 +32,8 @@ export function DriftDashboardPage() {
 
   return (
     <AppShell
-      title="Drift Dashboard"
-      description="查看治理 drift 列表，聚焦 active 与 recommended 模型偏移状态及检测时间。"
+      title="漂移仪表盘"
+      description="查看治理漂移列表，聚焦当前与推荐模型的偏移状态及检测时间。"
     >
       <div className="events-page">
         {driftsQuery.isLoading ? <div className="event-state">正在加载 drift 列表…</div> : null}
@@ -43,19 +43,19 @@ export function DriftDashboardPage() {
           <>
             <div className="summary-card-grid">
               <section className="summary-card">
-                <span>Total Drifts</span>
+                <span>漂移总数</span>
                 <strong>{metrics.total}</strong>
               </section>
               <section className="summary-card">
-                <span>Detected</span>
+                <span>已检测</span>
                 <strong>{metrics.detected}</strong>
               </section>
               <section className="summary-card">
-                <span>Accepted</span>
+                <span>已接受</span>
                 <strong>{metrics.accepted}</strong>
               </section>
               <section className="summary-card">
-                <span>Resolved</span>
+                <span>已解决</span>
                 <strong>{metrics.resolved}</strong>
               </section>
             </div>
@@ -64,13 +64,13 @@ export function DriftDashboardPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>Drift ID</th>
-                    <th>Environment</th>
-                    <th>Agent</th>
-                    <th>Active Model</th>
-                    <th>Recommended Model</th>
-                    <th>Status</th>
-                    <th>Detected At</th>
+                    <th>漂移 ID</th>
+                    <th>环境</th>
+                    <th>智能体</th>
+                    <th>当前模型</th>
+                    <th>推荐模型</th>
+                    <th>状态</th>
+                    <th>检测时间</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -89,7 +89,7 @@ export function DriftDashboardPage() {
                   ))}
                 </tbody>
               </table>
-              {drifts.length === 0 ? <div className="config-table__state">当前没有 drift 数据。</div> : null}
+              {drifts.length === 0 ? <div className="config-table__state">当前没有漂移数据。</div> : null}
             </div>
           </>
         ) : null}

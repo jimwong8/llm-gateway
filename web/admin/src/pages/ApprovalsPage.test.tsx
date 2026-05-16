@@ -121,8 +121,8 @@ describe('ApprovalsPage', () => {
       },
     })
 
-    await user.selectOptions(within(form).getByLabelText('Decision'), 'overridden')
-    await user.type(within(form).getByLabelText('Final Model'), 'gpt-4.1-mini')
+    await user.selectOptions(within(form).getByLabelText('决策'), 'overridden')
+    await user.type(within(form).getByLabelText('最终模型'), 'gpt-4.1-mini')
     await user.click(within(form).getByRole('button', { name: '提交审批' }))
     await screen.findByText('审批成功：ap-2（overridden）')
 
@@ -134,9 +134,9 @@ describe('ApprovalsPage', () => {
       final_model: 'gpt-4.1-mini',
     })
 
-    await user.selectOptions(within(form).getByLabelText('Decision'), 'rejected')
-    await user.clear(within(form).getByLabelText('Approval Reason'))
-    await user.type(within(form).getByLabelText('Approval Reason'), 'manual reject')
+    await user.selectOptions(within(form).getByLabelText('决策'), 'rejected')
+    await user.clear(within(form).getByLabelText('审批原因'))
+    await user.type(within(form).getByLabelText('审批原因'), 'manual reject')
     await user.click(within(form).getByRole('button', { name: '提交审批' }))
     await screen.findByText('审批成功：ap-3（rejected）')
 
@@ -190,12 +190,12 @@ describe('ApprovalsPage', () => {
     await user.click(screen.getByRole('button', { name: '选择' }))
 
     const form = screen.getByRole('form', { name: 'Governance Approval Form' })
-    await user.selectOptions(within(form).getByLabelText('Decision'), 'overridden')
+    await user.selectOptions(within(form).getByLabelText('决策'), 'overridden')
     await user.click(within(form).getByRole('button', { name: '提交审批' }))
 
     expect(await screen.findByText('override 决策必须填写 final model。')).toBeInTheDocument()
 
-    await user.type(within(form).getByLabelText('Final Model'), 'gpt-4o-mini')
+    await user.type(within(form).getByLabelText('最终模型'), 'gpt-4o-mini')
     await user.click(within(form).getByRole('button', { name: '提交审批' }))
 
     await waitFor(() => {

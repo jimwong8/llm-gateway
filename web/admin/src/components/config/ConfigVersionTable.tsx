@@ -20,11 +20,11 @@ export function ConfigVersionTable({ versions, loading, onSelect }: ConfigVersio
       <table>
         <thead>
           <tr>
-            <th>Version ID</th>
-            <th>Status</th>
-            <th>Environment</th>
-            <th>Source</th>
-            <th>Action</th>
+            <th>版本 ID</th>
+            <th>状态</th>
+            <th>环境</th>
+            <th>来源</th>
+            <th>操作</th>
           </tr>
         </thead>
         <tbody>

@@ -120,7 +120,7 @@ export function RecommendationCenterPage() {
 
   return (
     <AppShell
-      title="Recommendation Center"
+      title="推荐管理"
       description="查看治理推荐列表与摘要，并直接为推荐创建审批动作。"
     >
       <div className="events-page">
@@ -133,19 +133,19 @@ export function RecommendationCenterPage() {
           <>
             <div className="summary-card-grid">
               <section className="summary-card">
-                <span>Total Recommendations</span>
+                <span>推荐总数</span>
                 <strong>{metrics.total}</strong>
               </section>
               <section className="summary-card">
-                <span>Pending</span>
+                <span>待处理</span>
                 <strong>{metrics.pending}</strong>
               </section>
               <section className="summary-card">
-                <span>Approved</span>
+                <span>已审批</span>
                 <strong>{metrics.approved}</strong>
               </section>
               <section className="summary-card">
-                <span>Agents</span>
+                <span>智能体数</span>
                 <strong>{metrics.uniqueAgents}</strong>
               </section>
             </div>
@@ -154,14 +154,14 @@ export function RecommendationCenterPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>Recommendation ID</th>
-                    <th>Agent</th>
-                    <th>Task Type</th>
-                    <th>Environment</th>
-                    <th>Recommended Model</th>
-                    <th>Status</th>
-                    <th>Updated At</th>
-                    <th>Action</th>
+                    <th>推荐 ID</th>
+                    <th>智能体</th>
+                    <th>任务类型</th>
+                    <th>环境</th>
+                    <th>推荐模型</th>
+                    <th>状态</th>
+                    <th>更新时间</th>
+                    <th>操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -208,8 +208,8 @@ export function RecommendationCenterPage() {
           >
             <div className="dialog-card__header">
               <div>
-                <h2 id="approval-dialog-title">审批 Recommendation</h2>
-                <p>Recommendation ID: {dialogState.recommendationID} · Decision: approved</p>
+                <h2 id="approval-dialog-title">审批推荐</h2>
+                <p>推荐 ID: {dialogState.recommendationID} · 决策: approved</p>
               </div>
               <button type="button" onClick={closeApprovalDialog}>
                 关闭
@@ -217,22 +217,22 @@ export function RecommendationCenterPage() {
             </div>
 
             <form className="release-panel__grid" aria-label="Governance Approval Form" onSubmit={handleApprovalSubmit}>
-              <label>
-                Approved By
+                <label>
+                审批人
                 <input
                   value={approvalForm.approvedBy}
                   onChange={(event) => setApprovalForm((previous) => ({ ...previous, approvedBy: event.target.value }))}
                 />
               </label>
               <label>
-                Scope
+                作用域
                 <input
                   value={approvalForm.scope}
                   onChange={(event) => setApprovalForm((previous) => ({ ...previous, scope: event.target.value }))}
                 />
               </label>
               <label>
-                Environment
+                环境
                 <input
                   value={approvalForm.environment}
                   onChange={(event) => setApprovalForm((previous) => ({ ...previous, environment: event.target.value }))}

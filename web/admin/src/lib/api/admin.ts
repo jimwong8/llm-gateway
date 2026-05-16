@@ -32,7 +32,7 @@ function toQuery(params: Record<string, string>): string {
   return qs ? `?${qs}` : ''
 }
 
-// ── Health / System ──────────────────────────────────────
+// ── 健康检查 / 系统状态 ─────────────────────────────────
 export function fetchAdminHealth() {
   return apiRequest<AdminHealth>('/admin/health')
 }
@@ -45,7 +45,7 @@ export function fetchAdminAudit() {
   return apiRequest<SystemInfo>('/admin/audit')
 }
 
-// ── Observability ────────────────────────────────────────
+// ── 可观测性 ─────────────────────────────────────────────
 export function fetchObservabilitySummary(params?: {
   tenant_id?: string
   provider?: string
@@ -79,7 +79,7 @@ export function fetchObservabilityHotspots(params?: {
   )
 }
 
-// ── Quota ────────────────────────────────────────────────
+// ── 配额管理 ─────────────────────────────────────────────
 export function fetchQuotaSummary(tenantID?: string) {
   const qs = tenantID?.trim()
     ? `?tenant_id=${encodeURIComponent(tenantID.trim())}`
@@ -93,12 +93,12 @@ export function fetchQuotaTrends(params: { tenant_id: string; window_minutes: st
   )
 }
 
-// ── Policies ─────────────────────────────────────────────
+// ── 策略管理 ─────────────────────────────────────────────
 export function fetchPoliciesModels() {
   return apiRequest<PoliciesModelsResponse>('/admin/policies/models')
 }
 
-// ── Config Versions ─────────────────────────────────────
+// ── 配置版本 ─────────────────────────────────────────────
 export function fetchConfigVersions(filters: ConfigVersionFilters) {
   const params: Record<string, string> = {}
   if (filters.module.trim()) params.module = filters.module.trim()
@@ -111,7 +111,7 @@ export function fetchConfigVersions(filters: ConfigVersionFilters) {
   )
 }
 
-// ── Events ───────────────────────────────────────────────
+// ── 事件 ─────────────────────────────────────────────────
 export function fetchAuditEvents(filters: {
   tenantID: string
   environment: string

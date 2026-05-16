@@ -23,7 +23,7 @@ describe('LoginPage', () => {
 
     renderWithRouter(router)
 
-    await user.type(await screen.findByLabelText('Admin Token'), 'demo-admin-token')
+    await user.type(await screen.findByLabelText('管理员 Token'), 'demo-admin-token')
     await user.click(screen.getByRole('button', { name: '进入控制台' }))
 
     expect(window.sessionStorage.getItem(ADMIN_TOKEN_KEY)).toBe('demo-admin-token')
@@ -40,7 +40,7 @@ describe('LoginPage', () => {
 
     await user.click(screen.getByRole('button', { name: '进入控制台' }))
 
-    expect(screen.getByText('请输入 Admin Token')).toBeInTheDocument()
+    expect(screen.getByText('请输入管理员 Token')).toBeInTheDocument()
   })
 })
 

@@ -9,8 +9,8 @@ export function ReleasesPage() {
 
   return (
     <AppShell
-      title="Releases"
-      description="在一个工作台里完成 Draft 发布与跨环境 Promotion，并查看最近一次操作回执。"
+      title="发布管理"
+      description="在一个工作台里完成 Draft 发布与跨环境推广，并查看最近一次操作回执。"
     >
       <div className="releases-page">
         <div className="releases-grid">
@@ -19,23 +19,23 @@ export function ReleasesPage() {
         </div>
 
         <section className="release-result-card">
-          <h2>最近一次结果</h2>
+          <h2>最近一次操作结果</h2>
           {lastResult ? (
             <dl className="release-result-grid">
               <div>
-                <dt>Version ID</dt>
+                <dt>版本 ID</dt>
                 <dd>{lastResult.version_id}</dd>
               </div>
               <div>
-                <dt>Status</dt>
+                <dt>状态</dt>
                 <dd>{lastResult.status}</dd>
               </div>
               <div>
-                <dt>Environment</dt>
+                <dt>环境</dt>
                 <dd>{lastResult.environment}</dd>
               </div>
               <div>
-                <dt>Source</dt>
+                <dt>来源</dt>
                 <dd>
                   {lastResult.source
                     ? `${lastResult.source.source_environment} / ${lastResult.source.source_version_id}`
@@ -44,7 +44,7 @@ export function ReleasesPage() {
               </div>
             </dl>
           ) : (
-            <div className="config-drawer__empty">完成一次 release 或 promotion 后，这里会显示最新结果。</div>
+            <div className="config-drawer__empty">完成一次发布或推广后，这里会显示最新结果。</div>
           )}
         </section>
       </div>

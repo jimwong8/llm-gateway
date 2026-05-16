@@ -11,9 +11,9 @@ export function ObservabilityProvidersSection({ providers }: Props) {
         <thead>
           <tr>
             <th>Provider</th>
-            <th>Requests</th>
-            <th>Total Tokens</th>
-            <th>Error Rate</th>
+            <th>请求量</th>
+            <th>总 Token 数</th>
+            <th>错误率</th>
           </tr>
         </thead>
         <tbody>

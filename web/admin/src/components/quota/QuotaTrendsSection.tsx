@@ -11,10 +11,10 @@ export function QuotaTrendsSection({ trends }: Props) {
       <table>
         <thead>
           <tr>
-            <th>Minute</th>
-            <th>Used</th>
-            <th>Rejected</th>
-            <th>Remaining Estimate</th>
+            <th>时间（分钟）</th>
+            <th>已用</th>
+            <th>被拒</th>
+            <th>剩余估算</th>
           </tr>
         </thead>
         <tbody>

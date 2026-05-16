@@ -38,13 +38,13 @@ export function RuntimeObserverPage() {
 
   return (
     <AppShell
-      title="Runtime Observer"
-      description="查看当前环境 active policy、resolver 缓存与失效状态，以及最近分发/运行时事实。"
+      title="运行时观测"
+      description="查看当前环境的活跃策略、解析器缓存与失效状态，以及最近分发/运行时事实。"
     >
       <div className="events-page">
-        <form className="config-filters" aria-label="Runtime Observer Filters" onSubmit={handleSubmit}>
+        <form className="config-filters" aria-label="运行时观测筛选" onSubmit={handleSubmit}>
           <label>
-            Environment
+            环境
             <input value={draftEnvironment} onChange={(event) => setDraftEnvironment(event.target.value)} placeholder="prod" />
           </label>
           <div className="config-filters__actions">
@@ -59,20 +59,20 @@ export function RuntimeObserverPage() {
           <>
             <div className="summary-card-grid">
               <section className="summary-card">
-                <span>Environment</span>
+                <span>环境</span>
                 <strong>{observerQuery.data.environment}</strong>
               </section>
               <section className="summary-card">
-                <span>Active Policy</span>
+                <span>活跃策略</span>
                 <strong>{observerQuery.data.active_policy.version_id || '—'}</strong>
                 <small>{formatDate(observerQuery.data.active_policy.updated_at)}</small>
               </section>
               <section className="summary-card">
-                <span>Cache Entries</span>
+                <span>缓存条目</span>
                 <strong>{observerQuery.data.cache.entry_count}</strong>
               </section>
               <section className="summary-card">
-                <span>Invalidations</span>
+                <span>失效次数</span>
                 <strong>{observerQuery.data.cache.invalidation_count}</strong>
                 <small>{formatDate(observerQuery.data.cache.last_invalidated_at)}</small>
               </section>
@@ -82,9 +82,9 @@ export function RuntimeObserverPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>Cache Environment</th>
-                    <th>Policy Version</th>
-                    <th>Cached At</th>
+                    <th>缓存环境</th>
+                    <th>策略版本</th>
+                    <th>缓存时间</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -104,10 +104,10 @@ export function RuntimeObserverPage() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Request ID</th>
-                      <th>Resolved Model</th>
-                      <th>Scope</th>
-                      <th>Created At</th>
+                      <th>请求 ID</th>
+                      <th>解析模型</th>
+                      <th>作用域</th>
+                      <th>创建时间</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -127,10 +127,10 @@ export function RuntimeObserverPage() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Event ID</th>
-                      <th>Type</th>
-                      <th>Rollout</th>
-                      <th>Created At</th>
+                      <th>事件 ID</th>
+                      <th>类型</th>
+                      <th>发布</th>
+                      <th>创建时间</th>
                     </tr>
                   </thead>
                   <tbody>

@@ -29,7 +29,7 @@ export function ConfigCenterPage() {
 
   return (
     <AppShell
-      title="Config Center"
+      title="配置中心"
       description="查看配置版本列表、筛选结果，并在右侧详情抽屉里检查继承来源。"
     >
       <div className="config-center">
@@ -40,9 +40,9 @@ export function ConfigCenterPage() {
           }}
         />
 
-        <form className="config-filters" aria-label="Config Filters" onSubmit={handleSubmit}>
+        <form className="config-filters" aria-label="配置筛选" onSubmit={handleSubmit}>
           <label>
-            Module
+            模块
             <input
               value={draftFilters.module}
               onChange={(event) => setDraftFilters((prev) => ({ ...prev, module: event.target.value }))}
@@ -50,7 +50,7 @@ export function ConfigCenterPage() {
             />
           </label>
           <label>
-            Tenant ID
+            租户 ID
             <input
               value={draftFilters.tenantID}
               onChange={(event) => setDraftFilters((prev) => ({ ...prev, tenantID: event.target.value }))}
@@ -58,7 +58,7 @@ export function ConfigCenterPage() {
             />
           </label>
           <label>
-            Environment
+            环境
             <input
               value={draftFilters.environment}
               onChange={(event) => setDraftFilters((prev) => ({ ...prev, environment: event.target.value }))}
@@ -66,7 +66,7 @@ export function ConfigCenterPage() {
             />
           </label>
           <label>
-            Scope
+            作用域
             <input
               value={draftFilters.scope}
               onChange={(event) => setDraftFilters((prev) => ({ ...prev, scope: event.target.value }))}
@@ -74,7 +74,7 @@ export function ConfigCenterPage() {
             />
           </label>
           <label>
-            Project ID
+            项目 ID
             <input
               value={draftFilters.projectID}
               onChange={(event) => setDraftFilters((prev) => ({ ...prev, projectID: event.target.value }))}
@@ -82,7 +82,7 @@ export function ConfigCenterPage() {
             />
           </label>
           <div className="config-filters__actions">
-            <button type="submit">应用筛选</button>
+            <button type="submit">筛选</button>
           </div>
         </form>
 

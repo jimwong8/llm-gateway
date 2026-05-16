@@ -66,7 +66,7 @@ describe('AuditRuntimePage', () => {
 
     expect(await screen.findByText('cfg_201')).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('tab', { name: 'Runtime Events' }))
+    await userEvent.click(screen.getByRole('tab', { name: '运行时事件' }))
 
     expect(await screen.findByText('router')).toBeInTheDocument()
     expect(screen.getByText('staging / cfg_200')).toBeInTheDocument()
@@ -113,9 +113,9 @@ describe('AuditRuntimePage', () => {
 
     await screen.findByText('cfg_201')
     await userEvent.click(screen.getByRole('checkbox'))
-    await userEvent.click(screen.getByRole('button', { name: '应用筛选' }))
+    await userEvent.click(screen.getByRole('button', { name: '筛选' }))
 
-    expect(await screen.findByText('Total')).toBeInTheDocument()
+    expect(await screen.findByText('总数')).toBeInTheDocument()
     const requestedUrls = fetchMock.mock.calls.map((call) => String(call[0]))
     expect(requestedUrls.some((url) => url.includes('summary=true'))).toBe(true)
   })

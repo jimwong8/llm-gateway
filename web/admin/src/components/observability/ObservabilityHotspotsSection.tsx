@@ -8,8 +8,8 @@ type Props = {
 export function ObservabilityHotspotsSection({ hotspots }: Props) {
   return (
     <div className="summary-card-grid">
-      <SummaryMetricCard label="Top Tenant" value={hotspots?.tenants[0]?.key ?? '—'} />
-      <SummaryMetricCard label="Top Model" value={hotspots?.models[0]?.key ?? '—'} />
+      <SummaryMetricCard label="热点租户" value={hotspots?.tenants[0]?.key ?? '—'} />
+      <SummaryMetricCard label="热点模型" value={hotspots?.models[0]?.key ?? '—'} />
     </div>
   )
 }

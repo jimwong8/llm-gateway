@@ -49,14 +49,14 @@ describe('CreateDraftForm', () => {
     const onCreated = vi.fn()
     render(<CreateDraftForm onCreated={onCreated} />)
 
-    await user.type(screen.getByLabelText('Module'), 'router')
-    await user.type(screen.getByLabelText('Tenant ID'), 'tenant-a')
-    await user.clear(screen.getByLabelText('Scope'))
-    await user.type(screen.getByLabelText('Scope'), 'tenant')
-    await user.type(screen.getByLabelText('Source Environment'), 'staging')
-    await user.type(screen.getByLabelText('Target Environment'), 'prod')
-    await user.type(screen.getByLabelText('Actor'), 'release-bot')
-    await user.type(screen.getByLabelText('Reason'), 'prepare prod draft')
+    await user.type(screen.getByLabelText('模块'), 'router')
+    await user.type(screen.getByLabelText('租户 ID'), 'tenant-a')
+    await user.clear(screen.getByLabelText('作用域'))
+    await user.type(screen.getByLabelText('作用域'), 'tenant')
+    await user.type(screen.getByLabelText('来源环境'), 'staging')
+    await user.type(screen.getByLabelText('目标环境'), 'prod')
+    await user.type(screen.getByLabelText('执行人'), 'release-bot')
+    await user.type(screen.getByLabelText('原因'), 'prepare prod draft')
 
     await user.click(screen.getByRole('button', { name: '创建 Draft' }))
 

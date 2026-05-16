@@ -44,15 +44,15 @@ describe('ConfigCenterPage', () => {
 
     renderPage()
 
-    expect(await screen.findByRole('heading', { name: 'Config Center', level: 1 })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '配置中心', level: 1 })).toBeInTheDocument()
     expect(await screen.findByText('cfg_002')).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: '查看详情 cfg_002' }))
 
-    const drawer = screen.getByRole('complementary', { name: 'Version details' })
-    expect(within(drawer).getByText('Source Environment')).toBeInTheDocument()
+    const drawer = screen.getByRole('complementary', { name: '版本详情' })
+    expect(within(drawer).getByText('来源环境')).toBeInTheDocument()
     expect(within(drawer).getByText('staging')).toBeInTheDocument()
-    expect(within(drawer).getByText('Source Version')).toBeInTheDocument()
+    expect(within(drawer).getByText('来源版本')).toBeInTheDocument()
     expect(within(drawer).getByText('cfg_001')).toBeInTheDocument()
   })
 
@@ -69,10 +69,10 @@ describe('ConfigCenterPage', () => {
 
     await screen.findByText('cfg_002')
 
-    const filtersForm = screen.getByRole('form', { name: 'Config Filters' })
-    await userEvent.type(within(filtersForm).getByLabelText('Module'), 'router')
-    await userEvent.type(within(filtersForm).getByLabelText('Tenant ID'), 'tenant-a')
-    await userEvent.click(within(filtersForm).getByRole('button', { name: '应用筛选' }))
+    const filtersForm = screen.getByRole('form', { name: '配置筛选' })
+    await userEvent.type(within(filtersForm).getByLabelText('模块'), 'router')
+    await userEvent.type(within(filtersForm).getByLabelText('租户 ID'), 'tenant-a')
+    await userEvent.click(within(filtersForm).getByRole('button', { name: '筛选' }))
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(2)

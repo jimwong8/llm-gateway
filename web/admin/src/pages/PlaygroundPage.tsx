@@ -93,15 +93,15 @@ export function PlaygroundPage() {
 
   return (
     <AppShell
-      title="Playground"
+      title="在线测试"
       description="直接在浏览器里发起 /v1/chat/completions 请求，查看响应内容、状态码、耗时与关键元信息。"
     >
       <div className="playground-page">
         <form className="playground-form" onSubmit={handleSubmit}>
           <div className="playground-form__header">
             <div>
-              <h2>Request Editor</h2>
-              <p>在 Web 里直接调试网关请求，不需要切回 curl 或 verify 脚本。</p>
+              <h2>请求编辑器</h2>
+              <p>在浏览器中直接调试网关请求，无需切换至 curl 或 verify 脚本。</p>
             </div>
             <div className="playground-form__actions">
               <button type="button" onClick={addMessage}>添加消息</button>
@@ -111,15 +111,15 @@ export function PlaygroundPage() {
 
           <div className="playground-form__grid">
             <label>
-              Model
+              模型
               <input value={requestState.model} onChange={(event) => setRequestState((prev) => ({ ...prev, model: event.target.value }))} />
             </label>
             <label>
-              Tenant ID
+              租户 ID
               <input value={requestState.tenantID} onChange={(event) => setRequestState((prev) => ({ ...prev, tenantID: event.target.value }))} />
             </label>
             <label>
-              Task Hint
+              任务提示
               <input value={requestState.taskHint} onChange={(event) => setRequestState((prev) => ({ ...prev, taskHint: event.target.value }))} placeholder="analysis / code / chat" />
             </label>
           </div>
@@ -127,13 +127,13 @@ export function PlaygroundPage() {
           <div className="playground-messages">
             {requestState.messages.map((message, index) => (
               <div key={index} className="playground-message-row">
-                <label>
-                  Role
-                  <input value={message.role} onChange={(event) => updateMessage(index, 'role', event.target.value)} />
-                </label>
-                <label className="playground-message-row__content">
-                  Content
-                  <textarea value={message.content} rows={4} onChange={(event) => updateMessage(index, 'content', event.target.value)} />
+                  <label>
+                    角色
+                    <input value={message.role} onChange={(event) => updateMessage(index, 'role', event.target.value)} />
+                  </label>
+                  <label className="playground-message-row__content">
+                    内容
+                    <textarea value={message.content} rows={4} onChange={(event) => updateMessage(index, 'content', event.target.value)} />
                 </label>
               </div>
             ))}
@@ -145,7 +145,7 @@ export function PlaygroundPage() {
         <section className="playground-response">
           <div className="playground-response__header">
             <div>
-              <h2>Response Panel</h2>
+              <h2>响应面板</h2>
               <p>查看响应正文、状态码、耗时与关键响应头。</p>
             </div>
           </div>
@@ -154,11 +154,11 @@ export function PlaygroundPage() {
             <>
               <div className="summary-card-grid playground-summary-grid">
                 <div className="summary-card">
-                  <span>Status</span>
+                  <span>状态码</span>
                   <strong>{result.status}</strong>
                 </div>
                 <div className="summary-card">
-                  <span>Elapsed</span>
+                  <span>耗时</span>
                   <strong>{result.elapsedMs} ms</strong>
                 </div>
                 <div className="summary-card">
@@ -173,11 +173,11 @@ export function PlaygroundPage() {
 
               <div className="playground-panels">
                 <div className="playground-panel-card">
-                  <h3>Response JSON</h3>
+                  <h3>响应 JSON</h3>
                   <pre>{JSON.stringify(result.body, null, 2)}</pre>
                 </div>
                 <div className="playground-panel-card">
-                  <h3>Request Preview</h3>
+                  <h3>请求预览</h3>
                   <pre>{JSON.stringify(requestPreview, null, 2)}</pre>
                 </div>
                 <div className="playground-panel-card">

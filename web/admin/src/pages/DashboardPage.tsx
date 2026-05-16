@@ -35,7 +35,7 @@ export function DashboardPage() {
 
   return (
     <AppShell
-      title="Dashboard"
+      title="仪表盘"
       description="聚合展示服务状态、请求量、缓存命中率与 Provider 错误率，作为控制台首页。"
     >
       <div className="events-page">

@@ -66,13 +66,13 @@ export function ObservabilityPage() {
 
   return (
     <AppShell
-      title="Observability"
+      title="可观测性"
       description="展示请求摘要、Provider 统计与热点租户/模型，用于快速判断网关流量质量。"
     >
       <div className="events-page">
-        <form className="config-filters" aria-label="Observability Filters" onSubmit={handleSubmit}>
+        <form className="config-filters" aria-label="可观测性筛选" onSubmit={handleSubmit}>
           <label>
-            Tenant ID
+            租户 ID
             <input value={draftFilters.tenantID} onChange={(event) => setDraftFilters((prev) => ({ ...prev, tenantID: event.target.value }))} placeholder="tenant-a" />
           </label>
           <label>
@@ -80,20 +80,20 @@ export function ObservabilityPage() {
             <input value={draftFilters.provider} onChange={(event) => setDraftFilters((prev) => ({ ...prev, provider: event.target.value }))} placeholder="openai" />
           </label>
           <label>
-            Model
+            模型
             <input value={draftFilters.model} onChange={(event) => setDraftFilters((prev) => ({ ...prev, model: event.target.value }))} placeholder="gpt-4o-mini" />
           </label>
           <label>
-            Limit
+            条数限制
             <input value={draftFilters.limit} onChange={(event) => setDraftFilters((prev) => ({ ...prev, limit: event.target.value }))} placeholder="10" />
           </label>
           <div className="config-filters__actions">
-            <button type="submit">应用筛选</button>
+            <button type="submit">筛选</button>
           </div>
         </form>
 
         {summaryQuery.error || providersQuery.error || hotspotsQuery.error ? (
-          <div className="config-error">观测数据加载失败，请检查 Admin API 与 billing store 状态。</div>
+          <div className="config-error">观测数据加载失败，请检查 Admin API 与计费存储状态。</div>
         ) : null}
 
         <ObservabilitySummarySection

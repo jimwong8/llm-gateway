@@ -52,12 +52,12 @@ describe('PlaygroundPage', () => {
 
     render(<PlaygroundPage />)
 
-    await user.clear(screen.getByLabelText('Model'))
-    await user.type(screen.getByLabelText('Model'), 'gpt-4o-mini')
+    await user.clear(screen.getByLabelText('模型'))
+    await user.type(screen.getByLabelText('模型'), 'gpt-4o-mini')
     await user.click(screen.getByRole('button', { name: '发送请求' }))
 
-    expect(await screen.findByText('Response JSON')).toBeInTheDocument()
-    expect(screen.getByText('Request Preview')).toBeInTheDocument()
+    expect(await screen.findByText('响应 JSON')).toBeInTheDocument()
+    expect(screen.getByText('请求预览')).toBeInTheDocument()
     expect(screen.getByText('HIT')).toBeInTheDocument()
     expect(screen.getByText('0.92')).toBeInTheDocument()
     expect(screen.getByText('200')).toBeInTheDocument()
@@ -71,8 +71,8 @@ describe('PlaygroundPage', () => {
 
     render(<PlaygroundPage />)
 
-    expect(screen.getAllByLabelText('Role')).toHaveLength(1)
+    expect(screen.getAllByLabelText('角色')).toHaveLength(1)
     await user.click(screen.getByRole('button', { name: '添加消息' }))
-    expect(screen.getAllByLabelText('Role')).toHaveLength(2)
+    expect(screen.getAllByLabelText('角色')).toHaveLength(2)
   })
 })

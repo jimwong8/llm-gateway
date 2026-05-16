@@ -40,7 +40,7 @@ export function DashboardSessionOpsSection({ loading, hasError, data }: Dashboar
     <section className="panel" style={{ marginTop: '1.5rem' }}>
       <div className="page-header" style={{ marginBottom: '1rem' }}>
         <div>
-          <h2>Session / Ops 概览</h2>
+          <h2>会话与运维概览</h2>
           <p>来自 Python session dashboard（/api/v1/admin/dashboard）的聚合状态摘要。</p>
         </div>
       </div>
@@ -51,20 +51,20 @@ export function DashboardSessionOpsSection({ loading, hasError, data }: Dashboar
       {!loading && !hasError ? (
         <>
           <div className="summary-card-grid">
-            <SummaryMetricCard label="Overall Status" value={statusLabel(data?.overall_status)} />
-            <SummaryMetricCard label="Health" value={statusLabel(data?.health?.status)} />
-            <SummaryMetricCard label="Continuation" value={statusLabel(data?.continuation?.status)} />
-            <SummaryMetricCard label="Duplicate Groups" value={data?.duplicates?.duplicate_group_count ?? 0} />
-            <SummaryMetricCard label="Alert Issues" value={countIssues(data?.alerts)} />
-            <SummaryMetricCard label="Shared Project Sessions" value={data?.shared_memory?.project_session_count ?? 0} />
-            <SummaryMetricCard label="Pending Continuations" value={data?.continuation_metrics?.pending ?? 0} />
-            <SummaryMetricCard label="KG Success / Fail" value={formatKgSummary(data?.kg)} />
+            <SummaryMetricCard label="总体状态" value={statusLabel(data?.overall_status)} />
+            <SummaryMetricCard label="健康状态" value={statusLabel(data?.health?.status)} />
+            <SummaryMetricCard label="续接状态" value={statusLabel(data?.continuation?.status)} />
+            <SummaryMetricCard label="重复分组" value={data?.duplicates?.duplicate_group_count ?? 0} />
+            <SummaryMetricCard label="告警问题数" value={countIssues(data?.alerts)} />
+            <SummaryMetricCard label="共享项目会话" value={data?.shared_memory?.project_session_count ?? 0} />
+            <SummaryMetricCard label="待续接数" value={data?.continuation_metrics?.pending ?? 0} />
+            <SummaryMetricCard label="知识图谱成功/失败" value={formatKgSummary(data?.kg)} />
           </div>
 
           <div className="event-table" style={{ marginTop: '1rem' }}>
             <div className="page-header" style={{ marginBottom: '0.75rem' }}>
               <div>
-                <h3>Recent Alerts</h3>
+                <h3>最近告警</h3>
                 <p>仅显示前 3 条问题摘要。</p>
               </div>
             </div>
@@ -82,13 +82,13 @@ export function DashboardSessionOpsSection({ loading, hasError, data }: Dashboar
           <div className="event-table" style={{ marginTop: '1rem' }}>
             <div className="page-header" style={{ marginBottom: '0.75rem' }}>
               <div>
-                <h3>AI Ops Advice</h3>
+                <h3>AI 运维建议</h3>
                 <p>{advice?.summary || '暂无建议摘要。'}</p>
               </div>
             </div>
             <div className="summary-card-grid" style={{ marginBottom: '0.75rem' }}>
-              <SummaryMetricCard label="Risk Level" value={statusLabel(advice?.risk_level)} />
-              <SummaryMetricCard label="Recommended Actions" value={recommendedActions.length} />
+              <SummaryMetricCard label="风险等级" value={statusLabel(advice?.risk_level)} />
+              <SummaryMetricCard label="推荐操作数" value={recommendedActions.length} />
             </div>
             {recommendedActions.length > 0 ? (
               <ul>
@@ -106,7 +106,7 @@ export function DashboardSessionOpsSection({ loading, hasError, data }: Dashboar
           <div className="event-table" style={{ marginTop: '1rem' }}>
             <div className="page-header" style={{ marginBottom: '0.75rem' }}>
               <div>
-                <h3>Recent Operations</h3>
+                <h3>最近操作</h3>
                 <p>展示最近 3 条操作历史。</p>
               </div>
             </div>
@@ -114,9 +114,9 @@ export function DashboardSessionOpsSection({ loading, hasError, data }: Dashboar
               <table>
                 <thead>
                   <tr>
-                    <th>Action</th>
-                    <th>Status</th>
-                    <th>Target</th>
+                    <th>操作</th>
+                    <th>状态</th>
+                    <th>目标</th>
                   </tr>
                 </thead>
                 <tbody>

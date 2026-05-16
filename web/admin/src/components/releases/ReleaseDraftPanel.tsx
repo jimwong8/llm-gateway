@@ -70,11 +70,11 @@ export function ReleaseDraftPanel({ onReleased }: ReleaseDraftPanelProps) {
   }
 
   return (
-    <form className="release-panel" aria-label="Release Draft Form" onSubmit={handleSubmit}>
+    <form className="release-panel" aria-label="发布 Draft 表单" onSubmit={handleSubmit}>
       <div className="release-panel__header">
         <div>
-          <h2>Release Draft</h2>
-          <p>将目标环境的 Draft 明确发布为 Released，触发后续运行时生效链路。</p>
+          <h2>发布 Draft</h2>
+          <p>将目标环境的 Draft 发布为 Released，触发后续运行时生效链路。</p>
         </div>
         <button type="submit" disabled={submitting}>
           {submitting ? '发布中…' : '发布 Draft'}
@@ -82,38 +82,38 @@ export function ReleaseDraftPanel({ onReleased }: ReleaseDraftPanelProps) {
       </div>
 
       <div className="release-panel__grid">
-        <label>
-          Module
-          <input value={form.module} onChange={(event) => setForm((prev) => ({ ...prev, module: event.target.value }))} placeholder="router" />
-        </label>
-        <label>
-          Tenant ID
-          <input value={form.tenantID} onChange={(event) => setForm((prev) => ({ ...prev, tenantID: event.target.value }))} placeholder="tenant-a" />
-        </label>
-        <label>
-          Environment
-          <input value={form.environment} onChange={(event) => setForm((prev) => ({ ...prev, environment: event.target.value }))} placeholder="prod" />
-        </label>
-        <label>
-          Scope
-          <input value={form.scope} onChange={(event) => setForm((prev) => ({ ...prev, scope: event.target.value }))} placeholder="tenant" />
-        </label>
-        <label>
-          Project ID
-          <input value={form.projectID} onChange={(event) => setForm((prev) => ({ ...prev, projectID: event.target.value }))} placeholder="project-x" />
-        </label>
-        <label>
-          Version ID
-          <input value={form.versionID} onChange={(event) => setForm((prev) => ({ ...prev, versionID: event.target.value }))} placeholder="cfg_101" />
-        </label>
-        <label>
-          Actor
-          <input value={form.actor} onChange={(event) => setForm((prev) => ({ ...prev, actor: event.target.value }))} placeholder="release-bot" />
-        </label>
-        <label>
-          Reason
-          <input value={form.reason} onChange={(event) => setForm((prev) => ({ ...prev, reason: event.target.value }))} placeholder="approve prod draft" />
-        </label>
+          <label>
+            模块
+            <input value={form.module} onChange={(event) => setForm((prev) => ({ ...prev, module: event.target.value }))} placeholder="router" />
+          </label>
+          <label>
+            租户 ID
+            <input value={form.tenantID} onChange={(event) => setForm((prev) => ({ ...prev, tenantID: event.target.value }))} placeholder="tenant-a" />
+          </label>
+          <label>
+            环境
+            <input value={form.environment} onChange={(event) => setForm((prev) => ({ ...prev, environment: event.target.value }))} placeholder="prod" />
+          </label>
+          <label>
+            作用域
+            <input value={form.scope} onChange={(event) => setForm((prev) => ({ ...prev, scope: event.target.value }))} placeholder="tenant" />
+          </label>
+          <label>
+            项目 ID
+            <input value={form.projectID} onChange={(event) => setForm((prev) => ({ ...prev, projectID: event.target.value }))} placeholder="project-x" />
+          </label>
+          <label>
+            版本 ID
+            <input value={form.versionID} onChange={(event) => setForm((prev) => ({ ...prev, versionID: event.target.value }))} placeholder="cfg_101" />
+          </label>
+          <label>
+            执行人
+            <input value={form.actor} onChange={(event) => setForm((prev) => ({ ...prev, actor: event.target.value }))} placeholder="release-bot" />
+          </label>
+          <label>
+            原因
+            <input value={form.reason} onChange={(event) => setForm((prev) => ({ ...prev, reason: event.target.value }))} placeholder="approve prod draft" />
+          </label>
       </div>
 
       {error ? <div className="config-error">{error}</div> : null}

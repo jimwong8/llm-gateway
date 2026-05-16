@@ -56,11 +56,11 @@ describe('RecommendationCenterPage', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1)
     })
 
-    expect(await screen.findByRole('heading', { name: 'Recommendation Center', level: 1 })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '推荐管理', level: 1 })).toBeInTheDocument()
     expect(await screen.findByText('rec-1')).toBeInTheDocument()
     expect(screen.getByText('rec-2')).toBeInTheDocument()
-    expect(screen.getByText('Total Recommendations')).toBeInTheDocument()
-    expect(screen.getByText('Agents')).toBeInTheDocument()
+    expect(screen.getByText('推荐总数')).toBeInTheDocument()
+    expect(screen.getByText('智能体数')).toBeInTheDocument()
   })
 
   it('opens approval dialog and submits approval request', async () => {
@@ -132,11 +132,11 @@ describe('RecommendationCenterPage', () => {
 
     await user.click(screen.getByRole('button', { name: '审批' }))
 
-    const dialog = screen.getByRole('dialog', { name: '审批 Recommendation' })
+    const dialog = screen.getByRole('dialog', { name: '审批推荐' })
     const form = within(dialog).getByRole('form', { name: 'Governance Approval Form' })
 
-    await user.clear(within(form).getByLabelText('Approved By'))
-    await user.type(within(form).getByLabelText('Approved By'), 'ops-reviewer')
+    await user.clear(within(form).getByLabelText('审批人'))
+    await user.type(within(form).getByLabelText('审批人'), 'ops-reviewer')
     await user.click(within(form).getByRole('button', { name: '确认审批' }))
 
     await waitFor(() => {

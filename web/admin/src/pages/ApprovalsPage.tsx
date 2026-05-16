@@ -119,8 +119,8 @@ export function ApprovalsPage() {
 
   return (
     <AppShell
-      title="Approvals"
-      description="对推荐模型执行 approve / override / reject，产出可追踪的审批记录并刷新推荐队列。"
+      title="审批管理"
+      description="对推荐模型执行批准/覆盖/拒绝，产出可追踪的审批记录并刷新推荐队列。"
     >
       <div className="events-page">
         {recommendationsQuery.isLoading ? <div className="event-state">正在加载 recommendations…</div> : null}
@@ -130,14 +130,14 @@ export function ApprovalsPage() {
           <table>
             <thead>
               <tr>
-                <th>Recommendation ID</th>
-                <th>Agent</th>
-                <th>Task</th>
-                <th>Environment</th>
-                <th>Recommended Model</th>
-                <th>Status</th>
-                <th>Updated At</th>
-                <th>Action</th>
+                <th>推荐 ID</th>
+                <th>智能体</th>
+                <th>任务</th>
+                <th>环境</th>
+                <th>推荐模型</th>
+                <th>状态</th>
+                <th>更新时间</th>
+                <th>操作</th>
               </tr>
             </thead>
             <tbody>
@@ -173,8 +173,8 @@ export function ApprovalsPage() {
         <form className="release-panel" aria-label="Governance Approval Form" onSubmit={handleSubmit}>
           <div className="release-panel__header">
             <div>
-              <h2>Approval Console</h2>
-              <p>选择 recommendation 后提交决策；override 需要 final model，reject 需要审批理由。</p>
+              <h2>审批控制台</h2>
+              <p>选择推荐后提交决策；覆盖需要指定最终模型，拒绝需要审批理由。</p>
             </div>
             <div className="policy-actions">
               {successMessage ? (
@@ -190,7 +190,7 @@ export function ApprovalsPage() {
 
           <div className="release-panel__grid">
             <label>
-              Recommendation ID
+              推荐 ID
               <input
                 value={form.recommendationID}
                 onChange={(event) => setForm((previous) => ({ ...previous, recommendationID: event.target.value }))}
@@ -198,18 +198,18 @@ export function ApprovalsPage() {
               />
             </label>
             <label>
-              Decision
+              决策
               <select
                 value={form.decision}
                 onChange={(event) => setForm((previous) => ({ ...previous, decision: event.target.value as ApprovalFormState['decision'] }))}
               >
-                <option value="approved">approve</option>
-                <option value="overridden">override</option>
-                <option value="rejected">reject</option>
+                <option value="approved">批准</option>
+                <option value="overridden">覆盖</option>
+                <option value="rejected">拒绝</option>
               </select>
             </label>
             <label>
-              Final Model
+              最终模型
               <input
                 value={form.finalModel}
                 onChange={(event) => setForm((previous) => ({ ...previous, finalModel: event.target.value }))}
@@ -218,7 +218,7 @@ export function ApprovalsPage() {
               />
             </label>
             <label>
-              Approval Reason
+              审批原因
               <input
                 value={form.approvalReason}
                 onChange={(event) => setForm((previous) => ({ ...previous, approvalReason: event.target.value }))}
@@ -226,7 +226,7 @@ export function ApprovalsPage() {
               />
             </label>
             <label>
-              Approved By
+              审批人
               <input
                 value={form.approvedBy}
                 onChange={(event) => setForm((previous) => ({ ...previous, approvedBy: event.target.value }))}
@@ -234,18 +234,18 @@ export function ApprovalsPage() {
               />
             </label>
             <label>
-              Scope
+              作用域
               <select
                 value={form.scope}
                 onChange={(event) => setForm((previous) => ({ ...previous, scope: event.target.value }))}
               >
-                <option value="agent">agent</option>
-                <option value="project">project</option>
-                <option value="tenant">tenant</option>
+                <option value="agent">智能体</option>
+                <option value="project">项目</option>
+                <option value="tenant">租户</option>
               </select>
             </label>
             <label>
-              Environment
+              环境
               <input
                 value={form.environment}
                 onChange={(event) => setForm((previous) => ({ ...previous, environment: event.target.value }))}
@@ -253,7 +253,7 @@ export function ApprovalsPage() {
               />
             </label>
             <label>
-              Project ID
+              项目 ID
               <input
                 value={form.projectID}
                 onChange={(event) => setForm((previous) => ({ ...previous, projectID: event.target.value }))}

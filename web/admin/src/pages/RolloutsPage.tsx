@@ -192,8 +192,8 @@ export function RolloutsPage() {
 
   return (
     <AppShell
-      title="Governance Rollouts"
-      description="查看模型治理 rollout 进度、质量信号与状态分层，并在需要时通过回滚入口恢复到已知稳定版本。"
+      title="灰度发布"
+      description="查看模型治理推广进度、质量信号与状态分层，并在需要时通过回滚入口恢复到已知稳定版本。"
     >
       <div className="events-page">
         {rolloutsQuery.isLoading ? <div className="event-state">正在加载 rollout 列表…</div> : null}
@@ -205,63 +205,63 @@ export function RolloutsPage() {
           <>
             <div className="summary-card-grid">
               <section className="summary-card">
-                <span>Total Rollouts</span>
+                <span>发布总数</span>
                 <strong>{metrics.total}</strong>
               </section>
               <section className="summary-card">
-                <span>Running</span>
+                <span>运行中</span>
                 <strong>{metrics.running}</strong>
                 <small>{formatRate(metrics.runningRate)}</small>
               </section>
               <section className="summary-card">
-                <span>Promoted</span>
+                <span>已完成</span>
                 <strong>{metrics.promoted}</strong>
                 <small>{formatRate(metrics.promotedRate)}</small>
               </section>
               <section className="summary-card">
-                <span>Average Percent</span>
+                <span>平均百分比</span>
                 <strong>{formatPercent(Number(metrics.averagePercent.toFixed(1)))}</strong>
               </section>
             </div>
 
             <div className="summary-card-grid">
               <section className="summary-card">
-                <span>Dashboard Error Rate</span>
+                <span>平均错误率</span>
                 <strong>{formatRate(metrics.averageErrorRate)}</strong>
               </section>
               <section className="summary-card">
-                <span>Dashboard P95 Latency</span>
+                <span>平均 P95 延迟</span>
                 <strong>{formatLatency(metrics.averageP95Latency)}</strong>
               </section>
               <section className="summary-card">
-                <span>Dashboard Fallback Rate</span>
+                <span>平均回退率</span>
                 <strong>{formatRate(metrics.averageFallbackRate)}</strong>
               </section>
               <section className="summary-card">
-                <span>Dashboard Samples</span>
+                <span>样本总数</span>
                 <strong>{formatSampleCount(metrics.totalSamples)}</strong>
               </section>
             </div>
 
             <div className="summary-card-grid">
               <section className="summary-card summary-card--status healthy">
-                <span>Healthy</span>
+                <span>健康</span>
                 <strong>{metrics.healthy}</strong>
                 <small>error &lt; 2% · fallback &lt; 1% · p95 &lt; 900ms</small>
               </section>
               <section className="summary-card summary-card--status watch">
-                <span>Watch</span>
+                <span>关注</span>
                 <strong>{metrics.watch}</strong>
                 <small>error ≥ 2% 或 fallback ≥ 1% 或 p95 ≥ 900ms</small>
               </section>
               <section className="summary-card summary-card--status critical">
-                <span>Critical</span>
+                <span>严重</span>
                 <strong>{metrics.critical}</strong>
                 <small>error ≥ 5% 或 fallback ≥ 3% 或 p95 ≥ 1500ms</small>
               </section>
               <section className="summary-card">
-                <span>Rollback Ready</span>
-                <strong>{metrics.total > 0 ? 'Enabled' : 'Idle'}</strong>
+                <span>回滚就绪</span>
+                <strong>{metrics.total > 0 ? '已启用' : '空闲'}</strong>
                 <small>可直接在行级操作触发回滚</small>
               </section>
             </div>
@@ -270,18 +270,18 @@ export function RolloutsPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>Rollout ID</th>
-                    <th>Policy Version</th>
-                    <th>Environment</th>
-                    <th>Status</th>
-                    <th>Rollout %</th>
-                    <th>Error Rate</th>
-                    <th>p95 Latency</th>
-                    <th>Fallback Rate</th>
-                    <th>Samples</th>
-                    <th>Triggered By</th>
-                    <th>Updated At</th>
-                    <th>Action</th>
+                    <th>发布 ID</th>
+                    <th>策略版本</th>
+                    <th>环境</th>
+                    <th>状态</th>
+                    <th>推广比例</th>
+                    <th>错误率</th>
+                    <th>P95 延迟</th>
+                    <th>回退率</th>
+                    <th>样本数</th>
+                    <th>触发人</th>
+                    <th>更新时间</th>
+                    <th>操作</th>
                   </tr>
                 </thead>
                 <tbody>

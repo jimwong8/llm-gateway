@@ -117,7 +117,7 @@ export function PolicyVersionsPage() {
 
   return (
     <AppShell
-      title="Policy Version Center"
+      title="策略版本"
       description="查看策略版本生命周期、当前激活状态，并在右侧对比区检查选中版本的差异内容。"
     >
       <div className="policy-version-center">
@@ -130,19 +130,19 @@ export function PolicyVersionsPage() {
           <>
             <div className="summary-card-grid">
               <section className="summary-card">
-                <span>Total Versions</span>
+                <span>版本总数</span>
                 <strong>{versions.length}</strong>
               </section>
               <section className="summary-card">
-                <span>Active Version</span>
+                <span>当前激活版本</span>
                 <strong>{versions.find((item) => item.status === 'active')?.id ?? '—'}</strong>
               </section>
               <section className="summary-card">
-                <span>Current Selected</span>
+                <span>当前选中</span>
                 <strong>{selectedVersionEffective?.id ?? '—'}</strong>
               </section>
               <section className="summary-card">
-                <span>Approved Count</span>
+                <span>已审批数</span>
                 <strong>{versions.filter((item) => item.status === 'approved').length}</strong>
               </section>
             </div>
@@ -152,13 +152,13 @@ export function PolicyVersionsPage() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Version ID</th>
-                      <th>Status</th>
-                      <th>Environment</th>
-                      <th>Created By</th>
-                      <th>Approved By</th>
-                      <th>Activated At</th>
-                      <th>Action</th>
+                      <th>版本 ID</th>
+                      <th>状态</th>
+                      <th>环境</th>
+                      <th>创建人</th>
+                      <th>审批人</th>
+                      <th>激活时间</th>
+                      <th>操作</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -201,7 +201,7 @@ export function PolicyVersionsPage() {
                                   approveMutation.mutate(row)
                                 }}
                               >
-                                {pending && canApprove ? '审批中…' : 'Approve'}
+                                {pending && canApprove ? '审批中…' : '批准'}
                               </button>
                               <button
                                 type="button"
@@ -213,15 +213,15 @@ export function PolicyVersionsPage() {
                                   activateMutation.mutate(row)
                                 }}
                               >
-                                {pending && canActivate ? '激活中…' : 'Activate'}
+                                {pending && canActivate ? '激活中…' : '激活'}
                               </button>
                               {(row.status === 'approved' || row.status === 'active') ? (
-                                <Link
-                                  className="rollouts-action"
-                                  to={`/rollouts?policyVersionId=${encodeURIComponent(row.id)}&environment=${encodeURIComponent(row.environment || 'prod')}`}
-                                >
-                                  Go to Rollouts
-                                </Link>
+                                  <Link
+                                    className="rollouts-action"
+                                    to={`/rollouts?policyVersionId=${encodeURIComponent(row.id)}&environment=${encodeURIComponent(row.environment || 'prod')}`}
+                                  >
+                                    查看灰度发布
+                                  </Link>
                               ) : null}
                             </div>
                           </td>

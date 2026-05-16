@@ -40,7 +40,7 @@ describe('ObservabilityPage', () => {
 
     renderPage()
 
-    expect(await screen.findByRole('heading', { name: 'Observability', level: 1 })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '可观测性', level: 1 })).toBeInTheDocument()
     expect(await screen.findByText('openai')).toBeInTheDocument()
     expect(await screen.findByText('tenant-a')).toBeInTheDocument()
     expect(await screen.findByText('gpt-4o-mini')).toBeInTheDocument()
@@ -57,9 +57,9 @@ describe('ObservabilityPage', () => {
 
     renderPage()
 
-    const form = screen.getByRole('form', { name: 'Observability Filters' })
-    await userEvent.type(within(form).getByLabelText('Tenant ID'), 'tenant-a')
-    await userEvent.click(within(form).getByRole('button', { name: '应用筛选' }))
+    const form = screen.getByRole('form', { name: '可观测性筛选' })
+    await userEvent.type(within(form).getByLabelText('租户 ID'), 'tenant-a')
+    await userEvent.click(within(form).getByRole('button', { name: '筛选' }))
 
     await waitFor(() => {
       const urls = fetchMock.mock.calls.map((call) => String(call[0]))

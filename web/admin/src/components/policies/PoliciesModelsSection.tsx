@@ -8,7 +8,7 @@ export function PoliciesModelsSection({ models }: Props) {
       <table>
         <thead>
           <tr>
-            <th>Model</th>
+            <th>模型</th>
           </tr>
         </thead>
         <tbody>

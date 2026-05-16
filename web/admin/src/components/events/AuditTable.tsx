@@ -18,15 +18,15 @@ export function AuditTable({ data, loading }: AuditTableProps) {
     return (
       <div className="summary-card-grid">
         <div className="summary-card">
-          <span>Total</span>
+          <span>总数</span>
           <strong>{data.total}</strong>
         </div>
         <div className="summary-card">
-          <span>By Type</span>
+          <span>按类型</span>
           <strong>{Object.keys(data.by_type).join(', ') || '—'}</strong>
         </div>
         <div className="summary-card">
-          <span>By Environment</span>
+          <span>按环境</span>
           <strong>{Object.keys(data.by_environment).join(', ') || '—'}</strong>
         </div>
       </div>
@@ -42,11 +42,11 @@ export function AuditTable({ data, loading }: AuditTableProps) {
       <table>
         <thead>
           <tr>
-            <th>Type</th>
-            <th>Environment</th>
-            <th>Tenant</th>
-            <th>Version</th>
-            <th>Actor</th>
+            <th>类型</th>
+            <th>环境</th>
+            <th>租户</th>
+            <th>版本</th>
+            <th>操作人</th>
           </tr>
         </thead>
         <tbody>

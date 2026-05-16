@@ -22,7 +22,7 @@ export function LoginPage() {
 
     const normalized = token.trim()
     if (!normalized) {
-      setError('请输入 Admin Token')
+      setError('请输入管理员 Token')
       return
     }
 
@@ -41,12 +41,12 @@ export function LoginPage() {
       <section className="login-card">
         <div className="login-card__header">
           <span className="login-badge">LLM Gateway</span>
-          <h1>Admin Console Login</h1>
+          <h1>管理员控制台登录</h1>
           <p>输入管理员 Bearer Token 后进入控制台与在线测试台。</p>
         </div>
 
         <form className="login-form" onSubmit={handleSubmit}>
-          <label htmlFor="admin-token">Admin Token</label>
+          <label htmlFor="admin-token">管理员 Token</label>
           <input
             id="admin-token"
             name="admin-token"

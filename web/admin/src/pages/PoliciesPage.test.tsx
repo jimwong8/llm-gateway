@@ -26,7 +26,7 @@ describe('PoliciesPage', () => {
 
     renderPage()
 
-    expect(await screen.findByRole('heading', { name: 'Policies', level: 1 })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: '策略管理', level: 1 })).toBeTruthy()
     expect(await screen.findByText('gpt-4o-mini')).toBeTruthy()
     expect(screen.getByText('claude-sonnet')).toBeTruthy()
   })

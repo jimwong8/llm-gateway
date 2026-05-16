@@ -64,7 +64,7 @@ describe('PolicyVersionsPage', () => {
 
     renderPage()
 
-    expect(await screen.findByRole('heading', { name: 'Policy Version Center', level: 1 })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '策略版本', level: 1 })).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'pv-3' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'pv-2' })).toBeInTheDocument()
 
@@ -202,7 +202,7 @@ describe('PolicyVersionsPage', () => {
 
     expect(await screen.findByRole('button', { name: 'pv-draft' })).toBeInTheDocument()
 
-    await user.click(screen.getAllByRole('button', { name: 'Approve' })[0])
+    await user.click(screen.getAllByRole('button', { name: '批准' })[0])
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -216,7 +216,7 @@ describe('PolicyVersionsPage', () => {
     expect(approveInit).toMatchObject({ method: 'POST' })
     expect(JSON.parse(String(approveInit?.body ?? '{}'))).toMatchObject({ approved_by: 'admin-ui' })
 
-    await user.click(screen.getAllByRole('button', { name: 'Activate' })[1])
+    await user.click(screen.getAllByRole('button', { name: '激活' })[1])
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -310,9 +310,9 @@ describe('PolicyVersionsPage', () => {
 
     renderPage('/policy-versions?environment=staging')
 
-    expect(await screen.findByText('Current Selected')).toBeInTheDocument()
+    expect(await screen.findByText('当前选中')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'pv-staging' })).toBeInTheDocument()
-    expect(screen.getAllByRole('link', { name: 'Go to Rollouts' })[0]).toHaveAttribute('href', '/rollouts?policyVersionId=pv-staging&environment=staging')
+    expect(screen.getAllByRole('link', { name: '查看灰度发布' })[0]).toHaveAttribute('href', '/rollouts?policyVersionId=pv-staging&environment=staging')
   })
 })
 

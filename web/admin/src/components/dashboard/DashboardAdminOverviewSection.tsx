@@ -19,12 +19,12 @@ export function DashboardAdminOverviewSection({
 }: DashboardAdminOverviewSectionProps) {
   return (
     <div className="summary-card-grid">
-      <SummaryMetricCard label="Service" value={service} />
-      <SummaryMetricCard label="Admin Auth" value={adminAuth} />
-      <SummaryMetricCard label="Requests" value={requests} />
-      <SummaryMetricCard label="Cache Hit Rate" value={cacheHitRate} />
-      <SummaryMetricCard label="Provider Error Rate" value={providerErrorRate} />
-      <SummaryMetricCard label="Total Tokens" value={totalTokens} />
+      <SummaryMetricCard label="服务" value={service} />
+      <SummaryMetricCard label="管理员认证" value={adminAuth} />
+      <SummaryMetricCard label="请求量" value={requests} />
+      <SummaryMetricCard label="缓存命中率" value={cacheHitRate} />
+      <SummaryMetricCard label="Provider 错误率" value={providerErrorRate} />
+      <SummaryMetricCard label="总 Token 数" value={totalTokens} />
     </div>
   )
 }

@@ -52,21 +52,21 @@ export function QuotaPage() {
 
   return (
     <AppShell
-      title="Quota"
-      description="查看指定 tenant 的 quota 摘要与时间窗口趋势，用于发现逼近限制与被拒绝请求。"
+      title="配额管理"
+      description="查看指定租户的配额摘要与时间窗口趋势，用于发现逼近限制与被拒绝的请求。"
     >
       <div className="events-page">
-        <form className="config-filters" aria-label="Quota Filters" onSubmit={handleSubmit}>
+        <form className="config-filters" aria-label="配额筛选" onSubmit={handleSubmit}>
           <label>
-            Tenant ID
+            租户 ID
             <input value={draftFilters.tenantID} onChange={(event) => setDraftFilters((prev) => ({ ...prev, tenantID: event.target.value }))} placeholder="tenant-a" />
           </label>
           <label>
-            Window Minutes
+            时间窗口（分钟）
             <input value={draftFilters.windowMinutes} onChange={(event) => setDraftFilters((prev) => ({ ...prev, windowMinutes: event.target.value }))} placeholder="15" />
           </label>
           <div className="config-filters__actions">
-            <button type="submit">应用筛选</button>
+            <button type="submit">筛选</button>
           </div>
         </form>
 

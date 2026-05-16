@@ -84,16 +84,16 @@ describe('MemoryGovernancePage', () => {
       expect(fetchMock).toHaveBeenCalledTimes(2)
     })
 
-    expect(await screen.findByRole('heading', { name: 'Memory Governance', level: 1 })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: '记忆治理', level: 1 })).toBeTruthy()
     expect(await screen.findByText('repo')).toBeTruthy()
     expect(screen.getByText('mono')).toBeTruthy()
     expect(screen.getByText('we use monorepo')).toBeTruthy()
     expect(screen.getByText('stack')).toBeTruthy()
     expect(screen.getByText('backend stack is go')).toBeTruthy()
-    expect(screen.getByText('Candidate Facts')).toBeTruthy()
-    expect(screen.getByText('Project Facts')).toBeTruthy()
-    expect(screen.getByText('Active Project Facts')).toBeTruthy()
-    expect(screen.getByText('Operator Notes')).toBeTruthy()
+    expect(screen.getByText('候选事实')).toBeTruthy()
+    expect(screen.getByText('项目事实')).toBeTruthy()
+    expect(screen.getByText('活跃项目事实')).toBeTruthy()
+    expect(screen.getByText('运维备注')).toBeTruthy()
     expect(screen.getByText('选择一条事实查看详情')).toBeTruthy()
   })
 
@@ -163,7 +163,7 @@ describe('MemoryGovernancePage', () => {
 
     await screen.findByText('alpha')
 
-    const candidateRegion = screen.getByRole('region', { name: 'Candidate Facts Table' })
+    const candidateRegion = screen.getByRole('region', { name: '候选事实表' })
     const candidateTable = within(candidateRegion).getByRole('table')
     let rows = within(candidateTable).getAllByRole('row')
     expect(within(rows[1]).getByText('alpha')).toBeTruthy()
@@ -540,12 +540,12 @@ describe('MemoryGovernancePage', () => {
 
     await screen.findByText('repo')
 
-    const form = screen.getByRole('form', { name: 'Memory Governance Filters' })
-    await user.type(within(form).getByLabelText('Tenant ID'), 'tenant-a')
-    await user.type(within(form).getByLabelText('User ID'), 'user-1')
-    await user.selectOptions(within(form).getByLabelText('Candidate Status'), 'pending')
-    await user.selectOptions(within(form).getByLabelText('Project Status'), 'active')
-    await user.click(within(form).getByRole('button', { name: '刷新 Memory Facts' }))
+    const form = screen.getByRole('form', { name: '记忆治理筛选' })
+    await user.type(within(form).getByLabelText('租户 ID'), 'tenant-a')
+    await user.type(within(form).getByLabelText('用户 ID'), 'user-1')
+    await user.selectOptions(within(form).getByLabelText('候选状态'), 'pending')
+    await user.selectOptions(within(form).getByLabelText('项目状态'), 'active')
+    await user.click(within(form).getByRole('button', { name: '刷新记忆事实' }))
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(4)
@@ -740,7 +740,7 @@ describe('MemoryGovernancePage', () => {
     await screen.findByText('repo')
 
     await user.click(screen.getByRole('checkbox', { name: '选择当前可见候选事实' }))
-    expect(screen.getByText('已选当前可见 2 / 2 · 本地命中 2 · 已拉取 2 · 可确认 2 · 可拒绝 2 · 可提升 0')).toBeTruthy()
+    expect(screen.getByText('已选当前可见 2 / 2 · 本地筛选 2 · 已拉取 2 · 可确认 2 · 可拒绝 2 · 可提升 0')).toBeTruthy()
 
     await user.click(screen.getByRole('button', { name: '批量确认' }))
     await user.click(screen.getByRole('button', { name: '确认批量确认' }))
@@ -759,7 +759,7 @@ describe('MemoryGovernancePage', () => {
     ]))
     expect(batchBody.items).toHaveLength(2)
     expect(await screen.findByText('批量确认完成：成功 2 条。repo→confirmed；stack→confirmed')).toBeTruthy()
-    expect(screen.getByLabelText('Candidate Fact Batch Actions').textContent).toContain('已选当前可见 0 / 2')
+    expect(screen.getByLabelText('候选事实批量操作').textContent).toContain('已选当前可见 0 / 2')
   })
 
   it('keeps failed selections and shows aggregated batch errors', async () => {
@@ -926,7 +926,7 @@ describe('MemoryGovernancePage', () => {
     })
 
     expect(await screen.findByText('批量确认完成：成功 1 条，失败 1 条。repo→confirmed')).toBeTruthy()
-    expect(screen.getByLabelText('Candidate Fact Batch Actions').textContent).toContain('已选当前可见 1 / 2')
+    expect(screen.getByLabelText('候选事实批量操作').textContent).toContain('已选当前可见 1 / 2')
   })
 
   it('supports local search, page size control, pagination, and visible-scope selection', async () => {
@@ -983,38 +983,38 @@ describe('MemoryGovernancePage', () => {
 
     await screen.findByText('fact-12')
 
-    const candidateRegion = screen.getByRole('region', { name: 'Candidate Facts Table' })
-    const candidatePager = screen.getByRole('group', { name: 'Candidate Fact Pagination' })
+    const candidateRegion = screen.getByRole('region', { name: '候选事实表' })
+    const candidatePager = screen.getByRole('group', { name: '候选事实分页' })
     expect(within(candidateRegion).queryByText('fact-02')).toBeNull()
-    expect(screen.getByText('Page 1 / 2 · 显示第 1-10 条，共 12 条')).toBeTruthy()
+    expect(screen.getByText('第 1 / 2 页 · 显示第 1-10 条，共 12 条')).toBeTruthy()
 
-    await user.click(within(candidatePager).getByRole('button', { name: 'Next' }))
+    await user.click(within(candidatePager).getByRole('button', { name: '下一页' }))
     expect(await within(candidateRegion).findByText('fact-02')).toBeTruthy()
     expect(within(candidateRegion).queryByText('fact-12')).toBeNull()
-    expect(screen.getByText('Page 2 / 2 · 显示第 11-12 条，共 12 条')).toBeTruthy()
+    expect(screen.getByText('第 2 / 2 页 · 显示第 11-12 条，共 12 条')).toBeTruthy()
 
     await user.click(screen.getByRole('checkbox', { name: '选择当前可见候选事实' }))
-    expect(screen.getByText('已选当前可见 2 / 2 · 本地命中 12 · 已拉取 12 · 可确认 2 · 可拒绝 2 · 可提升 0')).toBeTruthy()
+    expect(screen.getByText('已选当前可见 2 / 2 · 本地筛选 12 · 已拉取 12 · 可确认 2 · 可拒绝 2 · 可提升 0')).toBeTruthy()
 
-    await user.click(within(candidatePager).getByRole('button', { name: 'Previous' }))
+    await user.click(within(candidatePager).getByRole('button', { name: '上一页' }))
     expect(await within(candidateRegion).findByText('fact-12')).toBeTruthy()
-    expect(screen.getByText('已选当前可见 0 / 10 · 本地命中 12 · 已拉取 12 · 可确认 0 · 可拒绝 0 · 可提升 0')).toBeTruthy()
+    expect(screen.getByText('已选当前可见 0 / 10 · 本地筛选 12 · 已拉取 12 · 可确认 0 · 可拒绝 0 · 可提升 0')).toBeTruthy()
 
-    const localControls = screen.getByRole('region', { name: 'Candidate Fact Local Controls' })
+    const localControls = screen.getByRole('region', { name: '候选事实本地控制' })
     await user.clear(within(localControls).getByLabelText('本地搜索'))
     await user.type(within(localControls).getByLabelText('本地搜索'), 'special-match')
 
     expect(await within(candidateRegion).findByText('fact-11')).toBeTruthy()
     expect(within(candidateRegion).queryByText('fact-12')).toBeNull()
-    expect(screen.getByText('Page 1 / 1 · 显示第 1-1 条，共 1 条')).toBeTruthy()
-    expect(screen.getByText('显示第 1-1 条，共 1 条本地命中结果（后端已拉取 12 条）。')).toBeTruthy()
+    expect(screen.getByText('第 1 / 1 页 · 显示第 1-1 条，共 1 条')).toBeTruthy()
+    expect(screen.getByText('显示第 1-1 条，共 1 条本地筛选结果（后端已拉取 12 条）。')).toBeTruthy()
 
     await user.clear(within(localControls).getByLabelText('本地搜索'))
-    await user.selectOptions(within(localControls).getByLabelText('Rows per page'), '25')
+    await user.selectOptions(within(localControls).getByLabelText('每页条数'), '25')
 
     expect(await within(candidateRegion).findByText('fact-02')).toBeTruthy()
     expect(within(candidateRegion).getByText('fact-12')).toBeTruthy()
-    expect(screen.getByText('Page 1 / 1 · 显示第 1-12 条，共 12 条')).toBeTruthy()
+    expect(screen.getByText('第 1 / 1 页 · 显示第 1-12 条，共 12 条')).toBeTruthy()
   })
 
   it('supports batch reject for selected visible candidate facts', async () => {
@@ -1498,20 +1498,20 @@ describe('MemoryGovernancePage', () => {
     expect(screen.getByRole('button', { name: '拒绝' }).hasAttribute('disabled')).toBe(false)
     expect(screen.getByRole('button', { name: '提升' }).hasAttribute('disabled')).toBe(false)
 
-    const form = screen.getByRole('form', { name: 'Memory Governance Filters' })
-    await user.type(within(form).getByLabelText('Tenant ID'), 'tenant-a')
-    await user.type(within(form).getByLabelText('User ID'), 'user-1')
-    await user.selectOptions(within(form).getByLabelText('Candidate Status'), 'confirmed')
-    await user.selectOptions(within(form).getByLabelText('Project Status'), 'superseded')
+    const form = screen.getByRole('form', { name: '记忆治理筛选' })
+    await user.type(within(form).getByLabelText('租户 ID'), 'tenant-a')
+    await user.type(within(form).getByLabelText('用户 ID'), 'user-1')
+    await user.selectOptions(within(form).getByLabelText('候选状态'), 'confirmed')
+    await user.selectOptions(within(form).getByLabelText('项目状态'), 'superseded')
 
     await user.click(screen.getByRole('checkbox', { name: '选择候选事实 repo' }))
     await user.click(within(form).getByRole('button', { name: '重置筛选' }))
 
-    expect((within(form).getByLabelText('Tenant ID') as HTMLInputElement).value).toBe('')
-    expect((within(form).getByLabelText('User ID') as HTMLInputElement).value).toBe('')
-    expect((within(form).getByLabelText('Candidate Status') as HTMLSelectElement).value).toBe('')
-    expect((within(form).getByLabelText('Project Status') as HTMLSelectElement).value).toBe('')
-    expect(screen.getByText('已选当前可见 0 / 1 · 本地命中 1 · 已拉取 1 · 可确认 0 · 可拒绝 0 · 可提升 0')).toBeTruthy()
+    expect((within(form).getByLabelText('租户 ID') as HTMLInputElement).value).toBe('')
+    expect((within(form).getByLabelText('用户 ID') as HTMLInputElement).value).toBe('')
+    expect((within(form).getByLabelText('候选状态') as HTMLSelectElement).value).toBe('')
+    expect((within(form).getByLabelText('项目状态') as HTMLSelectElement).value).toBe('')
+    expect(screen.getByText('已选当前可见 0 / 1 · 本地筛选 1 · 已拉取 1 · 可确认 0 · 可拒绝 0 · 可提升 0')).toBeTruthy()
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 })

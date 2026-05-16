@@ -10,10 +10,10 @@ type Props = {
 export function ObservabilitySummarySection({ requests, cacheHitRate, providerErrorRate, avgLatencyMs }: Props) {
   return (
     <div className="summary-card-grid">
-      <SummaryMetricCard label="Requests" value={requests} />
-      <SummaryMetricCard label="Cache Hit Rate" value={`${(cacheHitRate * 100).toFixed(1)}%`} />
-      <SummaryMetricCard label="Provider Error Rate" value={`${(providerErrorRate * 100).toFixed(1)}%`} />
-      <SummaryMetricCard label="Avg Latency" value={`${avgLatencyMs.toFixed(1)} ms`} />
+      <SummaryMetricCard label="请求量" value={requests} />
+      <SummaryMetricCard label="缓存命中率" value={`${(cacheHitRate * 100).toFixed(1)}%`} />
+      <SummaryMetricCard label="Provider 错误率" value={`${(providerErrorRate * 100).toFixed(1)}%`} />
+      <SummaryMetricCard label="平均延迟" value={`${avgLatencyMs.toFixed(1)} ms`} />
     </div>
   )
 }

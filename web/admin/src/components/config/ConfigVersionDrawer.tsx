@@ -7,7 +7,7 @@ type ConfigVersionDrawerProps = {
 
 export function ConfigVersionDrawer({ version, onClose }: ConfigVersionDrawerProps) {
   return (
-    <aside className="config-drawer" aria-label="Version details" data-open={String(Boolean(version))}>
+    <aside className="config-drawer" aria-label="版本详情" data-open={String(Boolean(version))}>
       <div className="config-drawer__header">
         <div>
           <h2>版本详情</h2>
@@ -21,27 +21,27 @@ export function ConfigVersionDrawer({ version, onClose }: ConfigVersionDrawerPro
       {version ? (
         <dl className="config-drawer__grid">
           <div>
-            <dt>Version ID</dt>
+            <dt>版本 ID</dt>
             <dd>{version.version_id}</dd>
           </div>
           <div>
-            <dt>Status</dt>
+            <dt>状态</dt>
             <dd>{version.status}</dd>
           </div>
           <div>
-            <dt>Environment</dt>
+            <dt>环境</dt>
             <dd>{version.environment}</dd>
           </div>
           <div>
-            <dt>Source Type</dt>
+            <dt>来源类型</dt>
             <dd>{version.source?.type ?? '—'}</dd>
           </div>
           <div>
-            <dt>Source Environment</dt>
+            <dt>来源环境</dt>
             <dd>{version.source?.source_environment ?? '—'}</dd>
           </div>
           <div>
-            <dt>Source Version</dt>
+            <dt>来源版本</dt>
             <dd>{version.source?.source_version_id ?? '—'}</dd>
           </div>
         </dl>

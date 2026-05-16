@@ -48,11 +48,11 @@ describe('RuntimeObserverPage', () => {
 
     renderPage()
 
-    expect(await screen.findByRole('heading', { name: 'Runtime Observer', level: 1 })).toBeInTheDocument()
-    expect(await screen.findByText('Active Policy')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '运行时观测', level: 1 })).toBeInTheDocument()
+    expect(await screen.findByText('活跃策略')).toBeInTheDocument()
     expect(await screen.findByText('req-1')).toBeInTheDocument()
     expect(await screen.findByText('ev-1')).toBeInTheDocument()
-    expect(screen.getByText('Invalidations')).toBeInTheDocument()
+    expect(screen.getByText('失效次数')).toBeInTheDocument()
   })
 
   it('submits selected environment in request', async () => {
@@ -74,9 +74,9 @@ describe('RuntimeObserverPage', () => {
 
     renderPage()
 
-    const form = screen.getByRole('form', { name: 'Runtime Observer Filters' })
-    await userEvent.clear(within(form).getByLabelText('Environment'))
-    await userEvent.type(within(form).getByLabelText('Environment'), 'staging')
+    const form = screen.getByRole('form', { name: '运行时观测筛选' })
+    await userEvent.clear(within(form).getByLabelText('环境'))
+    await userEvent.type(within(form).getByLabelText('环境'), 'staging')
     await userEvent.click(within(form).getByRole('button', { name: '刷新观察数据' }))
 
     await waitFor(() => {

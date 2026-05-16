@@ -1,13 +1,14 @@
+/** 候选事实 — 从对话中提取的待审事实 */
 export type MemoryCandidateFact = {
-  id: number
-  tenant_id: string
-  user_id: string
-  fact_key: string
-  fact_value: string
-  source_text: string
-  status: string
-  source_message_seq: number
-  confirmation_count: number
+  id: number              // 记录 ID
+  tenant_id: string       // 租户 ID
+  user_id: string         // 用户 ID
+  fact_key: string        // 事实键
+  fact_value: string      // 事实值
+  source_text: string     // 来源摘录文本
+  status: string          // 状态: pending / confirmed / promoted / rejected
+  source_message_seq: number  // 来源消息序号
+  confirmation_count: number  // 确认次数
   created_at?: string
   updated_at?: string
 }
@@ -37,17 +38,18 @@ export type MemoryCandidateFactWire = {
   updated_at?: string
 }
 
+/** 项目事实 — 已提升到项目中的持久化事实 */
 export type MemoryProjectFact = {
-  id: number
-  tenant_id: string
-  user_id: string
-  fact_key: string
-  fact_value: string
-  source_text: string
-  status: string
-  superseded_by?: number
-  source_message_seq: number
-  last_verified_at?: string
+  id: number                // 记录 ID
+  tenant_id: string         // 租户 ID
+  user_id: string           // 用户 ID
+  fact_key: string          // 事实键
+  fact_value: string        // 事实值
+  source_text: string       // 来源摘录文本
+  status: string            // 状态: active / superseded
+  superseded_by?: number    // 被哪个新事实取代
+  source_message_seq: number    // 来源消息序号
+  last_verified_at?: string     // 最后验证时间
   created_at?: string
   updated_at?: string
 }

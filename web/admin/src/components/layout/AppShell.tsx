@@ -25,8 +25,8 @@ function RoutedAppShell(props: AppShellProps) {
 
 function AppShellLayout({
   children,
-  title = 'Dashboard',
-  description = '第一期先建立完整响应式后台布局骨架。',
+  title = '仪表盘',
+  description = '管理控制台仪表盘，聚合展示服务状态与关键指标。',
   currentPath,
   onNavigate,
 }: AppShellProps & { currentPath: string; onNavigate: (path: string) => void }) {
@@ -38,7 +38,7 @@ function AppShellLayout({
       <Sidebar mobile open={mobileOpen} onClose={() => setMobileOpen(false)} currentPath={currentPath} onNavigate={onNavigate} />
       <div className="app-shell__content">
         <Topbar onToggleNavigation={() => setMobileOpen((value) => !value)} />
-        <div className="app-quick-nav" aria-label="Quick navigation">
+        <div className="app-quick-nav" aria-label="快速导航">
           {navItems
             .filter((item) => item.path)
             .map((item) => {

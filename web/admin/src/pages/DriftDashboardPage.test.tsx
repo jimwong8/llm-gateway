@@ -55,12 +55,12 @@ describe('DriftDashboardPage', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1)
     })
 
-    expect(await screen.findByRole('heading', { name: 'Drift Dashboard', level: 1 })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '漂移仪表盘', level: 1 })).toBeInTheDocument()
     expect(await screen.findByText('drift-1')).toBeInTheDocument()
     expect(screen.getByText('drift-2')).toBeInTheDocument()
-    expect(screen.getByText('Total Drifts')).toBeInTheDocument()
-    expect(screen.getByText('Detected')).toBeInTheDocument()
-    expect(screen.getByText('Resolved')).toBeInTheDocument()
+    expect(screen.getByText('漂移总数')).toBeInTheDocument()
+    expect(screen.getByText('已检测')).toBeInTheDocument()
+    expect(screen.getByText('已解决')).toBeInTheDocument()
   })
 
   it('shows empty state when no drift rows', async () => {
@@ -80,7 +80,7 @@ describe('DriftDashboardPage', () => {
 
     renderPage()
 
-    expect(await screen.findByText('当前没有 drift 数据。')).toBeInTheDocument()
+    expect(await screen.findByText('当前没有漂移数据。')).toBeInTheDocument()
   })
 })
 

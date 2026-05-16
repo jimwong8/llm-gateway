@@ -14,22 +14,22 @@ type NavItem = {
 }
 
 export const navItems: NavItem[] = [
-  { label: 'Dashboard', path: '/dashboard' },
-  { label: 'Config Center', path: '/config-center' },
-  { label: 'Releases', path: '/releases' },
-  { label: 'Audit & Runtime', path: '/audit-runtime' },
-  { label: 'Playground', path: '/playground' },
-  { label: 'Observability', path: '/observability' },
-  { label: 'Quota', path: '/quota' },
-  { label: 'Policies', path: '/policies' },
-  { label: 'Memory Governance', path: '/memory-governance' },
-  { label: 'Recommendations', path: '/recommendations' },
-  { label: 'Approvals', path: '/approvals' },
-  { label: 'Policy Versions', path: '/policy-versions' },
-  { label: 'Rollouts', path: '/rollouts' },
-  { label: 'Runtime Observer', path: '/runtime-observer' },
-  { label: 'Drift Dashboard', path: '/drifts' },
-  { label: 'System', path: '/system' },
+  { label: '仪表盘', path: '/dashboard' },
+  { label: '配置中心', path: '/config-center' },
+  { label: '发布管理', path: '/releases' },
+  { label: '审计与运行时', path: '/audit-runtime' },
+  { label: '在线测试', path: '/playground' },
+  { label: '可观测性', path: '/observability' },
+  { label: '配额管理', path: '/quota' },
+  { label: '策略管理', path: '/policies' },
+  { label: '记忆治理', path: '/memory-governance' },
+  { label: '推荐管理', path: '/recommendations' },
+  { label: '审批管理', path: '/approvals' },
+  { label: '策略版本', path: '/policy-versions' },
+  { label: '灰度发布', path: '/rollouts' },
+  { label: '运行时观测', path: '/runtime-observer' },
+  { label: '漂移仪表盘', path: '/drifts' },
+  { label: '系统状态', path: '/system' },
 ]
 
 export function Sidebar({ mobile = false, open = false, onClose, currentPath, onNavigate }: SidebarProps) {
@@ -55,7 +55,7 @@ function RoutedSidebar(props: SidebarProps) {
 function SidebarLayout({ mobile = false, open = false, onClose, currentPath = '', onNavigate = () => undefined }: SidebarProps) {
   return (
     <aside
-      aria-label={mobile ? 'Mobile navigation' : 'Primary navigation'}
+      aria-label={mobile ? '移动端导航' : '主导航'}
       className={mobile ? 'app-sidebar mobile' : 'app-sidebar'}
       data-open={mobile ? String(open) : undefined}
       data-testid={mobile ? 'mobile-drawer' : undefined}
@@ -63,10 +63,10 @@ function SidebarLayout({ mobile = false, open = false, onClose, currentPath = ''
       <div className="app-sidebar__brand">
         <div>
           <strong>LLM Gateway</strong>
-          <p>Admin Console</p>
+          <p>管理控制台</p>
         </div>
         {mobile ? (
-          <button type="button" onClick={onClose} aria-label="Close navigation">
+          <button type="button" onClick={onClose} aria-label="关闭导航">
             关闭
           </button>
         ) : null}

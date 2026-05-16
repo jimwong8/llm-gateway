@@ -37,38 +37,38 @@ export function AuditRuntimePage() {
 
   return (
     <AppShell
-      title="Audit & Runtime"
-      description="在一个页面中查看控制面审计记录与运行时发布事件，支持 summary 视图和基础筛选。"
+      title="审计与运行时"
+      description="在一个页面中查看控制面审计记录与运行时发布事件，支持摘要视图和基础筛选。"
     >
       <div className="events-page">
-        <form className="config-filters" aria-label="Event Filters" onSubmit={handleSubmit}>
+        <form className="config-filters" aria-label="事件筛选" onSubmit={handleSubmit}>
           <label>
-            Tenant ID
+            租户 ID
             <input value={draftFilters.tenantID} onChange={(event) => setDraftFilters((prev) => ({ ...prev, tenantID: event.target.value }))} placeholder="tenant-a" />
           </label>
           <label>
-            Environment
+            环境
             <input value={draftFilters.environment} onChange={(event) => setDraftFilters((prev) => ({ ...prev, environment: event.target.value }))} placeholder="prod" />
           </label>
           <label>
-            Limit
+            条数限制
             <input value={draftFilters.limit} onChange={(event) => setDraftFilters((prev) => ({ ...prev, limit: event.target.value }))} placeholder="20" />
           </label>
           <label className="toggle-field">
-            <span>Summary</span>
+            <span>摘要视图</span>
             <input type="checkbox" checked={draftFilters.summary} onChange={(event) => setDraftFilters((prev) => ({ ...prev, summary: event.target.checked }))} />
           </label>
           <div className="config-filters__actions">
-            <button type="submit">应用筛选</button>
+            <button type="submit">筛选</button>
           </div>
         </form>
 
-        <div className="tab-strip" role="tablist" aria-label="Audit runtime tabs">
+        <div className="tab-strip" role="tablist" aria-label="审计与运行时标签">
           <button type="button" role="tab" aria-selected={activeTab === 'audit'} className={activeTab === 'audit' ? 'tab active' : 'tab'} onClick={() => setActiveTab('audit')}>
-            Audit Events
+            审计事件
           </button>
           <button type="button" role="tab" aria-selected={activeTab === 'runtime'} className={activeTab === 'runtime' ? 'tab active' : 'tab'} onClick={() => setActiveTab('runtime')}>
-            Runtime Events
+            运行时事件
           </button>
         </div>
 
