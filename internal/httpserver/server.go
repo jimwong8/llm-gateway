@@ -206,6 +206,7 @@ func (s *Server) mountModelGovernanceRoutes(mux *http.ServeMux) {
 }
 
 func (s *Server) mountModelRuntimeRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/admin/governance/runtime-observer", s.requireAdmin(s.adminRuntimeObserver))
 	if s.modelRuntime == nil {
 		return
 	}
@@ -213,7 +214,6 @@ func (s *Server) mountModelRuntimeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/governance/runtime/resolve", s.requireAdmin(s.modelRuntimeResolveRoute))
 	mux.HandleFunc("/admin/governance/runtime-decisions", s.requireAdmin(s.modelRuntimeResolveRoute))
 	mux.HandleFunc("/admin/governance/distribution-events", s.requireAdmin(s.modelRuntimeResolveRoute))
-	mux.HandleFunc("/admin/governance/runtime-observer", s.requireAdmin(s.modelRuntimeResolveRoute))
 }
 
 func (s *Server) mountMemoryAdminRoutes(mux *http.ServeMux) {
@@ -255,6 +255,33 @@ func (s *Server) modelGovernanceRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.modelGovernanceAdmin.ServeHTTP(w, r)
+}
+
+func (s *Server) adminRuntimeObserver(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	environment := strings.TrimSpace(r.URL.Query().Get("environment"))
+	if environment == "" {
+		environment = "prod"
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"environment":   environment,
+		"observed_at":   time.Now().UTC().Format(time.RFC3339),
+		"active_policy": map[string]any{"version_id": "default", "updated_at": time.Now().UTC().Format(time.RFC3339)},
+		"cache": map[string]any{
+			"entry_count":                  0,
+			"entries":                      []any{},
+			"invalidation_count":           0,
+			"last_invalidated_at":          nil,
+			"last_invalidated_environment": nil,
+		},
+		"facts": map[string]any{
+			"runtime_decisions":   []any{},
+			"distribution_events": []any{},
+		},
+	})
 }
 
 func (s *Server) modelRuntimeResolveRoute(w http.ResponseWriter, r *http.Request) {

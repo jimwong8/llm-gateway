@@ -817,6 +817,7 @@ CREATE INDEX IF NOT EXISTS idx_channels_provider ON channels(provider);
 }
 
 func (s *Store) ListChannels(ctx context.Context) ([]ChannelRow, error) {
+	s.ensureChannelsSchema(ctx)
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id, name, provider, base_url, api_key, priority, weight, models, tags, notes, status, latency_ms, total_requests, created_at, updated_at
 FROM channels ORDER BY created_at DESC`)
@@ -836,6 +837,7 @@ FROM channels ORDER BY created_at DESC`)
 }
 
 func (s *Store) GetChannel(ctx context.Context, id string) (*ChannelRow, error) {
+	s.ensureChannelsSchema(ctx)
 	var c ChannelRow
 	err := s.db.QueryRowContext(ctx, `
 SELECT id, name, provider, base_url, api_key, priority, weight, models, tags, notes, status, latency_ms, total_requests, created_at, updated_at
@@ -861,6 +863,7 @@ type ChannelInput struct {
 }
 
 func (s *Store) CreateChannel(ctx context.Context, in ChannelInput) (*ChannelRow, error) {
+	s.ensureChannelsSchema(ctx)
 	if in.ID == "" {
 		in.ID = "ch-" + fmt.Sprintf("%d", time.Now().UnixNano())
 	}
