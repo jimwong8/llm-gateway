@@ -2,7 +2,8 @@ import { apiRequest } from './http'
 import type { Channel, ChannelTestResult, CreateChannelRequest, UpdateChannelRequest, ChannelStatus } from '../types/channel'
 
 export async function listChannels(): Promise<Channel[]> {
-  return apiRequest<Channel[]>('/admin/channels')
+  const resp = await apiRequest<{ object: string; data: Channel[] }>('/admin/channels')
+  return resp.data ?? []
 }
 
 export async function getChannel(id: string): Promise<Channel> {

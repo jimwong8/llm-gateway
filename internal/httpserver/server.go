@@ -145,6 +145,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/admin/dashboard/charts/cache-hit-rate", s.requireAdmin(s.adminDashboardCacheHitRate))
 	mux.HandleFunc("/admin/dashboard/charts/channel-status", s.requireAdmin(s.adminDashboardChannelStatus))
 	mux.HandleFunc("/admin/policies/models", s.requireAdmin(s.adminPoliciesModels))
+	mux.HandleFunc("/admin/channels", s.requireAdmin(s.adminChannels))
+	mux.HandleFunc("/admin/channels/", s.requireAdmin(s.adminChannelByID))
+	mux.HandleFunc("/admin/channels/batch-delete", s.requireAdmin(s.adminChannelsBatchDelete))
+	mux.HandleFunc("/admin/channels/batch-status", s.requireAdmin(s.adminChannelsBatchStatus))
 	mux.HandleFunc("/admin/assets", s.requireAdmin(s.adminAssets))
 	mux.HandleFunc("/admin/assets/stats", s.requireAdmin(s.adminAssetStats))
 	mux.HandleFunc("/admin/assets/reuse-audits", s.requireAdmin(s.adminAssetReuseAudits))
@@ -1114,6 +1118,173 @@ func (s *Server) adminAssetRollback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, row)
+}
+
+func (s *Server) adminChannels(w http.ResponseWriter, r *http.Request) {
+	if s.admin == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "admin store unavailable"})
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		rows, err := s.admin.ListChannels(ctx)
+		if err != nil {
+			internalError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": rows})
+	case http.MethodPost:
+		var body struct {
+			ID       string   `json:"id"`
+			Name     string   `json:"name"`
+			Provider string   `json:"provider"`
+			BaseURL  string   `json:"base_url"`
+			APIKey   string   `json:"api_key"`
+			Priority string   `json:"priority"`
+			Weight   int      `json:"weight"`
+			Models   []string `json:"models"`
+			Tags     []string `json:"tags"`
+			Notes    string   `json:"notes"`
+			Status   string   `json:"status"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			badRequest(w, "invalid JSON body")
+			return
+		}
+		if body.Name == "" || body.Provider == "" {
+			badRequest(w, "name and provider are required")
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		row, err := s.admin.CreateChannel(ctx, admin.ChannelInput{
+			ID: body.ID, Name: body.Name, Provider: body.Provider, BaseURL: body.BaseURL,
+			APIKey: body.APIKey, Priority: body.Priority, Weight: body.Weight,
+			Models: body.Models, Tags: body.Tags, Notes: body.Notes, Status: body.Status,
+		})
+		if err != nil {
+			internalError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, row)
+	default:
+		methodNotAllowed(w, r)
+	}
+}
+
+func (s *Server) adminChannelByID(w http.ResponseWriter, r *http.Request) {
+	if s.admin == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "admin store unavailable"})
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/admin/channels/")
+	if id == "" {
+		badRequest(w, "channel id required")
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		row, err := s.admin.GetChannel(ctx, id)
+		if err != nil {
+			internalError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, row)
+	case http.MethodPut:
+		var body struct {
+			Name     string   `json:"name"`
+			Provider string   `json:"provider"`
+			BaseURL  string   `json:"base_url"`
+			APIKey   string   `json:"api_key"`
+			Priority string   `json:"priority"`
+			Weight   int      `json:"weight"`
+			Models   []string `json:"models"`
+			Tags     []string `json:"tags"`
+			Notes    string   `json:"notes"`
+			Status   string   `json:"status"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			badRequest(w, "invalid JSON body")
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		row, err := s.admin.CreateChannel(ctx, admin.ChannelInput{
+			ID: id, Name: body.Name, Provider: body.Provider, BaseURL: body.BaseURL,
+			APIKey: body.APIKey, Priority: body.Priority, Weight: body.Weight,
+			Models: body.Models, Tags: body.Tags, Notes: body.Notes, Status: body.Status,
+		})
+		if err != nil {
+			internalError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, row)
+	case http.MethodDelete:
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if err := s.admin.DeleteChannel(ctx, id); err != nil {
+			internalError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+	default:
+		methodNotAllowed(w, r)
+	}
+}
+
+func (s *Server) adminChannelsBatchDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, r)
+		return
+	}
+	if s.admin == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "admin store unavailable"})
+		return
+	}
+	var body struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		badRequest(w, "invalid JSON body")
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := s.admin.BatchDeleteChannels(ctx, body.IDs); err != nil {
+		internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
+func (s *Server) adminChannelsBatchStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, r)
+		return
+	}
+	if s.admin == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "admin store unavailable"})
+		return
+	}
+	var body struct {
+		IDs    []string `json:"ids"`
+		Status string   `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		badRequest(w, "invalid JSON body")
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := s.admin.BatchUpdateChannelsStatus(ctx, body.IDs, body.Status); err != nil {
+		internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
 func (s *Server) adminTenantKeys(w http.ResponseWriter, r *http.Request) {
