@@ -6,6 +6,16 @@ import (
 	"time"
 )
 
+func redactKeyID(id string) string {
+	if id == "" {
+		return ""
+	}
+	if len(id) <= 4 {
+		return "****"
+	}
+	return "****" + id[len(id)-1:]
+}
+
 type RetryConfig struct {
 	MaxAttempts int
 	BaseDelay   time.Duration
@@ -13,21 +23,21 @@ type RetryConfig struct {
 }
 
 type AttemptTrace struct {
-	Attempt    int
-	Provider   string
-	Model      string
-	Channel    string
-	KeyID      string
-	ErrorClass ErrorClass
-	Error      string
-	Latency    time.Duration
+	Attempt    int           `json:"attempt"`
+	Provider   string        `json:"provider"`
+	Model      string        `json:"model,omitempty"`
+	Channel    string        `json:"channel,omitempty"`
+	KeyID      string        `json:"key_id,omitempty"`
+	ErrorClass ErrorClass    `json:"error_class"`
+	Error      string        `json:"error,omitempty"`
+	Latency    time.Duration `json:"latency"`
 }
 
 type RetryResult struct {
-	Attempts      []AttemptTrace
-	FinalProvider string
-	FinalModel    string
-	FinalKeyID    string
+	Attempts      []AttemptTrace `json:"attempts"`
+	FinalProvider string         `json:"final_provider"`
+	FinalModel    string         `json:"final_model,omitempty"`
+	FinalKeyID    string         `json:"final_key_id,omitempty"`
 }
 
 type ExecuteWithKeyFunc[T any] func(ctx context.Context, key ProviderKey) (T, error)
@@ -82,7 +92,7 @@ func ExecuteWithRetries[T any](
 			Attempt:  attempt,
 			Provider: provider,
 			Channel:  channel,
-			KeyID:    key.ID,
+			KeyID:    redactKeyID(key.ID),
 			Latency:  latency,
 		}
 
