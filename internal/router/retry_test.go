@@ -44,7 +44,7 @@ func TestExecuteWithRetries_RateLimitRotatesKey(t *testing.T) {
 	result, trace, err := ExecuteWithRetries(ctx, cfg, pool, "openai", "", func(ctx context.Context, key ProviderKey) (string, error) {
 		callCount++
 		if key.ID == "ka" {
-			return "", ProviderHTTPError{StatusCode: 429, Message: "rate limited"}
+			return "", newFakeHTTPError(429, "rate limited")
 		}
 		return "ok", nil
 	})
@@ -76,7 +76,7 @@ func TestExecuteWithRetries_NetworkErrorRetries(t *testing.T) {
 	result, _, err := ExecuteWithRetries(ctx, cfg, pool, "openai", "", func(ctx context.Context, key ProviderKey) (string, error) {
 		callCount++
 		if callCount < 2 {
-			return "", ProviderHTTPError{StatusCode: 503, Message: "unavailable"}
+			return "", newFakeHTTPError(503, "unavailable")
 		}
 		return "ok", nil
 	})
@@ -98,7 +98,7 @@ func TestExecuteWithRetries_AuthErrorStopsImmediately(t *testing.T) {
 	callCount := 0
 	_, _, err := ExecuteWithRetries(ctx, cfg, pool, "openai", "", func(ctx context.Context, key ProviderKey) (string, error) {
 		callCount++
-		return "", ProviderHTTPError{StatusCode: 401, Message: "invalid key"}
+		return "", newFakeHTTPError(401, "invalid key")
 	})
 	if err == nil {
 		t.Fatal("expected error")
@@ -118,7 +118,7 @@ func TestExecuteWithRetries_ContextCancelledStops(t *testing.T) {
 		if callCount == 1 {
 			cancel()
 		}
-		return "", ProviderHTTPError{StatusCode: 503, Message: "unavailable"}
+		return "", newFakeHTTPError(503, "unavailable")
 	})
 	if err == nil {
 		t.Fatal("expected error")
@@ -139,7 +139,7 @@ func TestExecuteWithRetries_AllKeysExhaustedResets(t *testing.T) {
 	result, trace, err := ExecuteWithRetries(ctx, cfg, pool, "openai", "", func(ctx context.Context, key ProviderKey) (string, error) {
 		callCount++
 		if callCount < 4 {
-			return "", ProviderHTTPError{StatusCode: 429, Message: "rate limited"}
+			return "", newFakeHTTPError(429, "rate limited")
 		}
 		return "ok", nil
 	})

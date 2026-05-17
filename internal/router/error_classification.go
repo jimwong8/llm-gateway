@@ -18,16 +18,9 @@ const (
 	ErrorClassUnknown           ErrorClass = "unknown"
 )
 
-type ProviderHTTPError struct {
-	StatusCode int
-	Message    string
-}
-
-func (e ProviderHTTPError) Error() string {
-	if strings.TrimSpace(e.Message) == "" {
-		return "provider http error"
-	}
-	return e.Message
+type HTTPStatusError interface {
+	error
+	HTTPStatusCode() int
 }
 
 type ClassifiedError struct {
@@ -50,19 +43,19 @@ func ClassifyError(ctx context.Context, provider string, err error) ClassifiedEr
 		return ClassifiedError{Class: ErrorClassClientCancelled, Provider: provider, Err: err}
 	}
 
-	var httpErr ProviderHTTPError
+	var httpErr HTTPStatusError
 	if errors.As(err, &httpErr) {
-		switch httpErr.StatusCode {
+		switch httpErr.HTTPStatusCode() {
 		case 429:
-			return ClassifiedError{Class: ErrorClassRateLimit, StatusCode: httpErr.StatusCode, Provider: provider, Retryable: true, RotateKey: true, Err: err}
+			return ClassifiedError{Class: ErrorClassRateLimit, StatusCode: httpErr.HTTPStatusCode(), Provider: provider, Retryable: true, RotateKey: true, Err: err}
 		case 408, 502, 503, 504:
-			return ClassifiedError{Class: ErrorClassRetryableUpstream, StatusCode: httpErr.StatusCode, Provider: provider, Retryable: true, Err: err}
+			return ClassifiedError{Class: ErrorClassRetryableUpstream, StatusCode: httpErr.HTTPStatusCode(), Provider: provider, Retryable: true, Err: err}
 		case 401, 403:
-			return ClassifiedError{Class: ErrorClassAuth, StatusCode: httpErr.StatusCode, Provider: provider, Err: err}
+			return ClassifiedError{Class: ErrorClassAuth, StatusCode: httpErr.HTTPStatusCode(), Provider: provider, Err: err}
 		case 400:
-			return ClassifiedError{Class: ErrorClassBadRequest, StatusCode: httpErr.StatusCode, Provider: provider, Err: err}
+			return ClassifiedError{Class: ErrorClassBadRequest, StatusCode: httpErr.HTTPStatusCode(), Provider: provider, Err: err}
 		default:
-			return ClassifiedError{Class: ErrorClassUnknown, StatusCode: httpErr.StatusCode, Provider: provider, Err: err}
+			return ClassifiedError{Class: ErrorClassUnknown, StatusCode: httpErr.HTTPStatusCode(), Provider: provider, Err: err}
 		}
 	}
 

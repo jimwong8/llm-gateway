@@ -94,7 +94,7 @@ func TestExecuteDecision_PrimaryRetryExhaustedFallsBack(t *testing.T) {
 	result, trace, err := ExecuteDecision(ctx, decision, cfg, nil, func(ctx context.Context, target RouteTarget, key ProviderKey) (string, error) {
 		callCount++
 		if target.Provider == "openai" {
-			return "", ProviderHTTPError{StatusCode: 503, Message: "unavailable"}
+			return "", newFakeHTTPError(503, "unavailable")
 		}
 		return "fallback-ok", nil
 	})
@@ -128,7 +128,7 @@ func TestExecuteDecision_BadRequestDoesNotFallback(t *testing.T) {
 	callCount := 0
 	_, _, err := ExecuteDecision(ctx, decision, cfg, nil, func(ctx context.Context, target RouteTarget, key ProviderKey) (string, error) {
 		callCount++
-		return "", ProviderHTTPError{StatusCode: 400, Message: "bad request"}
+		return "", newFakeHTTPError(400, "bad request")
 	})
 	if err == nil {
 		t.Fatal("expected error")
@@ -151,7 +151,7 @@ func TestExecuteDecision_AllTargetsFailReturnsTrace(t *testing.T) {
 	callCount := 0
 	_, trace, err := ExecuteDecision(ctx, decision, cfg, nil, func(ctx context.Context, target RouteTarget, key ProviderKey) (string, error) {
 		callCount++
-		return "", ProviderHTTPError{StatusCode: 503, Message: "unavailable"}
+		return "", newFakeHTTPError(503, "unavailable")
 	})
 	if err == nil {
 		t.Fatal("expected error")

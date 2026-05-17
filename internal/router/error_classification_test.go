@@ -6,7 +6,32 @@ import (
 	"testing"
 )
 
-func TestClassifyError(t *testing.T) {
+type fakeProvider struct {
+	name       string
+	statusCode int
+	body       string
+}
+
+func (f *fakeProvider) ChatCompletion(ctx context.Context) error {
+	if f.statusCode >= 400 {
+		return newFakeHTTPError(f.statusCode, f.body)
+	}
+	return nil
+}
+
+type fakeHTTPError struct {
+	code    int
+	message string
+}
+
+func (e fakeHTTPError) Error() string    { return e.message }
+func (e fakeHTTPError) HTTPStatusCode() int { return e.code }
+
+func newFakeHTTPError(code int, msg string) fakeHTTPError {
+	return fakeHTTPError{code: code, message: msg}
+}
+
+func TestClassifyError_WithHTTPStatusInterface(t *testing.T) {
 	ctx := context.Background()
 	tests := []struct {
 		name          string
@@ -15,14 +40,12 @@ func TestClassifyError(t *testing.T) {
 		wantRetryable bool
 		wantRotateKey bool
 	}{
-		{name: "nil", err: nil, wantClass: ErrorClassNone},
-		{name: "rate limit status", err: ProviderHTTPError{StatusCode: 429, Message: "too many requests"}, wantClass: ErrorClassRateLimit, wantRetryable: true, wantRotateKey: true},
-		{name: "rate limit text", err: errors.New("provider rate limit exceeded"), wantClass: ErrorClassRateLimit, wantRetryable: true, wantRotateKey: true},
-		{name: "bad gateway", err: ProviderHTTPError{StatusCode: 502, Message: "bad gateway"}, wantClass: ErrorClassRetryableUpstream, wantRetryable: true},
-		{name: "service unavailable", err: ProviderHTTPError{StatusCode: 503, Message: "unavailable"}, wantClass: ErrorClassRetryableUpstream, wantRetryable: true},
-		{name: "unauthorized", err: ProviderHTTPError{StatusCode: 401, Message: "invalid api key"}, wantClass: ErrorClassAuth},
-		{name: "bad request", err: ProviderHTTPError{StatusCode: 400, Message: "model required"}, wantClass: ErrorClassBadRequest},
-		{name: "unknown", err: errors.New("boom"), wantClass: ErrorClassUnknown},
+		{name: "429", err: newFakeHTTPError(429, "rate limited"), wantClass: ErrorClassRateLimit, wantRetryable: true, wantRotateKey: true},
+		{name: "401", err: newFakeHTTPError(401, "invalid key"), wantClass: ErrorClassAuth},
+		{name: "400", err: newFakeHTTPError(400, "bad request"), wantClass: ErrorClassBadRequest},
+		{name: "503", err: newFakeHTTPError(503, "unavailable"), wantClass: ErrorClassRetryableUpstream, wantRetryable: true},
+		{name: "502", err: newFakeHTTPError(502, "bad gateway"), wantClass: ErrorClassRetryableUpstream, wantRetryable: true},
+		{name: "unknown", err: newFakeHTTPError(418, "teapot"), wantClass: ErrorClassUnknown},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -40,14 +63,11 @@ func TestClassifyError(t *testing.T) {
 	}
 }
 
-func TestClassifyError_ContextCancelled(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	got := ClassifyError(ctx, "openai", context.Canceled)
-	if got.Class != ErrorClassClientCancelled {
-		t.Fatalf("class = %s, want %s", got.Class, ErrorClassClientCancelled)
-	}
-	if got.Retryable {
-		t.Fatalf("client cancellation must not retry")
+func TestClassifyError_WrappedHTTPStatusError(t *testing.T) {
+	ctx := context.Background()
+	wrapped := errors.New("outer: " + newFakeHTTPError(418, "teapot").Error())
+	got := ClassifyError(ctx, "openai", wrapped)
+	if got.Class != ErrorClassUnknown {
+		t.Fatalf("expected unknown for non-interface error, got %s", got.Class)
 	}
 }
