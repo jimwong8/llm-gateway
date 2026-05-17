@@ -9,14 +9,14 @@ import { ChannelFormModal } from './ChannelFormModal'
 import { listChannels, deleteChannel, testChannel, batchDeleteChannels, batchUpdateChannelsStatus } from '../lib/channels'
 import type { Channel, ChannelStatus } from '../types/channel'
 
-const statusBadgeVariant: Record<ChannelStatus, 'success' | 'warning' | 'danger' | 'info'> = {
+const statusBadgeVariant: Record<string, 'success' | 'warning' | 'danger' | 'info'> = {
   active: 'success',
   inactive: 'info',
   error: 'danger',
   maintenance: 'warning',
 }
 
-const statusDotMap: Record<ChannelStatus, 'healthy' | 'disabled' | 'error'> = {
+const statusDotMap: Record<string, 'healthy' | 'disabled' | 'error'> = {
   active: 'healthy',
   inactive: 'disabled',
   error: 'error',

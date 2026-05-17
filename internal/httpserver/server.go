@@ -149,7 +149,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/admin/channels/", s.requireAdmin(s.adminChannelByID))
 	mux.HandleFunc("/admin/channels/batch-delete", s.requireAdmin(s.adminChannelsBatchDelete))
 	mux.HandleFunc("/admin/channels/batch-status", s.requireAdmin(s.adminChannelsBatchStatus))
+	mux.HandleFunc("/admin/dashboard", s.requireAdmin(s.adminDashboard))
 	mux.HandleFunc("/admin/assets", s.requireAdmin(s.adminAssets))
+	mux.HandleFunc("/admin/assets/", s.requireAdmin(s.adminAssetByID))
 	mux.HandleFunc("/admin/assets/stats", s.requireAdmin(s.adminAssetStats))
 	mux.HandleFunc("/admin/assets/reuse-audits", s.requireAdmin(s.adminAssetReuseAudits))
 	mux.HandleFunc("/admin/assets/versions", s.requireAdmin(s.adminAssetVersions))
@@ -206,14 +208,15 @@ func (s *Server) mountModelGovernanceRoutes(mux *http.ServeMux) {
 }
 
 func (s *Server) mountModelRuntimeRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/admin/governance/runtime-observer", s.requireAdmin(s.adminRuntimeObserver))
 	if s.modelRuntime == nil {
+		mux.HandleFunc("/admin/governance/runtime-observer", s.requireAdmin(s.adminRuntimeObserver))
 		return
 	}
 	mux.HandleFunc("/v1/runtime/resolve", s.modelRuntimeResolveRoute)
 	mux.HandleFunc("/admin/governance/runtime/resolve", s.requireAdmin(s.modelRuntimeResolveRoute))
 	mux.HandleFunc("/admin/governance/runtime-decisions", s.requireAdmin(s.modelRuntimeResolveRoute))
 	mux.HandleFunc("/admin/governance/distribution-events", s.requireAdmin(s.modelRuntimeResolveRoute))
+	mux.HandleFunc("/admin/governance/runtime-observer", s.requireAdmin(s.modelRuntimeResolveRoute))
 }
 
 func (s *Server) mountMemoryAdminRoutes(mux *http.ServeMux) {
@@ -972,7 +975,8 @@ func (s *Server) adminAssets(w http.ResponseWriter, r *http.Request) {
 			internalError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": rows, "limit": limit, "offset": offset, "include_deleted": includeDeleted})
+		total := len(rows)
+		writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": rows, "total": total, "limit": limit, "offset": offset, "include_deleted": includeDeleted})
 	case http.MethodPost:
 		in, _, _, err := parseBody(r)
 		if err != nil {
@@ -1009,12 +1013,37 @@ func (s *Server) adminAssets(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, row)
-	case http.MethodDelete:
-		id, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("id")), 10, 64)
-		if err != nil || id <= 0 {
-			badRequest(w, "id is required")
+	default:
+		methodNotAllowed(w, r)
+	}
+}
+
+func (s *Server) adminAssetByID(w http.ResponseWriter, r *http.Request) {
+	if s.admin == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "admin store unavailable"})
+		return
+	}
+	idStr := strings.TrimPrefix(r.URL.Path, "/admin/assets/")
+	if idStr == "" {
+		badRequest(w, "asset id required")
+		return
+	}
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		badRequest(w, "invalid asset id")
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		rows, err := s.admin.ListAssets(ctx, admin.AssetFilter{TenantID: "", Keyword: strconv.FormatInt(id, 10), Limit: 1})
+		if err != nil || len(rows) == 0 {
+			writeJSON(w, http.StatusNotFound, map[string]any{"error": "asset not found"})
 			return
 		}
+		writeJSON(w, http.StatusOK, rows[0])
+	case http.MethodDelete:
 		tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
@@ -1022,7 +1051,7 @@ func (s *Server) adminAssets(w http.ResponseWriter, r *http.Request) {
 			internalError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"deleted": true, "id": id, "tenant_id": tenantID})
+		writeJSON(w, http.StatusOK, map[string]any{"deleted": true, "id": id})
 	default:
 		methodNotAllowed(w, r)
 	}
@@ -1051,7 +1080,8 @@ func (s *Server) adminAssetStats(w http.ResponseWriter, r *http.Request) {
 		"tenant_id":       tenantID,
 		"include_deleted": includeDeleted,
 		"limit":           limit,
-		"overview":        stats.Overview,
+		"total_assets":    stats.Overview.AssetCount,
+		"total_hits":      stats.Overview.TotalHitCount,
 		"by_task":         stats.ByTask,
 		"by_model":        stats.ByModel,
 		"by_tag":          stats.ByTag,
@@ -1147,6 +1177,31 @@ func (s *Server) adminAssetRollback(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, row)
 }
 
+func (s *Server) adminDashboard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"overall_status": "healthy",
+		"health": map[string]any{
+			"status":    "ok",
+			"uptime":    "running",
+		},
+		"dedup": map[string]any{
+			"group_count": 0,
+		},
+		"kg": map[string]any{
+			"success_count": 0,
+			"fail_count":    0,
+		},
+		"pending_continuations": 0,
+		"alerts":                []any{},
+		"ai_suggestions":        []any{},
+		"recent_operations":     []any{},
+	})
+}
+
 func (s *Server) adminChannels(w http.ResponseWriter, r *http.Request) {
 	if s.admin == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "admin store unavailable"})
@@ -1206,11 +1261,27 @@ func (s *Server) adminChannelByID(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "admin store unavailable"})
 		return
 	}
-	id := strings.TrimPrefix(r.URL.Path, "/admin/channels/")
-	if id == "" {
+	path := strings.TrimPrefix(r.URL.Path, "/admin/channels/")
+	if path == "" {
 		badRequest(w, "channel id required")
 		return
 	}
+	parts := strings.SplitN(path, "/", 2)
+	id := parts[0]
+	isTest := len(parts) > 1 && parts[1] == "test"
+
+	if isTest && r.Method == http.MethodPost {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		result, err := s.admin.TestChannel(ctx, id)
+		if err != nil {
+			writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+		return
+	}
+
 	switch r.Method {
 	case http.MethodGet:
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)

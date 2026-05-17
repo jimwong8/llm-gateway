@@ -16,17 +16,20 @@ export type CleanupResult = {
 }
 
 export async function exportAuditData(tenantID: string, format = 'json'): Promise<Blob> {
+  const token = sessionStorage.getItem('llm_gateway_admin_token')
   const resp = await fetch(`/admin/audit/export?tenant_id=${encodeURIComponent(tenantID)}&format=${format}`, {
-    headers: { Authorization: `Bearer ${sessionStorage.getItem('llm_gateway_admin_token')}` },
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
+  if (!resp.ok) {
+    const text = await resp.text()
+    throw new Error(`Export failed: ${text}`)
+  }
   return resp.blob()
 }
 
 export async function triggerCleanup(retentionDays: number): Promise<CleanupResult> {
-  return apiRequest<CleanupResult>('/admin/audit/cleanup', {
+  return apiRequest<CleanupResult>(`/admin/audit/cleanup?retention_days=${retentionDays}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ retention_days: retentionDays }),
   })
 }
 
