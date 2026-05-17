@@ -14,8 +14,8 @@ export async function createChannel(data: CreateChannelRequest): Promise<Channel
   const body: Record<string, unknown> = {
     name: data.name,
     provider: data.provider,
-    base_url: data.baseUrl,
-    api_key: data.apiKey,
+    base_url: data.base_url,
+    api_key: data.api_key,
     priority: data.priority,
     weight: data.weight,
     models: data.models,
@@ -33,8 +33,8 @@ export async function updateChannel(id: string, data: UpdateChannelRequest): Pro
   const body: Record<string, unknown> = {}
   if (data.name !== undefined) body.name = data.name
   if (data.provider !== undefined) body.provider = data.provider
-  if (data.baseUrl !== undefined) body.base_url = data.baseUrl
-  if (data.apiKey !== undefined) body.api_key = data.apiKey
+  if (data.base_url !== undefined) body.base_url = data.base_url
+  if (data.api_key !== undefined) body.api_key = data.api_key
   if (data.priority !== undefined) body.priority = data.priority
   if (data.weight !== undefined) body.weight = data.weight
   if (data.models !== undefined) body.models = data.models

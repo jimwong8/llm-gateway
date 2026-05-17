@@ -32,8 +32,8 @@ export function ChannelFormModal({ channel, onClose }: ChannelFormModalProps) {
   const [form, setForm] = useState<CreateChannelRequest>({
     name: channel?.name ?? '',
     provider: channel?.provider ?? 'openai',
-    baseUrl: channel?.baseUrl ?? '',
-    apiKey: channel?.apiKey ?? '',
+    base_url: channel?.base_url ?? '',
+    api_key: channel?.api_key ?? '',
     priority: channel?.priority ?? 'medium',
     weight: channel?.weight ?? 1,
     models: channel?.models ?? [],
@@ -57,7 +57,7 @@ export function ChannelFormModal({ channel, onClose }: ChannelFormModalProps) {
   const validate = (): boolean => {
     const errs: Record<string, string> = {}
     if (!form.name.trim()) errs.name = '渠道名称不能为空'
-    if (!form.baseUrl.trim()) errs.baseUrl = 'Base URL 不能为空'
+    if (!form.base_url.trim()) errs.base_url = 'Base URL 不能为空'
     setErrors(errs)
     return Object.keys(errs).length === 0
   }
@@ -148,19 +148,19 @@ export function ChannelFormModal({ channel, onClose }: ChannelFormModalProps) {
                   Base URL *
                   <input
                     type="text"
-                    value={form.baseUrl}
-                    onChange={(e) => updateField('baseUrl', e.target.value)}
+                    value={form.base_url}
+                    onChange={(e) => updateField('base_url', e.target.value)}
                     placeholder="https://api.openai.com/v1"
                   />
-                  {errors.baseUrl ? <span className="field-error">{errors.baseUrl}</span> : null}
+                  {errors.base_url ? <span className="field-error">{errors.base_url}</span> : null}
                 </label>
 
                 <label>
                   API Key
                   <input
                     type="password"
-                    value={form.apiKey ?? ''}
-                    onChange={(e) => updateField('apiKey', e.target.value)}
+                    value={form.api_key ?? ''}
+                    onChange={(e) => updateField('api_key', e.target.value)}
                     placeholder={isEditing ? '留空则不修改' : 'sk-...'}
                   />
                 </label>

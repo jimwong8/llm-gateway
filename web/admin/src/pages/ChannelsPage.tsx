@@ -217,8 +217,8 @@ export function ChannelsPage() {
                       </Badge>
                     </td>
                     <td>{ch.weight}</td>
-                    <td>{ch.latencyMs ? `${ch.latencyMs}ms` : '-'}</td>
-                    <td>{ch.totalRequests ?? 0}</td>
+                     <td>{ch.latency_ms ? `${ch.latency_ms}ms` : '-'}</td>
+                     <td>{ch.total_requests ?? 0}</td>
                     <td>
                       <div className="channels-actions">
                         <button

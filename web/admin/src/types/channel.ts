@@ -9,24 +9,24 @@ export interface Channel {
   name: string
   provider: ChannelProvider
   status: ChannelStatus
-  baseUrl: string
-  apiKey: string
+  base_url: string
+  api_key: string
   priority: ChannelPriority
   weight: number
   models: string[]
   tags: string[]
   notes?: string
-  latencyMs?: number
-  totalRequests?: number
-  createdAt: string
-  updatedAt: string
+  latency_ms?: number
+  total_requests?: number
+  created_at: string
+  updated_at: string
 }
 
 export interface CreateChannelRequest {
   name: string
   provider: ChannelProvider
-  baseUrl: string
-  apiKey?: string
+  base_url: string
+  api_key?: string
   priority?: ChannelPriority
   weight?: number
   models?: string[]
@@ -40,7 +40,30 @@ export interface UpdateChannelRequest extends Partial<CreateChannelRequest> {
 
 export interface ChannelTestResult {
   success: boolean
-  latencyMs?: number
+  latency_ms?: number
+  error?: string
+  model?: string
+}
+
+export interface CreateChannelRequest {
+  name: string
+  provider: ChannelProvider
+  base_url: string
+  api_key?: string
+  priority?: ChannelPriority
+  weight?: number
+  models?: string[]
+  tags?: string[]
+  notes?: string
+}
+
+export interface UpdateChannelRequest extends Partial<CreateChannelRequest> {
+  status?: ChannelStatus
+}
+
+export interface ChannelTestResult {
+  success: boolean
+  latency_ms?: number
   error?: string
   model?: string
 }
