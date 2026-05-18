@@ -131,7 +131,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.healthz)
 	mux.HandleFunc("/v1/models", s.models)
-	mux.HandleFunc("/v1/chat/completions", s.chatCompletions)
+	mux.HandleFunc("/v1/chat/completions", s.withOptionalUserAPIKey(s.chatCompletions))
 	mux.HandleFunc("/admin/health", s.requireAdmin(s.adminHealth))
 	mux.HandleFunc("/admin/usage", s.requireAdmin(s.adminUsage))
 	mux.HandleFunc("/admin/audit", s.requireAdmin(s.adminAudit))

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,6 +20,8 @@ type userStore interface {
 	CreateAPIKey(ctx context.Context, userID int64, keyPrefix, keyHash, name string) (*auth.APIKey, error)
 	ListAPIKeys(ctx context.Context, userID int64) ([]auth.APIKey, error)
 	RevokeAPIKey(ctx context.Context, userID, keyID int64) error
+	GetAPIKeyByPrefix(ctx context.Context, prefix string) (*auth.APIKey, error)
+	UpdateAPIKeyLastUsed(ctx context.Context, keyID int64) error
 }
 
 type userClaimsKey struct{}
@@ -64,6 +67,63 @@ func (s *Server) requireUser(next http.HandlerFunc) http.HandlerFunc {
 
 		next(w, r.WithContext(withUserClaims(r.Context(), claims)))
 	}
+}
+
+func (s *Server) withOptionalUserAPIKey(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user := s.authenticateUserAPIKey(r)
+		if user != nil {
+			ctx := context.WithValue(r.Context(), userClaimsKey{}, &auth.Claims{
+				UserID: user.ID,
+				Email:  user.Email,
+				Role:   "user",
+			})
+			next(w, r.WithContext(ctx))
+			return
+		}
+		next(w, r)
+	}
+}
+
+func (s *Server) authenticateUserAPIKey(r *http.Request) *auth.User {
+	if s.userStore == nil {
+		return nil
+	}
+	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
+	if !strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+		return nil
+	}
+	tokenString := strings.TrimSpace(authHeader[7:])
+	if tokenString == "" || !strings.HasPrefix(tokenString, "sk-") {
+		return nil
+	}
+
+	prefix := tokenString
+	if len(prefix) > 8 {
+		prefix = prefix[:8]
+	}
+
+	key, err := s.userStore.GetAPIKeyByPrefix(r.Context(), prefix)
+	if err != nil {
+		return nil
+	}
+	if key.Status != "active" {
+		return nil
+	}
+	if !auth.VerifyAPIKey(tokenString, key.KeyHash) {
+		return nil
+	}
+
+	user, err := s.userStore.GetUserByID(r.Context(), key.UserID)
+	if err != nil {
+		return nil
+	}
+
+	if err := s.userStore.UpdateAPIKeyLastUsed(r.Context(), key.ID); err != nil {
+		slog.Warn("failed to update api key last_used", "key_id", key.ID, "err", err)
+	}
+
+	return user
 }
 
 func (s *Server) authSignup(w http.ResponseWriter, r *http.Request) {
