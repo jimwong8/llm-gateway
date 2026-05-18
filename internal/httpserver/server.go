@@ -62,6 +62,8 @@ type Server struct {
 	modelGovernanceAdmin          *ModelGovernanceHandler
 	modelRuntime                  *ModelRuntimeHandler
 	memoryAdmin                   *MemoryAdminHandler
+	broadcastAdmin                *BroadcastAdminHandler
+	broadcastUser                 *BroadcastUserHandler
 	tenantKeys                    *tenant.Store
 	userStore                     userStore
 	oauthStore                    oauthStore
@@ -140,6 +142,16 @@ func (s *Server) WithMemoryAdminHandler(handler *MemoryAdminHandler) *Server {
 	return s
 }
 
+func (s *Server) WithBroadcastAdminHandler(handler *BroadcastAdminHandler) *Server {
+	s.broadcastAdmin = handler
+	return s
+}
+
+func (s *Server) WithBroadcastUserHandler(handler *BroadcastUserHandler) *Server {
+	s.broadcastUser = handler
+	return s
+}
+
 func (s *Server) WithBillingService(svc *billing.Service) *Server {
 	s.billingService = svc
 	return s
@@ -200,6 +212,8 @@ func (s *Server) Handler() http.Handler {
 	s.mountUserAuthRoutes(mux)
 	s.mountChatRoutes(mux)
 	s.mountBillingRoutes(mux)
+	s.mountBroadcastAdminRoutes(mux)
+	s.mountBroadcastUserRoutes(mux)
 	mux.HandleFunc("/admin/ui", s.adminUI)
 	mux.HandleFunc("/admin/ui/", s.adminUI)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/admin/ui", http.StatusTemporaryRedirect) })
@@ -2972,4 +2986,36 @@ func internalError(w http.ResponseWriter, err error) {
 }
 func methodNotAllowed(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": map[string]any{"message": "method not allowed", "type": "method_not_allowed", "method": r.Method}})
+}
+
+func (s *Server) mountBroadcastAdminRoutes(mux *http.ServeMux) {
+	if s.broadcastAdmin == nil {
+		return
+	}
+	mux.HandleFunc("/admin/broadcasts", s.requireAdmin(s.broadcastAdminRoute))
+	mux.HandleFunc("/admin/broadcasts/", s.requireAdmin(s.broadcastAdminRoute))
+}
+
+func (s *Server) mountBroadcastUserRoutes(mux *http.ServeMux) {
+	if s.broadcastUser == nil {
+		return
+	}
+	mux.HandleFunc("/api/user/broadcasts", s.requireUser(s.broadcastUserRoute))
+	mux.HandleFunc("/api/user/broadcasts/", s.requireUser(s.broadcastUserRoute))
+}
+
+func (s *Server) broadcastAdminRoute(w http.ResponseWriter, r *http.Request) {
+	if s.broadcastAdmin == nil {
+		s.notFound(w, r)
+		return
+	}
+	s.broadcastAdmin.ServeHTTP(w, r)
+}
+
+func (s *Server) broadcastUserRoute(w http.ResponseWriter, r *http.Request) {
+	if s.broadcastUser == nil {
+		s.notFound(w, r)
+		return
+	}
+	s.broadcastUser.ServeHTTP(w, r)
 }
