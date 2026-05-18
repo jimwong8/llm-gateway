@@ -54,6 +54,9 @@ type Config struct {
 	FallbackMaxDepth         int
 	FallbackMinScoreRatio    float64
 	AuditRetentionDays       int
+	DefaultAPIKeyRPM         int
+	GitHubClientID           string
+	GitHubClientSecret       string
 }
 
 func Load() Config {
@@ -105,6 +108,9 @@ func Load() Config {
 		FallbackMaxDepth:             getenvInt("FALLBACK_MAX_DEPTH", 3),
 		FallbackMinScoreRatio:        getenvFloat("FALLBACK_MIN_SCORE_RATIO", 0.5),
 		AuditRetentionDays:           getenvInt("AUDIT_RETENTION_DAYS", 90),
+		DefaultAPIKeyRPM:             getenvInt("DEFAULT_API_KEY_RPM", 60),
+		GitHubClientID:               getenv("GITHUB_CLIENT_ID", ""),
+		GitHubClientSecret:           getenv("GITHUB_CLIENT_SECRET", ""),
 	}
 	return cfg
 }

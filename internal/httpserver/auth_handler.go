@@ -313,7 +313,21 @@ func (s *Server) userListAPIKeys(w http.ResponseWriter, r *http.Request) {
 
 	resp := make([]map[string]any, 0, len(keys))
 	for _, k := range keys {
-		resp = append(resp, apiKeyToResponse(&k))
+		item := apiKeyToResponse(&k)
+		if s.apiKeyUsageStore != nil {
+			summary, err := s.apiKeyUsageStore.Summary(r.Context(), auth.UsageStatsFilter{KeyID: k.ID})
+			if err == nil && summary != nil {
+				item["usage"] = map[string]any{
+					"total_requests":            summary.TotalRequests,
+					"total_tokens":              summary.TotalTokens,
+					"total_prompt_tokens":       summary.TotalPromptTokens,
+					"total_completion_tokens":   summary.TotalCompletionTokens,
+					"total_cost":                summary.TotalCost,
+					"avg_latency_ms":            summary.AvgLatencyMs,
+				}
+			}
+		}
+		resp = append(resp, item)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": resp})
 }

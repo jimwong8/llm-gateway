@@ -24,6 +24,7 @@ type APIKey struct {
 	KeyHash    string     `json:"-"`
 	Name       string     `json:"name"`
 	Status     string     `json:"status"`
+	RPMILimit  int        `json:"rpm_limit"`
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
 	UpdatedAt  time.Time  `json:"updated_at"`
@@ -80,9 +81,9 @@ func (s *Store) CreateAPIKey(ctx context.Context, userID int64, keyPrefix, keyHa
 	err := s.db.QueryRowContext(ctx, `
 INSERT INTO user_api_keys (user_id, key_prefix, key_hash, name, status)
 VALUES ($1, $2, $3, $4, 'active')
-RETURNING id, user_id, key_prefix, key_hash, name, status, last_used_at, created_at, updated_at`,
+RETURNING id, user_id, key_prefix, key_hash, name, status, rpm_limit, last_used_at, created_at, updated_at`,
 		userID, keyPrefix, keyHash, name,
-	).Scan(&key.ID, &key.UserID, &key.KeyPrefix, &key.KeyHash, &key.Name, &key.Status, &key.LastUsedAt, &key.CreatedAt, &key.UpdatedAt)
+	).Scan(&key.ID, &key.UserID, &key.KeyPrefix, &key.KeyHash, &key.Name, &key.Status, &key.RPMILimit, &key.LastUsedAt, &key.CreatedAt, &key.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +92,7 @@ RETURNING id, user_id, key_prefix, key_hash, name, status, last_used_at, created
 
 func (s *Store) ListAPIKeys(ctx context.Context, userID int64) ([]APIKey, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, user_id, key_prefix, key_hash, name, status, last_used_at, created_at, updated_at
+SELECT id, user_id, key_prefix, key_hash, name, status, rpm_limit, last_used_at, created_at, updated_at
 FROM user_api_keys WHERE user_id = $1 ORDER BY created_at DESC`, userID)
 	if err != nil {
 		return nil, err
@@ -100,7 +101,7 @@ FROM user_api_keys WHERE user_id = $1 ORDER BY created_at DESC`, userID)
 	var keys []APIKey
 	for rows.Next() {
 		var k APIKey
-		if err := rows.Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.Status, &k.LastUsedAt, &k.CreatedAt, &k.UpdatedAt); err != nil {
+		if err := rows.Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.Status, &k.RPMILimit, &k.LastUsedAt, &k.CreatedAt, &k.UpdatedAt); err != nil {
 			return nil, err
 		}
 		keys = append(keys, k)
@@ -128,9 +129,9 @@ WHERE id = $1 AND user_id = $2 AND status = 'active'`, keyID, userID)
 func (s *Store) GetAPIKeyByPrefix(ctx context.Context, prefix string) (*APIKey, error) {
 	var k APIKey
 	err := s.db.QueryRowContext(ctx, `
-SELECT id, user_id, key_prefix, key_hash, name, status, last_used_at, created_at, updated_at
+SELECT id, user_id, key_prefix, key_hash, name, status, rpm_limit, last_used_at, created_at, updated_at
 FROM user_api_keys WHERE key_prefix = $1 AND status = 'active'`, prefix,
-	).Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.Status, &k.LastUsedAt, &k.CreatedAt, &k.UpdatedAt)
+	).Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.Status, &k.RPMILimit, &k.LastUsedAt, &k.CreatedAt, &k.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -142,4 +143,16 @@ func (s *Store) UpdateAPIKeyLastUsed(ctx context.Context, keyID int64) error {
 	_, err := s.db.ExecContext(ctx, `
 UPDATE user_api_keys SET last_used_at = $1, updated_at = $1 WHERE id = $2`, now, keyID)
 	return err
+}
+
+func (s *Store) GetAPIKeyByID(ctx context.Context, keyID int64) (*APIKey, error) {
+	var k APIKey
+	err := s.db.QueryRowContext(ctx, `
+SELECT id, user_id, key_prefix, key_hash, name, status, rpm_limit, last_used_at, created_at, updated_at
+FROM user_api_keys WHERE id = $1`, keyID,
+	).Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.Status, &k.RPMILimit, &k.LastUsedAt, &k.CreatedAt, &k.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &k, nil
 }

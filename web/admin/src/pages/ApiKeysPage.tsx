@@ -4,6 +4,7 @@ import { AppShell } from '../components/layout/AppShell'
 import { Badge } from '../components/ui/Badge'
 import { EmptyState } from '../components/ui/EmptyState'
 import { TableSkeleton } from '../components/ui/Skeleton'
+import type { ApiKey } from '../types/identity'
 import { listApiKeys, createApiKey, revokeApiKey } from '../lib/api/identity'
 
 export function ApiKeysPage() {
@@ -90,8 +91,12 @@ export function ApiKeysPage() {
                 <th>名称</th>
                 <th>前缀</th>
                 <th>状态</th>
+                <th>RPM 限制</th>
+                <th>请求数</th>
+                <th>总 Token</th>
+                <th>总费用</th>
+                <th>平均延迟</th>
                 <th>最近使用</th>
-                <th>创建时间</th>
                 <th>操作</th>
               </tr>
             </thead>
@@ -101,11 +106,13 @@ export function ApiKeysPage() {
                   <td>{key.name}</td>
                   <td><code>{key.key_prefix}...</code></td>
                   <td><Badge variant={key.status === 'active' ? 'success' : 'danger'}>{key.status}</Badge></td>
+                  <td style={{ fontSize: '0.85rem' }}>{key.rpm_limit}</td>
+                  <td style={{ fontSize: '0.85rem' }}>{key.usage?.total_requests ?? '-'}</td>
+                  <td style={{ fontSize: '0.85rem' }}>{key.usage ? key.usage.total_tokens.toLocaleString() : '-'}</td>
+                  <td style={{ fontSize: '0.85rem' }}>{key.usage ? `$${key.usage.total_cost.toFixed(4)}` : '-'}</td>
+                  <td style={{ fontSize: '0.85rem' }}>{key.usage ? `${key.usage.avg_latency_ms.toFixed(0)}ms` : '-'}</td>
                   <td style={{ color: '#94a3b8', fontSize: '0.85rem' }}>
                     {key.last_used_at ? new Date(key.last_used_at).toLocaleString('zh-CN') : '从未使用'}
-                  </td>
-                  <td style={{ color: '#94a3b8', fontSize: '0.85rem' }}>
-                    {new Date(key.created_at).toLocaleString('zh-CN')}
                   </td>
                   <td>
                     <button

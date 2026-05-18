@@ -13,6 +13,7 @@ import (
 
 	"llm-gateway/gateway/internal/admin"
 	"llm-gateway/gateway/internal/audit"
+	"llm-gateway/gateway/internal/auth"
 	"llm-gateway/gateway/internal/billing"
 	"llm-gateway/gateway/internal/cache"
 	"llm-gateway/gateway/internal/config"
@@ -171,9 +172,26 @@ func main() {
 		}
 	}
 
+	var akRateLimiter *httpserver.APIKeyRateLimiter
+	var akUsageStore *auth.APIKeyUsageStore
+	var authStore *auth.Store
+	if db, err := sql.Open("postgres", cfg.PostgresDSN); err != nil {
+		slog.Warn("auth db init failed", "err", err)
+	} else {
+		authStore = auth.NewStore(db)
+		akUsageStore = auth.NewAPIKeyUsageStore(db)
+		akRateLimiter = httpserver.NewAPIKeyRateLimiter(cfg.RedisAddr, cfg.DefaultAPIKeyRPM)
+	}
+
 	srv := httpserver.New(cfg, registry, redisCache, modelRouter, auditStore, semanticCache, memoryStore, billingStore, limiter, adminStore, policyStore).
 		WithControlPlane(controlPlaneService, controlPlaneAudit, runtimePublisher, runtimeManager).
 		WithTenantKeys(tenantKeyStore)
+	if authStore != nil && akUsageStore != nil {
+		srv = srv.WithUserStore(authStore).WithAPIKeyUsageStore(akUsageStore)
+	}
+	if akRateLimiter != nil {
+		srv = srv.WithAPIKeyRateLimiter(akRateLimiter, cfg.DefaultAPIKeyRPM)
+	}
 	if memoryStore != nil {
 		srv = srv.WithMemoryAdminHandler(httpserver.NewMemoryAdminHandler(memoryStore))
 	}
