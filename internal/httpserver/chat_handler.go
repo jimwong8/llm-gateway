@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"llm-gateway/gateway/internal/chat"
 	"llm-gateway/gateway/internal/providers"
@@ -346,6 +347,10 @@ func (s *Server) chatStreamMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 用 BackpressureWriter 包装 ResponseWriter，防止 SSE 生产快于消费
+	bpWriter := router.NewBackpressureWriter(w, 64, 5*time.Second)
+	defer bpWriter.Close()
+
 	words := strings.Fields(assistantContent)
 	for i, word := range words {
 		chunk := word
@@ -361,8 +366,9 @@ func (s *Server) chatStreamMessages(w http.ResponseWriter, r *http.Request) {
 		buf.WriteString("data: ")
 		buf.Write(data)
 		buf.WriteString("\n\n")
-		w.Write(buf.Bytes())
+		bpWriter.Write(buf.Bytes())
 		router.PutBuffer(buf)
+		bpWriter.Flush()
 		flusher.Flush()
 	}
 
@@ -378,8 +384,9 @@ func (s *Server) chatStreamMessages(w http.ResponseWriter, r *http.Request) {
 	buf.WriteString("data: ")
 	buf.Write(finalData)
 	buf.WriteString("\n\n")
-	w.Write(buf.Bytes())
+	bpWriter.Write(buf.Bytes())
 	router.PutBuffer(buf)
+	bpWriter.Flush()
 	flusher.Flush()
 }
 
