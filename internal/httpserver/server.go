@@ -17,6 +17,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"llm-gateway/gateway/internal/abtest"
 	"llm-gateway/gateway/internal/admin"
 	"llm-gateway/gateway/internal/auth"
 	"llm-gateway/gateway/internal/audit"
@@ -34,6 +35,7 @@ import (
 	"llm-gateway/gateway/internal/runtime"
 	"llm-gateway/gateway/internal/semantic"
 	"llm-gateway/gateway/internal/tenant"
+	"llm-gateway/gateway/internal/webhook"
 )
 
 type runtimeCompensationReader interface {
@@ -66,6 +68,7 @@ type Server struct {
 	modelGovernanceAdmin          *ModelGovernanceHandler
 	modelRuntime                  *ModelRuntimeHandler
 	memoryAdmin                   *MemoryAdminHandler
+	abtestHandler                 *abtest.Handler
 	broadcastAdmin                *BroadcastAdminHandler
 	broadcastUser                 *BroadcastUserHandler
 	tenantKeys                    *tenant.Store
@@ -76,9 +79,11 @@ type Server struct {
 	usageLogStore                 usageLogStore
 	chatStore                     chatStore
 	presetStore                   presetStore
+	webhookRegistry               *webhook.WebhookRegistry
 	apiKeyRateLimiter             *APIKeyRateLimiter
 	defaultAPIKeyRPM              int
 	apiKeyUsageStore              *auth.APIKeyUsageStore
+	quotaManager                  QuotaManager
 }
 
 func New(cfg config.Config, registry *providers.Registry, redisCache cache.L1Cache, rt *router.Router, auditStore *audit.Store, semanticCache semantic.L2Cache, memoryStore *memory.Store, billingStore *billing.Store, limiter *quota.Limiter, adminStore *admin.Store, policyStore *policy.Store) *Server {
@@ -150,6 +155,11 @@ func (s *Server) WithMemoryAdminHandler(handler *MemoryAdminHandler) *Server {
 	return s
 }
 
+func (s *Server) WithABTestHandler(handler *abtest.Handler) *Server {
+	s.abtestHandler = handler
+	return s
+}
+
 func (s *Server) WithBroadcastAdminHandler(handler *BroadcastAdminHandler) *Server {
 	s.broadcastAdmin = handler
 	return s
@@ -173,6 +183,11 @@ func (s *Server) WithAPIKeyRateLimiter(limiter *APIKeyRateLimiter, defaultRPM in
 
 func (s *Server) WithAPIKeyUsageStore(store *auth.APIKeyUsageStore) *Server {
 	s.apiKeyUsageStore = store
+	return s
+}
+
+func (s *Server) WithWebhookRegistry(registry *webhook.WebhookRegistry) *Server {
+	s.webhookRegistry = registry
 	return s
 }
 
@@ -220,9 +235,12 @@ func (s *Server) Handler() http.Handler {
 	s.mountUserAuthRoutes(mux)
 	s.mountChatRoutes(mux)
 	s.mountBillingRoutes(mux)
+	s.mountQuotaRoutes(mux)
+	s.mountABTestRoutes(mux)
 	s.mountBroadcastAdminRoutes(mux)
 	s.mountBroadcastUserRoutes(mux)
 	s.mountPresetRoutes(mux)
+	s.mountWebhookRoutes(mux)
 	s.mountFileParserRoutes(mux)
 	s.mountOpenAPIRoutes(mux)
 	mux.HandleFunc("/admin/ui", s.adminUI)
@@ -2886,6 +2904,13 @@ func containsFold(items []string, target string) bool {
 	return false
 }
 
+func (s *Server) emitWebhook(event string, payload any) {
+	if s.webhookRegistry == nil {
+		return
+	}
+	go s.webhookRegistry.Send(context.Background(), event, payload)
+}
+
 func (s *Server) writeAuditAsync(event audit.Event) {
 	if s.audit == nil || !s.cfg.AuditLogEnabled {
 		return
@@ -3054,6 +3079,14 @@ func methodNotAllowed(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": map[string]any{"message": i18n.T(lang, "method_not_allowed"), "type": "method_not_allowed", "method": r.Method}})
 }
 
+func (s *Server) mountABTestRoutes(mux *http.ServeMux) {
+	if s.abtestHandler == nil {
+		return
+	}
+	mux.HandleFunc("/api/abtest/experiments", s.requireAdmin(s.abtestHandler.ServeHTTP))
+	mux.HandleFunc("/api/abtest/experiments/", s.requireAdmin(s.abtestHandler.ServeHTTP))
+}
+
 func (s *Server) mountBroadcastAdminRoutes(mux *http.ServeMux) {
 	if s.broadcastAdmin == nil {
 		return
@@ -3068,6 +3101,15 @@ func (s *Server) mountBroadcastUserRoutes(mux *http.ServeMux) {
 	}
 	mux.HandleFunc("/api/user/broadcasts", s.requireUser(s.broadcastUserRoute))
 	mux.HandleFunc("/api/user/broadcasts/", s.requireUser(s.broadcastUserRoute))
+}
+
+func (s *Server) mountWebhookRoutes(mux *http.ServeMux) {
+	if s.webhookRegistry == nil {
+		return
+	}
+	whHandler := webhook.NewHandler(s.webhookRegistry)
+	mux.HandleFunc("/api/webhooks", s.requireUser(whHandler.ServeHTTP))
+	mux.HandleFunc("/api/webhooks/", s.requireUser(whHandler.ServeHTTP))
 }
 
 func (s *Server) broadcastAdminRoute(w http.ResponseWriter, r *http.Request) {

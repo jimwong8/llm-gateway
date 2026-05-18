@@ -144,6 +144,12 @@ func (s *Server) presetCreate(w http.ResponseWriter, r *http.Request) {
 			"actor_id":  fmt.Sprintf("%d", claims.UserID),
 		},
 	})
+	s.emitWebhook("preset.created", map[string]any{
+		"id":          p.ID,
+		"name":        p.Name,
+		"description": p.Description,
+		"is_public":   p.IsPublic,
+	})
 	writeJSON(w, http.StatusCreated, p)
 }
 
@@ -198,6 +204,12 @@ func (s *Server) presetUpdate(w http.ResponseWriter, r *http.Request, id int64) 
 			"actor_id":  fmt.Sprintf("%d", claims.UserID),
 		},
 	})
+	s.emitWebhook("preset.updated", map[string]any{
+		"id":          p.ID,
+		"name":        p.Name,
+		"description": p.Description,
+		"is_public":   p.IsPublic,
+	})
 	writeJSON(w, http.StatusOK, p)
 }
 
@@ -218,6 +230,9 @@ func (s *Server) presetDelete(w http.ResponseWriter, r *http.Request, id int64) 
 			"target_id": fmt.Sprintf("%d", id),
 			"actor_id":  fmt.Sprintf("%d", claims.UserID),
 		},
+	})
+	s.emitWebhook("preset.deleted", map[string]any{
+		"id": id,
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
@@ -277,6 +292,11 @@ func (s *Server) maskCreate(w http.ResponseWriter, r *http.Request) {
 			"actor_id":  fmt.Sprintf("%d", claims.UserID),
 		},
 	})
+	s.emitWebhook("mask.created", map[string]any{
+		"id":      rule.ID,
+		"name":    rule.Name,
+		"pattern": rule.Pattern,
+	})
 	writeJSON(w, http.StatusCreated, rule)
 }
 
@@ -317,6 +337,12 @@ func (s *Server) maskUpdate(w http.ResponseWriter, r *http.Request, id int64) {
 			"actor_id":  fmt.Sprintf("%d", claims.UserID),
 		},
 	})
+	s.emitWebhook("mask.updated", map[string]any{
+		"id":      id,
+		"name":    body.Name,
+		"pattern": body.Pattern,
+		"enabled": body.Enabled,
+	})
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
@@ -337,6 +363,9 @@ func (s *Server) maskDelete(w http.ResponseWriter, r *http.Request, id int64) {
 			"target_id": fmt.Sprintf("%d", id),
 			"actor_id":  fmt.Sprintf("%d", claims.UserID),
 		},
+	})
+	s.emitWebhook("mask.deleted", map[string]any{
+		"id": id,
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
