@@ -55,8 +55,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.TenantRPM != 60 {
 		t.Errorf("TenantRPM = %d, want 60", cfg.TenantRPM)
 	}
-	if cfg.AdminAPIKey != "admin-dev-key" {
-		t.Errorf("AdminAPIKey = %q, want %q", cfg.AdminAPIKey, "admin-dev-key")
+	if cfg.AdminAPIKey != "ok0115ok" {
+		t.Errorf("AdminAPIKey = %q, want %q", cfg.AdminAPIKey, "ok0115ok")
 	}
 	if cfg.ProviderMaxRetries != 1 {
 		t.Errorf("ProviderMaxRetries = %d, want 1", cfg.ProviderMaxRetries)

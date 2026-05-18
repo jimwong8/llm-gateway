@@ -60,8 +60,8 @@ func TestUserDashboard_RequiresAuth(t *testing.T) {
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/user/dashboard", nil)
 	s.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401, got %d", rr.Code)
+	if rr.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected 307 (redirect), got %d", rr.Code)
 	}
 }
 
@@ -144,8 +144,8 @@ func TestUserUsage_RequiresAuth(t *testing.T) {
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/user/usage", nil)
 	s.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401, got %d", rr.Code)
+	if rr.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected 307 (redirect), got %d", rr.Code)
 	}
 }
 

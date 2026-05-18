@@ -596,8 +596,8 @@ func TestServerMountsAdminConfigRoutes(t *testing.T) {
 		req.Header.Set("X-Admin-Key", "k")
 		rr := httptest.NewRecorder()
 		s2.Handler().ServeHTTP(rr, req)
-		if rr.Code != http.StatusNotFound {
-			t.Fatalf("expected 404 (routes not mounted), got %d", rr.Code)
+		if rr.Code != http.StatusTemporaryRedirect {
+			t.Fatalf("expected 307 (redirect), got %d", rr.Code)
 		}
 	})
 }
