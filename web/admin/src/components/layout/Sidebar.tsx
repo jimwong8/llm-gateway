@@ -23,6 +23,7 @@ export const navGroups: NavGroup[] = [
     label: '概览',
     children: [
       { label: '仪表盘', path: '/dashboard' },
+      { label: 'AI 聊天', path: '/chat' },
     ],
   },
   {
@@ -63,6 +64,7 @@ export const navGroups: NavGroup[] = [
       { label: '租户密钥', path: '/tenant-keys' },
       { label: '在线测试', path: '/playground' },
       { label: '系统状态', path: '/system' },
+      { label: '系统设置', path: '/system/settings' },
     ],
   },
 ]

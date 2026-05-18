@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { ProtectedRoute } from './components/auth/ProtectedRoute'
 import { ApprovalsPage } from './pages/ApprovalsPage'
+import { ChatPage } from './pages/ChatPage'
 import { AuditRuntimePage } from './pages/AuditRuntimePage'
 import { ConfigCenterPage } from './pages/ConfigCenterPage'
 import { DashboardPage } from './pages/DashboardPage'
@@ -23,6 +24,8 @@ import { ChannelsPage } from './pages/ChannelsPage'
 import { AssetsPage } from './pages/AssetsPage'
 import { TenantKeysPage } from './pages/TenantKeysPage'
 import { AuditExportPage } from './pages/AuditExportPage'
+import { BillingPage } from './pages/BillingPage'
+import { PricingPage } from './pages/admin/PricingPage'
 
 export const router = createBrowserRouter([
   {
@@ -53,6 +56,10 @@ export const router = createBrowserRouter([
         element: <ApiKeysPage />,
       },
       {
+        path: 'chat',
+        element: <ChatPage />,
+      },
+      {
         path: 'releases',
         element: <ReleasesPage />,
       },
@@ -78,6 +85,10 @@ export const router = createBrowserRouter([
       },
       {
         path: 'system',
+        element: <SystemPage />,
+      },
+      {
+        path: 'system/settings',
         element: <SystemPage />,
       },
       {
@@ -123,6 +134,14 @@ export const router = createBrowserRouter([
       {
         path: 'drifts',
         element: <DriftDashboardPage />,
+      },
+      {
+        path: 'billing',
+        element: <BillingPage />,
+      },
+      {
+        path: 'billing-pricing',
+        element: <PricingPage />,
       },
       {
         path: '*',

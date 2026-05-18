@@ -69,7 +69,6 @@ type Server struct {
 	apiKeyRateLimiter             *APIKeyRateLimiter
 	defaultAPIKeyRPM              int
 	apiKeyUsageStore              *auth.APIKeyUsageStore
-	oauthStore                    oauthStore
 }
 
 func New(cfg config.Config, registry *providers.Registry, redisCache cache.L1Cache, rt *router.Router, auditStore *audit.Store, semanticCache semantic.L2Cache, memoryStore *memory.Store, billingStore *billing.Store, limiter *quota.Limiter, adminStore *admin.Store, policyStore *policy.Store) *Server {
@@ -306,12 +305,16 @@ func (s *Server) mountUserAuthRoutes(mux *http.ServeMux) {
 	}))
 	mux.HandleFunc("/api/user/dashboard", s.requireUser(s.userDashboard))
 	mux.HandleFunc("/api/user/usage", s.requireUser(s.userUsage))
-	if s.oauthStore != nil && s.cfg.GitHubClientID != "" {
-		mux.HandleFunc("/api/auth/oauth/github", s.oauthGitHubLogin)
-		mux.HandleFunc("/api/auth/oauth/github/callback", s.oauthGitHubCallback)
-		mux.HandleFunc("/api/user/oauth", s.requireUser(s.oauthListBindings))
-		mux.HandleFunc("/api/user/oauth/", s.requireUser(s.oauthDeleteBinding))
+	if s.oauthStore != nil {
+		mux.HandleFunc("/api/auth/oauth/config", s.oauthConfig)
+		if s.cfg.GitHubClientID != "" {
+			mux.HandleFunc("/api/auth/oauth/github", s.oauthGitHubLogin)
+			mux.HandleFunc("/api/auth/oauth/github/callback", s.oauthGitHubCallback)
+			mux.HandleFunc("/api/user/oauth", s.requireUser(s.oauthListBindings))
+			mux.HandleFunc("/api/user/oauth/", s.requireUser(s.oauthDeleteBinding))
+		}
 	}
+}
 
 func (s *Server) controlPlaneRoute(w http.ResponseWriter, r *http.Request) {
 	if s.controlPlaneAdmin == nil {
