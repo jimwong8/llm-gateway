@@ -3,8 +3,10 @@ import { useQuery } from '@tanstack/react-query'
 import { AppShell } from '../components/layout/AppShell'
 import { DashboardAdminOverviewSection } from '../components/dashboard/DashboardAdminOverviewSection'
 import { DashboardSessionOpsSection } from '../components/dashboard/DashboardSessionOpsSection'
+import { UserDashboardView } from '../components/dashboard/UserDashboardView'
 import { TokenUsageChart, ModelDistributionChart, CacheHitRateChart, ChannelStatusChart } from '../components/charts'
 import { apiRequest } from '../lib/http'
+import { getUserToken } from '../lib/api/identity'
 import type { BillingSummary } from '../types/observability'
 import type { SessionAdminDashboard } from '../types/sessionDashboard'
 import { formatPercent } from '../lib/format'
@@ -29,7 +31,7 @@ type ModelDistributionPoint = { name: string; value: number }
 type CacheHitPoint = { date: string; hitRate: number; requests: number }
 type ChannelStatusPoint = { name: string; healthy: number; degraded: number; down: number }
 
-export function DashboardPage() {
+function DashboardAdminView() {
   const [activeTab, setActiveTab] = useState<ChartTab>('tokens')
 
   const healthQuery = useQuery({
@@ -86,60 +88,70 @@ export function DashboardPage() {
   const channelData = channelStatusQuery.data?.data
 
   return (
-    <AppShell
-      title="仪表盘"
-      description="聚合展示服务状态、请求量、缓存命中率与 Provider 错误率，作为控制台首页。"
-    >
-      <div className="events-page">
-        {loading ? <div className="event-state">正在加载首页概览…</div> : null}
-        {hasError ? <div className="config-error" role="alert">首页概览加载失败，请检查后端接口状态。</div> : null}
+    <>
+      {loading ? <div className="event-state">正在加载首页概览…</div> : null}
+      {hasError ? <div className="config-error" role="alert">首页概览加载失败，请检查后端接口状态。</div> : null}
 
-        {!loading && !hasError ? (
-          <DashboardAdminOverviewSection
-            service={healthQuery.data?.service ?? '—'}
-            adminAuth={healthQuery.data?.admin_auth ?? '—'}
-            requests={summaryQuery.data?.requests ?? 0}
-            cacheHitRate={formatPercent(summaryQuery.data?.cache_hit_rate)}
-            providerErrorRate={formatPercent(summaryQuery.data?.provider_error_rate)}
-            totalTokens={summaryQuery.data?.total_tokens ?? 0}
-          />
-        ) : null}
-
-        <DashboardSessionOpsSection
-          loading={sessionQuery.isLoading}
-          hasError={!!sessionQuery.error}
-          data={sessionQuery.data}
+      {!loading && !hasError ? (
+        <DashboardAdminOverviewSection
+          service={healthQuery.data?.service ?? '—'}
+          adminAuth={healthQuery.data?.admin_auth ?? '—'}
+          requests={summaryQuery.data?.requests ?? 0}
+          cacheHitRate={formatPercent(summaryQuery.data?.cache_hit_rate)}
+          providerErrorRate={formatPercent(summaryQuery.data?.provider_error_rate)}
+          totalTokens={summaryQuery.data?.total_tokens ?? 0}
         />
+      ) : null}
 
-        <div className="page-surface" style={{ marginTop: '1rem' }}>
-          <div className="chart-tabs">
-            <div className="tab-strip">
-              {CHART_TABS.map((tab) => (
-                <button
-                  key={tab.key}
-                  type="button"
-                  className={activeTab === tab.key ? 'tab active' : 'tab'}
-                  onClick={() => setActiveTab(tab.key)}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-          </div>
+      <DashboardSessionOpsSection
+        loading={sessionQuery.isLoading}
+        hasError={!!sessionQuery.error}
+        data={sessionQuery.data}
+      />
 
-          <div style={{ marginTop: '1rem' }}>
-            {chartLoading ? <div className="event-state">加载图表数据中…</div> : null}
-            {chartError ? <div className="config-error" role="alert">图表数据加载失败</div> : null}
-            {!chartLoading && !chartError ? (
-              <>
-                {activeTab === 'tokens' && <TokenUsageChart data={tokenData} />}
-                {activeTab === 'models' && <ModelDistributionChart data={modelData} />}
-                {activeTab === 'cache' && <CacheHitRateChart data={cacheData} />}
-                {activeTab === 'channels' && <ChannelStatusChart data={channelData} />}
-              </>
-            ) : null}
+      <div className="page-surface" style={{ marginTop: '1rem' }}>
+        <div className="chart-tabs">
+          <div className="tab-strip">
+            {CHART_TABS.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                className={activeTab === tab.key ? 'tab active' : 'tab'}
+                onClick={() => setActiveTab(tab.key)}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
         </div>
+
+        <div style={{ marginTop: '1rem' }}>
+          {chartLoading ? <div className="event-state">加载图表数据中…</div> : null}
+          {chartError ? <div className="config-error" role="alert">图表数据加载失败</div> : null}
+          {!chartLoading && !chartError ? (
+            <>
+              {activeTab === 'tokens' && <TokenUsageChart data={tokenData} />}
+              {activeTab === 'models' && <ModelDistributionChart data={modelData} />}
+              {activeTab === 'cache' && <CacheHitRateChart data={cacheData} />}
+              {activeTab === 'channels' && <ChannelStatusChart data={channelData} />}
+            </>
+          ) : null}
+        </div>
+      </div>
+    </>
+  )
+}
+
+export function DashboardPage() {
+  const isUser = !!getUserToken()
+
+  return (
+    <AppShell
+      title={isUser ? '我的面板' : '仪表盘'}
+      description={isUser ? '查看您的配额使用、API Keys 和调用统计。' : '聚合展示服务状态、请求量、缓存命中率与 Provider 错误率，作为控制台首页。'}
+    >
+      <div className="events-page">
+        {isUser ? <UserDashboardView /> : <DashboardAdminView />}
       </div>
     </AppShell>
   )

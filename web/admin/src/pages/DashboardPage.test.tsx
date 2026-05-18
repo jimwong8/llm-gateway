@@ -3,9 +3,53 @@ import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearToken, setToken } from '../lib/auth'
+import { clearUserToken, setUserToken } from '../lib/api/identity'
 import { DashboardPage } from './DashboardPage'
 
-describe('DashboardPage', () => {
+const adminFetchMocks = () =>
+  vi
+    .fn()
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ service: 'llm-gateway', admin_auth: 'enabled' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          requests: 12,
+          total_tokens: 345,
+          cache_hit_rate: 0.88,
+          provider_error_rate: 0.125,
+          avg_latency_ms: 123.4,
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    )
+    .mockResolvedValue(
+      new Response(JSON.stringify({ data: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+
+const userFetchMocks = () =>
+  vi.fn().mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        summary: { requests: 5, total_tokens: 1000, prompt_tokens: 600, completion_tokens: 400, estimated_cost: 0.002 },
+        model_distribution: [],
+        recent_api_keys: [],
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    ),
+  )
+
+describe('DashboardPage - admin view', () => {
   beforeEach(() => {
     setToken('demo-admin-token')
   })
@@ -47,6 +91,37 @@ describe('DashboardPage', () => {
     expect(await screen.findByText('llm-gateway')).toBeInTheDocument()
     expect(screen.getByText('88.0%')).toBeInTheDocument()
     expect(screen.getByText('12.5%')).toBeInTheDocument()
+  })
+})
+
+describe('DashboardPage - user view', () => {
+  beforeEach(() => {
+    setUserToken('demo-user-token')
+  })
+
+  afterEach(() => {
+    clearUserToken()
+    vi.restoreAllMocks()
+  })
+
+  it('renders user dashboard panel when user token exists', async () => {
+    const fetchMock = userFetchMocks()
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderPage()
+
+    expect(await screen.findByRole('heading', { name: '我的面板', level: 1 })).toBeInTheDocument()
+    expect(await screen.findByText('总请求数')).toBeInTheDocument()
+    expect(screen.getByText('5')).toBeInTheDocument()
+  })
+
+  it('shows user dashboard error state on fetch failure', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('fetch failed'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderPage()
+
+    expect(await screen.findByText('用户面板加载失败')).toBeInTheDocument()
   })
 })
 

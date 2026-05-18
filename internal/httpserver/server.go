@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"llm-gateway/gateway/internal/admin"
+	"llm-gateway/gateway/internal/auth"
 	"llm-gateway/gateway/internal/audit"
 	"llm-gateway/gateway/internal/billing"
 	"llm-gateway/gateway/internal/cache"
@@ -48,6 +49,7 @@ type Server struct {
 	semantic                      semantic.L2Cache
 	memory                        *memory.Store
 	billing                       *billing.Store
+	billingService                *billing.Service
 	quota                         *quota.Limiter
 	admin                         *admin.Store
 	policy                        *policy.Store
@@ -56,11 +58,16 @@ type Server struct {
 	runtimeManager                *runtime.Manager
 	runtimePublisher              *runtime.Publisher
 	controlPlaneAdmin             *AdminHandler
+	adminConfig                   *AdminConfigHandler
 	modelGovernanceAdmin          *ModelGovernanceHandler
 	modelRuntime                  *ModelRuntimeHandler
 	memoryAdmin                   *MemoryAdminHandler
 	tenantKeys                    *tenant.Store
 	userStore                     userStore
+	chatStore                     chatStore
+	apiKeyRateLimiter             *APIKeyRateLimiter
+	defaultAPIKeyRPM              int
+	apiKeyUsageStore              *auth.APIKeyUsageStore
 }
 
 func New(cfg config.Config, registry *providers.Registry, redisCache cache.L1Cache, rt *router.Router, auditStore *audit.Store, semanticCache semantic.L2Cache, memoryStore *memory.Store, billingStore *billing.Store, limiter *quota.Limiter, adminStore *admin.Store, policyStore *policy.Store) *Server {
@@ -107,6 +114,11 @@ func (s *Server) WithControlPlane(service *controlplane.Service, auditor *audit.
 	return s
 }
 
+func (s *Server) WithAdminConfigHandler(handler *AdminConfigHandler) *Server {
+	s.adminConfig = handler
+	return s
+}
+
 func (s *Server) WithModelGovernanceHandler(handler *ModelGovernanceHandler) *Server {
 	s.modelGovernanceAdmin = handler
 	return s
@@ -127,11 +139,27 @@ func (s *Server) WithMemoryAdminHandler(handler *MemoryAdminHandler) *Server {
 	return s
 }
 
+func (s *Server) WithBillingService(svc *billing.Service) *Server {
+	s.billingService = svc
+	return s
+}
+
+func (s *Server) WithAPIKeyRateLimiter(limiter *APIKeyRateLimiter, defaultRPM int) *Server {
+	s.apiKeyRateLimiter = limiter
+	s.defaultAPIKeyRPM = defaultRPM
+	return s
+}
+
+func (s *Server) WithAPIKeyUsageStore(store *auth.APIKeyUsageStore) *Server {
+	s.apiKeyUsageStore = store
+	return s
+}
+
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.healthz)
 	mux.HandleFunc("/v1/models", s.models)
-	mux.HandleFunc("/v1/chat/completions", s.withOptionalUserAPIKey(s.chatCompletions))
+	mux.HandleFunc("/v1/chat/completions", s.withOptionalUserAPIKey(s.apiKeyRateLimitMiddleware(s.chatCompletions)))
 	mux.HandleFunc("/admin/health", s.requireAdmin(s.adminHealth))
 	mux.HandleFunc("/admin/usage", s.requireAdmin(s.adminUsage))
 	mux.HandleFunc("/admin/audit", s.requireAdmin(s.adminAudit))
@@ -164,14 +192,28 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/admin/audit/cleanup", s.requireAdmin(s.adminAuditCleanup))
 	mux.HandleFunc("/admin/audit/retention", s.requireAdmin(s.adminAuditRetention))
 	s.mountControlPlaneAdminRoutes(mux)
+	s.mountAdminConfigRoutes(mux)
 	s.mountModelGovernanceRoutes(mux)
 	s.mountModelRuntimeRoutes(mux)
 	s.mountMemoryAdminRoutes(mux)
 	s.mountUserAuthRoutes(mux)
+	s.mountChatRoutes(mux)
+	s.mountBillingRoutes(mux)
 	mux.HandleFunc("/admin/ui", s.adminUI)
 	mux.HandleFunc("/admin/ui/", s.adminUI)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/admin/ui", http.StatusTemporaryRedirect) })
 	return panicRecoveryMiddleware(loggingMiddleware(mux))
+}
+
+func (s *Server) mountAdminConfigRoutes(mux *http.ServeMux) {
+	if s.adminConfig == nil {
+		return
+	}
+	mux.HandleFunc("/admin/config/site", s.requireAdmin(s.adminConfig.ServeHTTP))
+	mux.HandleFunc("/admin/config/site/", s.requireAdmin(s.adminConfig.ServeHTTP))
+	mux.HandleFunc("/admin/config/jwt/rotate", s.requireAdmin(s.adminConfig.ServeHTTP))
+	mux.HandleFunc("/admin/config/versions", s.requireAdmin(s.adminConfig.ServeHTTP))
+	mux.HandleFunc("/admin/config/versions/", s.requireAdmin(s.adminConfig.ServeHTTP))
 }
 
 func (s *Server) mountControlPlaneAdminRoutes(mux *http.ServeMux) {
@@ -247,7 +289,21 @@ func (s *Server) mountUserAuthRoutes(mux *http.ServeMux) {
 			methodNotAllowed(w, r)
 		}
 	})
-	mux.HandleFunc("/api/user/api-keys/", s.requireUser(s.userRevokeAPIKey))
+	mux.HandleFunc("/api/user/api-keys/", s.requireUser(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/user/api-keys/")
+		switch {
+		case path == "usage":
+			s.userAPIKeyUsage(w, r)
+		case strings.HasSuffix(path, "/usage"):
+			s.userAPIKeyUsageByID(w, r)
+		case r.Method == http.MethodDelete:
+			s.userRevokeAPIKey(w, r)
+		default:
+			methodNotAllowed(w, r)
+		}
+	}))
+	mux.HandleFunc("/api/user/dashboard", s.requireUser(s.userDashboard))
+	mux.HandleFunc("/api/user/usage", s.requireUser(s.userUsage))
 }
 
 func (s *Server) controlPlaneRoute(w http.ResponseWriter, r *http.Request) {
@@ -1602,6 +1658,11 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 	requestID := fmt.Sprintf("req-%d", time.Now().UnixNano())
 	startedAt := time.Now()
+	apiKeyID := getAPIKeyID(r.Context())
+	apiUserID := int64(0)
+	if c := getUserClaims(r.Context()); c != nil {
+		apiUserID = c.UserID
+	}
 
 	var req providers.ChatCompletionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1778,6 +1839,21 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	decision := s.router.Decide(req)
 	req.Model = decision.Model
+
+	claims := getUserClaims(r.Context())
+	var billingUserID string
+	var billingRefID string
+	if claims != nil && s.billingService != nil && s.cfg.BillingEnabled {
+		billingUserID = fmt.Sprintf("%d", claims.UserID)
+		estCost, _, preAuthErr := s.billingService.PreAuthorize(r.Context(), billingUserID, decision.Provider, decision.Model, 500, 500)
+		if preAuthErr != nil {
+			slog.Warn("pre-authorize failed, rejecting", "user_id", billingUserID, "err", preAuthErr)
+			writeJSON(w, http.StatusPaymentRequired, map[string]any{"error": map[string]any{"message": "insufficient balance for estimated cost", "type": "payment_error"}})
+			return
+		}
+		slog.Debug("billing pre-auth ok", "user_id", billingUserID, "est_cost", estCost)
+	}
+
 	if s.admin != nil && req.TenantID != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		enrichedReq, injectedAsset := s.injectAssetContext(ctx, req, decision.Task, decision.Model)
@@ -1826,7 +1902,9 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			cacheStatus = "HIT"
 			w.Header().Set("X-Cache", cacheStatus)
 			s.writeAuditAsync(audit.Event{RequestID: requestID, RouteMode: decision.RouteMode, RouteTask: decision.Task, RouteModel: decision.Model, RouteProvider: decision.Provider, RouteReason: decision.Reason, RouteScore: routeScore, CacheStatus: cacheStatus, FallbackUsed: false, RequestPayload: requestToMap(req), ResponsePayload: responseToMap(*cached)})
-			s.writeBillingAsync(buildUsageEvent(requestID, req, decision, decision.Provider, "HIT", "l1_exact", false, true, "", "", time.Since(startedAt), *cached))
+			be := buildUsageEvent(requestID, req, decision, decision.Provider, "HIT", "l1_exact", false, true, "", "", time.Since(startedAt), *cached)
+			s.writeBillingAsync(be)
+			s.recordAPIKeyUsage(apiKeyID, apiUserID, be.RequestID, be.Model, be.Provider, be.PromptTokens, be.CompletionTokens, be.TotalTokens, be.EstimatedCost, be.LatencyMs, true)
 			writeJSON(w, http.StatusOK, cached)
 			return
 		}
@@ -1844,7 +1922,9 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("X-Cache", cacheStatus)
 			w.Header().Set("X-Semantic-Score", fmt.Sprintf("%.4f", hit.Score))
 			s.writeAuditAsync(audit.Event{RequestID: requestID, RouteMode: decision.RouteMode, RouteTask: decision.Task, RouteModel: decision.Model, RouteProvider: decision.Provider, RouteReason: decision.Reason, RouteScore: routeScore, CacheStatus: cacheStatus, FallbackUsed: false, RequestPayload: requestToMap(req), ResponsePayload: responseToMap(hit.Response)})
-			s.writeBillingAsync(buildUsageEvent(requestID, req, decision, decision.Provider, "SEMANTIC_HIT", "l2_semantic", false, true, "", "", time.Since(startedAt), hit.Response))
+			be := buildUsageEvent(requestID, req, decision, decision.Provider, "SEMANTIC_HIT", "l2_semantic", false, true, "", "", time.Since(startedAt), hit.Response)
+			s.writeBillingAsync(be)
+			s.recordAPIKeyUsage(apiKeyID, apiUserID, be.RequestID, be.Model, be.Provider, be.PromptTokens, be.CompletionTokens, be.TotalTokens, be.EstimatedCost, be.LatencyMs, true)
 			writeJSON(w, http.StatusOK, hit.Response)
 			return
 		}
@@ -1873,7 +1953,9 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		resp, err = s.providers.ChatCompletion(r.Context(), decision.Provider, req)
 	}
 	if err != nil {
-		s.writeBillingAsync(buildUsageEvent(requestID, req, decision, decision.Provider, cacheStatus, "none", fallbackUsed, false, "provider_error", err.Error(), time.Since(startedAt), resp))
+		be := buildUsageEvent(requestID, req, decision, decision.Provider, cacheStatus, "none", fallbackUsed, false, "provider_error", err.Error(), time.Since(startedAt), resp)
+		s.writeBillingAsync(be)
+		s.recordAPIKeyUsage(apiKeyID, apiUserID, be.RequestID, be.Model, be.Provider, be.PromptTokens, be.CompletionTokens, be.TotalTokens, be.EstimatedCost, be.LatencyMs, false)
 		internalError(w, err)
 		return
 	}
@@ -1931,8 +2013,23 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	cacheStatus = "MISS"
 	w.Header().Set("X-Cache", cacheStatus)
 	s.writeAuditAsync(audit.Event{RequestID: requestID, RouteMode: decision.RouteMode, RouteTask: decision.Task, RouteModel: decision.Model, RouteProvider: decision.Provider, RouteReason: decision.Reason, RouteScore: routeScore, CacheStatus: cacheStatus, FallbackUsed: fallbackUsed, RequestPayload: requestToMap(req), ResponsePayload: responseToMap(resp)})
-	s.writeBillingAsync(buildUsageEvent(requestID, req, decision, decision.Provider, "MISS", "none", fallbackUsed, true, "", "", time.Since(startedAt), resp))
+	be := buildUsageEvent(requestID, req, decision, decision.Provider, "MISS", "none", fallbackUsed, true, "", "", time.Since(startedAt), resp)
+	s.writeBillingAsync(be)
+	s.recordAPIKeyUsage(apiKeyID, apiUserID, be.RequestID, be.Model, be.Provider, be.PromptTokens, be.CompletionTokens, be.TotalTokens, be.EstimatedCost, be.LatencyMs, true)
 	writeJSON(w, http.StatusOK, resp)
+
+	if billingUserID != "" && s.billingService != nil && s.cfg.BillingEnabled {
+		billingRefID = requestID
+		actualPromptTokens := resp.Usage.PromptTokens
+		actualCompletionTokens := resp.Usage.CompletionTokens
+		if actualPromptTokens <= 0 && actualCompletionTokens <= 0 {
+			actualPromptTokens = 500
+			actualCompletionTokens = 500
+		}
+		if _, err := s.billingService.Settle(r.Context(), billingUserID, billingRefID, decision.Provider, decision.Model, actualPromptTokens, actualCompletionTokens); err != nil {
+			slog.Warn("billing settle failed", "user_id", billingUserID, "ref", billingRefID, "err", err)
+		}
+	}
 }
 
 func (s *Server) injectAssetContext(ctx context.Context, req providers.ChatCompletionRequest, taskType, sourceModel string) (providers.ChatCompletionRequest, *admin.AssetRow) {

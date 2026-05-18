@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"llm-gateway/gateway/internal/auth"
+	"llm-gateway/gateway/internal/billing"
 )
 
 type userStore interface {
@@ -21,6 +22,7 @@ type userStore interface {
 	ListAPIKeys(ctx context.Context, userID int64) ([]auth.APIKey, error)
 	RevokeAPIKey(ctx context.Context, userID, keyID int64) error
 	GetAPIKeyByPrefix(ctx context.Context, prefix string) (*auth.APIKey, error)
+	GetAPIKeyByID(ctx context.Context, keyID int64) (*auth.APIKey, error)
 	UpdateAPIKeyLastUsed(ctx context.Context, keyID int64) error
 }
 
@@ -71,13 +73,16 @@ func (s *Server) requireUser(next http.HandlerFunc) http.HandlerFunc {
 
 func (s *Server) withOptionalUserAPIKey(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		user := s.authenticateUserAPIKey(r)
+		user, apiKeyID := s.authenticateUserAPIKey(r)
 		if user != nil {
 			ctx := context.WithValue(r.Context(), userClaimsKey{}, &auth.Claims{
 				UserID: user.ID,
 				Email:  user.Email,
 				Role:   "user",
 			})
+			if apiKeyID > 0 {
+				ctx = withAPIKeyID(ctx, apiKeyID)
+			}
 			next(w, r.WithContext(ctx))
 			return
 		}
@@ -85,17 +90,17 @@ func (s *Server) withOptionalUserAPIKey(next http.HandlerFunc) http.HandlerFunc 
 	}
 }
 
-func (s *Server) authenticateUserAPIKey(r *http.Request) *auth.User {
+func (s *Server) authenticateUserAPIKey(r *http.Request) (*auth.User, int64) {
 	if s.userStore == nil {
-		return nil
+		return nil, 0
 	}
 	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
 	if !strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
-		return nil
+		return nil, 0
 	}
 	tokenString := strings.TrimSpace(authHeader[7:])
 	if tokenString == "" || !strings.HasPrefix(tokenString, "sk-") {
-		return nil
+		return nil, 0
 	}
 
 	prefix := tokenString
@@ -105,33 +110,28 @@ func (s *Server) authenticateUserAPIKey(r *http.Request) *auth.User {
 
 	key, err := s.userStore.GetAPIKeyByPrefix(r.Context(), prefix)
 	if err != nil {
-		return nil
+		return nil, 0
 	}
 	if key.Status != "active" {
-		return nil
+		return nil, 0
 	}
 	if !auth.VerifyAPIKey(tokenString, key.KeyHash) {
-		return nil
+		return nil, 0
 	}
 
 	user, err := s.userStore.GetUserByID(r.Context(), key.UserID)
 	if err != nil {
-		return nil
+		return nil, 0
 	}
 
 	if err := s.userStore.UpdateAPIKeyLastUsed(r.Context(), key.ID); err != nil {
 		slog.Warn("failed to update api key last_used", "key_id", key.ID, "err", err)
 	}
 
-	return user
+	return user, key.ID
 }
 
 func (s *Server) authSignup(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		methodNotAllowed(w, r)
-		return
-	}
-
 	var body struct {
 		Email    string `json:"email"`
 		Username string `json:"username"`
@@ -370,10 +370,218 @@ func apiKeyToResponse(k *auth.APIKey) map[string]any {
 		"name":       k.Name,
 		"key_prefix": k.KeyPrefix,
 		"status":     k.Status,
+		"rpm_limit":  k.RPMILimit,
 		"created_at": k.CreatedAt.Format(time.RFC3339),
 	}
 	if k.LastUsedAt != nil {
 		resp["last_used_at"] = k.LastUsedAt.Format(time.RFC3339)
 	}
 	return resp
+}
+
+func (s *Server) userDashboard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+
+	claims := getUserClaims(r.Context())
+	if claims == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]any{"message": "not authenticated", "type": "authentication_error"}})
+		return
+	}
+
+	userIDStr := strconv.FormatInt(claims.UserID, 10)
+
+	summary := billing.SummaryRow{}
+	if s.billing != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		row, err := s.billing.Summary(ctx, billing.QueryFilter{
+			UserID: userIDStr,
+			From:   time.Now().AddDate(0, 0, -30),
+		})
+		cancel()
+		if err == nil {
+			summary = row
+		}
+
+		todayStart := time.Now().UTC().Truncate(24 * time.Hour)
+		ctx, cancel = context.WithTimeout(context.Background(), 3*time.Second)
+		todayRow, err := s.billing.Summary(ctx, billing.QueryFilter{
+			UserID: userIDStr,
+			From:   todayStart,
+		})
+		cancel()
+		if err == nil {
+			summary.Requests = todayRow.Requests
+			summary.TotalTokens = todayRow.TotalTokens
+		}
+	}
+
+	recentKeys := []map[string]any{}
+	if s.userStore != nil {
+		keys, err := s.userStore.ListAPIKeys(r.Context(), claims.UserID)
+		if err == nil {
+			limit := 5
+			if len(keys) > limit {
+				keys = keys[:limit]
+			}
+			for _, k := range keys {
+				recentKeys = append(recentKeys, apiKeyToResponse(&k))
+			}
+		}
+	}
+
+	modelDist := []billing.HotspotRow{}
+	if s.billing != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		rows, err := s.billing.ModelBreakdown(ctx, billing.QueryFilter{
+			UserID: userIDStr,
+			From:   time.Now().AddDate(0, 0, -30),
+		})
+		cancel()
+		if err == nil {
+			modelDist = rows
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"summary":            summary,
+		"recent_api_keys":    recentKeys,
+		"model_distribution": modelDist,
+	})
+}
+
+func (s *Server) userUsage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+
+	claims := getUserClaims(r.Context())
+	if claims == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]any{"message": "not authenticated", "type": "authentication_error"}})
+		return
+	}
+
+	days := 7
+	if d := r.URL.Query().Get("days"); d != "" {
+		if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 && parsed <= 30 {
+			days = parsed
+		}
+	}
+
+	userIDStr := strconv.FormatInt(claims.UserID, 10)
+
+	data := []billing.DailyUsageRow{}
+	if s.billing != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		rows, err := s.billing.DailyUsage(ctx, billing.QueryFilter{
+			UserID: userIDStr,
+			From:   time.Now().AddDate(0, 0, -days),
+		})
+		cancel()
+		if err == nil {
+			data = rows
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
+}
+
+func (s *Server) userAPIKeyUsage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	claims := getUserClaims(r.Context())
+	if claims == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]any{"message": "not authenticated", "type": "authentication_error"}})
+		return
+	}
+
+	days := 7
+	if d := r.URL.Query().Get("days"); d != "" {
+		if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 && parsed <= 30 {
+			days = parsed
+		}
+	}
+
+	keys, err := s.userStore.ListAPIKeys(r.Context(), claims.UserID)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+
+	result := make([]map[string]any, 0, len(keys))
+	for _, k := range keys {
+		item := map[string]any{
+			"id":         k.ID,
+			"name":       k.Name,
+			"key_prefix": k.KeyPrefix,
+		}
+		if s.apiKeyUsageStore != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			summary, err := s.apiKeyUsageStore.Summary(ctx, auth.UsageStatsFilter{
+				KeyID: k.ID,
+				From:  time.Now().AddDate(0, 0, -days),
+			})
+			cancel()
+			if err == nil && summary != nil {
+				item["usage"] = summary
+			} else {
+				item["usage"] = &auth.APIKeyUsageSummary{KeyID: k.ID}
+			}
+		}
+		result = append(result, item)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": result})
+}
+
+func (s *Server) userAPIKeyUsageByID(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	claims := getUserClaims(r.Context())
+	if claims == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]any{"message": "not authenticated", "type": "authentication_error"}})
+		return
+	}
+
+	path := strings.TrimPrefix(r.URL.Path, "/api/user/api-keys/")
+	keyIDStr := strings.TrimSuffix(path, "/usage")
+	keyID, err := strconv.ParseInt(keyIDStr, 10, 64)
+	if err != nil || keyID <= 0 {
+		badRequest(w, "invalid api key id")
+		return
+	}
+
+	limit := parseLimit(r, 20)
+
+	history := []auth.APIKeyUsageRow{}
+	if s.apiKeyUsageStore != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		rows, err := s.apiKeyUsageStore.UsageHistory(ctx, keyID, limit)
+		cancel()
+		if err == nil {
+			history = rows
+		}
+	}
+
+	summary := &auth.APIKeyUsageSummary{KeyID: keyID}
+	if s.apiKeyUsageStore != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		summary, err = s.apiKeyUsageStore.Summary(ctx, auth.UsageStatsFilter{KeyID: keyID})
+		cancel()
+		if err != nil {
+			summary = &auth.APIKeyUsageSummary{KeyID: keyID}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"summary": summary,
+		"history": history,
+	})
 }
