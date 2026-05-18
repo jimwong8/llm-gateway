@@ -59,11 +59,19 @@ func main() {
 		}
 	}
 	var billingStore *billing.Store
+	var billingService *billing.Service
 	if cfg.BillingEnabled {
 		if store, err := billing.NewStore(cfg.PostgresDSN); err != nil {
 			log.Printf("billing init failed: %v", err)
 		} else {
 			billingStore = store
+			pricer := billing.NewPricer()
+			pricer.SetDefaultProviderPrice("openai", 0.01, 0.03)
+			pricer.SetDefaultProviderPrice("anthropic", 0.015, 0.075)
+			pricer.SetDefaultProviderPrice("google", 0.0025, 0.0075)
+			pricer.SetDefaultProviderPrice("mock", 0.001, 0.002)
+			billingService = billing.NewService(store, pricer)
+			billingService.LoadPricingFromDB(context.Background())
 		}
 	}
 	adminStore, err := admin.NewStore(cfg.PostgresDSN)
@@ -158,6 +166,9 @@ func main() {
 
 	srv := httpserver.New(cfg, registry, redisCache, modelRouter, auditStore, semanticCache, memoryStore, billingStore, limiter, adminStore, policyStore).
 		WithControlPlane(controlPlaneService, controlPlaneAudit, runtimePublisher, runtimeManager)
+	if billingService != nil {
+		srv = srv.WithBillingService(billingService)
+	}
 	if memoryStore != nil {
 		srv = srv.WithMemoryAdminHandler(httpserver.NewMemoryAdminHandler(memoryStore))
 	}
