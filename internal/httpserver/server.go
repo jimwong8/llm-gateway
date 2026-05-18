@@ -70,6 +70,7 @@ type Server struct {
 	oauthStore                    oauthStore
 	emailStore                    emailStore
 	emailService                  emailService
+	usageLogStore                 usageLogStore
 	chatStore                     chatStore
 	apiKeyRateLimiter             *APIKeyRateLimiter
 	defaultAPIKeyRPM              int
@@ -301,6 +302,8 @@ func (s *Server) mountUserAuthRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/auth/resend-verification", s.requireUser(s.emailResendVerification))
 	mux.HandleFunc("/api/auth/forgot-password", s.forgotPassword)
 	mux.HandleFunc("/api/auth/reset-password", s.resetPassword)
+	mux.HandleFunc("/api/user/usage-logs", s.requireUser(s.userUsageLogs))
+	mux.HandleFunc("/api/user/cost-trend", s.requireUser(s.userCostTrend))
 	mux.HandleFunc("/api/user/api-keys", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:

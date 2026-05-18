@@ -83,3 +83,24 @@ export interface ChannelStatusPoint {
   degraded: number
   down: number
 }
+
+export interface UserUsageLog {
+  id: number
+  user_id: number
+  provider: string
+  model: string
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  cost_cents: number
+  status_code: number
+  duration_ms: number
+  created_at: string
+}
+
+export interface CostTrendPoint {
+  date: string
+  cost_cents: number
+  tokens: number
+  requests: number
+}

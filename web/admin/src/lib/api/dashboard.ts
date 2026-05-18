@@ -65,3 +65,11 @@ export async function getUserUsage(days = 7): Promise<UserUsageResponse> {
   }
   return res.json()
 }
+
+export async function getUserUsageLogs(limit = 50, offset = 0): Promise<{ object: string; data: UserUsageLog[]; total: number }> {
+  return apiRequest(`/api/user/usage-logs?limit=${limit}&offset=${offset}`)
+}
+
+export async function getUserCostTrend(days = 30): Promise<{ object: string; data: CostTrendPoint[]; days: number }> {
+  return apiRequest(`/api/user/cost-trend?days=${days}`)
+}
