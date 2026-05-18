@@ -300,9 +300,15 @@ func (s *Server) chatStreamMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	providerMsgs := make([]providers.ChatMessage, 0, len(messages))
+	providerMsgs := make([]providers.ChatMessage, 0, len(messages)+1)
 	for _, msg := range messages {
 		providerMsgs = append(providerMsgs, providers.ChatMessage{Role: msg.Role, Content: msg.Content})
+	}
+
+	if s.memory != nil {
+		if memCtx, err := s.memory.SelectMemoriesForContext(r.Context(), claims.UserID, body.Content, 10); err == nil && memCtx != "" {
+			providerMsgs = append([]providers.ChatMessage{{Role: "system", Content: memCtx}}, providerMsgs...)
+		}
 	}
 
 	req := providers.ChatCompletionRequest{

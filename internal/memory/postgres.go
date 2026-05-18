@@ -2563,3 +2563,36 @@ func isTentativeCandidateFactSignal(content string) bool {
 	}
 	return false
 }
+
+func (s *Store) HybridSearch(ctx context.Context, userID int64, query string, limit int) ([]HybridSearchResult, error) {
+	searcher := NewHybridSearcher(s.db)
+	return searcher.Search(ctx, userID, query, limit)
+}
+
+func (s *Store) SelectMemoriesForContext(ctx context.Context, userID int64, query string, limit int) (string, error) {
+	results, err := s.HybridSearch(ctx, userID, query, limit)
+	if err != nil {
+		return "", err
+	}
+	if len(results) == 0 {
+		return "", nil
+	}
+
+	cb := DefaultContextBudget()
+	selector := NewMemorySelector(cb)
+	memTokens := int(float64(cb.MaxTokens-cb.ReserveTokens) * cb.MemoryRatio)
+	selected := selector.SelectMemories(results, memTokens)
+	if len(selected) == 0 {
+		return "", nil
+	}
+
+	return formatMemoryContext(selected), nil
+}
+
+func formatMemoryContext(selected []HybridSearchResult) string {
+	var parts []string
+	for i, m := range selected {
+		parts = append(parts, fmt.Sprintf("[%d] %s", i+1, m.Content))
+	}
+	return "Relevant memories:\n" + strings.Join(parts, "\n")
+}
