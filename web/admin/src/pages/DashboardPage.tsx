@@ -8,7 +8,8 @@ import { TokenUsageChart, ModelDistributionChart, CacheHitRateChart, ChannelStat
 import { Tabs } from '../components/ui'
 import { apiRequest } from '../lib/http'
 import { getUserToken } from '../lib/api/identity'
-import type { BillingSummary } from '../types/observability'
+import { getTokenUsage, getModelDistribution, getCacheHitRate, getChannelStatus } from '../lib/api/dashboard'
+import type { AdminSummary } from '../types/dashboard'
 import type { SessionAdminDashboard } from '../types/sessionDashboard'
 import { formatPercent } from '../lib/format'
 
@@ -43,7 +44,7 @@ function DashboardAdminView() {
 
   const summaryQuery = useQuery({
     queryKey: ['dashboard-observability-summary'],
-    queryFn: () => apiRequest<BillingSummary>('/admin/observability/summary'),
+    queryFn: () => apiRequest<AdminSummary>('/admin/observability/summary'),
     refetchInterval: 30_000,
   })
 
@@ -55,25 +56,25 @@ function DashboardAdminView() {
 
   const tokenUsageQuery = useQuery({
     queryKey: ['dashboard-charts', 'token-usage'],
-    queryFn: () => apiRequest<{ data: TokenUsagePoint[] }>('/admin/dashboard/charts/token-usage'),
+    queryFn: () => getTokenUsage(7),
     refetchInterval: 30_000,
   })
 
   const modelDistributionQuery = useQuery({
     queryKey: ['dashboard-charts', 'model-distribution'],
-    queryFn: () => apiRequest<{ data: ModelDistributionPoint[] }>('/admin/dashboard/charts/model-distribution'),
+    queryFn: getModelDistribution,
     refetchInterval: 30_000,
   })
 
   const cacheHitRateQuery = useQuery({
     queryKey: ['dashboard-charts', 'cache-hit-rate'],
-    queryFn: () => apiRequest<{ data: CacheHitPoint[] }>('/admin/dashboard/charts/cache-hit-rate'),
+    queryFn: () => getCacheHitRate(7),
     refetchInterval: 30_000,
   })
 
   const channelStatusQuery = useQuery({
     queryKey: ['dashboard-charts', 'channel-status'],
-    queryFn: () => apiRequest<{ data: ChannelStatusPoint[] }>('/admin/dashboard/charts/channel-status'),
+    queryFn: getChannelStatus,
     refetchInterval: 30_000,
   })
 
@@ -130,16 +131,33 @@ function DashboardAdminView() {
   )
 }
 
+function useUserRole(): 'admin' | 'user' | null {
+  const userToken = getUserToken()
+  if (!userToken) return null
+  try {
+    const parts = userToken.split('.')
+    if (parts.length !== 3) return 'user'
+    const payload = JSON.parse(atob(parts[1]))
+    const role = payload.role
+    if (role === 'admin' || role === 'operator' || role === 'readonly') return 'admin'
+    return 'user'
+  } catch {
+    return 'user'
+  }
+}
+
 export function DashboardPage() {
+  const role = useUserRole()
+  const isAdmin = role === 'admin'
   const isUser = !!getUserToken()
 
   return (
     <AppShell
-      title={isUser ? '我的面板' : '仪表盘'}
-      description={isUser ? '查看您的配额使用、API Keys 和调用统计。' : '聚合展示服务状态、请求量、缓存命中率与 Provider 错误率，作为控制台首页。'}
+      title={isUser && !isAdmin ? '我的面板' : '仪表盘'}
+      description={isUser && !isAdmin ? '查看您的配额使用、API Keys 和调用统计。' : '聚合展示服务状态、请求量、缓存命中率与 Provider 错误率，作为控制台首页。'}
     >
       <div className="events-page">
-        {isUser ? <UserDashboardView /> : <DashboardAdminView />}
+        {isUser && !isAdmin ? <UserDashboardView /> : <DashboardAdminView />}
       </div>
     </AppShell>
   )

@@ -6,6 +6,13 @@ import { clearToken, setToken } from '../lib/auth'
 import { clearUserToken, setUserToken } from '../lib/api/identity'
 import { DashboardPage } from './DashboardPage'
 
+function makeJWT(role: string): string {
+  const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
+  const payload = btoa(JSON.stringify({ uid: 1, email: 't@t.com', role, exp: 9999999999 }))
+  const signature = 'test-sig'
+  return `${header}.${payload}.${signature}`
+}
+
 const adminFetchMocks = () =>
   vi
     .fn()
@@ -41,7 +48,7 @@ const userFetchMocks = () =>
   vi.fn().mockResolvedValue(
     new Response(
       JSON.stringify({
-        summary: { requests: 5, total_tokens: 1000, prompt_tokens: 600, completion_tokens: 400, estimated_cost: 0.002 },
+        summary: { requests: 5, total_tokens: 1000, prompt_tokens: 600, completion_tokens: 400, estimated_cost: 0.002, avg_latency_ms: 50, provider_error_rate: 0.01, cache_hit_rate: 0.9 },
         model_distribution: [],
         recent_api_keys: [],
       }),
@@ -94,17 +101,14 @@ describe('DashboardPage - admin view', () => {
   })
 })
 
-describe('DashboardPage - user view', () => {
-  beforeEach(() => {
-    setUserToken('demo-user-token')
-  })
-
+describe('DashboardPage - user view with JWT role', () => {
   afterEach(() => {
     clearUserToken()
     vi.restoreAllMocks()
   })
 
-  it('renders user dashboard panel when user token exists', async () => {
+  it('renders user dashboard when JWT role is user', async () => {
+    setUserToken(makeJWT('user'))
     const fetchMock = userFetchMocks()
     vi.stubGlobal('fetch', fetchMock)
 
@@ -115,13 +119,60 @@ describe('DashboardPage - user view', () => {
     expect(screen.getByText('5')).toBeInTheDocument()
   })
 
+  it('renders admin dashboard when JWT role is admin', async () => {
+    setUserToken(makeJWT('admin'))
+    const fetchMock = adminFetchMocks()
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderPage()
+
+    expect(await screen.findByRole('heading', { name: '仪表盘', level: 1 })).toBeInTheDocument()
+    expect(await screen.findByText('llm-gateway')).toBeInTheDocument()
+  })
+
+  it('renders admin dashboard when JWT role is operator', async () => {
+    setUserToken(makeJWT('operator'))
+    const fetchMock = adminFetchMocks()
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderPage()
+
+    expect(await screen.findByRole('heading', { name: '仪表盘', level: 1 })).toBeInTheDocument()
+  })
+
+  it('renders admin dashboard when JWT role is readonly', async () => {
+    setUserToken(makeJWT('readonly'))
+    const fetchMock = adminFetchMocks()
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderPage()
+
+    expect(await screen.findByRole('heading', { name: '仪表盘', level: 1 })).toBeInTheDocument()
+  })
+
   it('shows user dashboard error state on fetch failure', async () => {
+    setUserToken(makeJWT('user'))
     const fetchMock = vi.fn().mockRejectedValue(new Error('fetch failed'))
     vi.stubGlobal('fetch', fetchMock)
 
     renderPage()
 
     expect(await screen.findByText('用户面板加载失败')).toBeInTheDocument()
+  })
+})
+
+describe('DashboardPage - no token', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('renders admin view when no user token exists', async () => {
+    const fetchMock = adminFetchMocks()
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderPage()
+
+    expect(await screen.findByRole('heading', { name: '仪表盘', level: 1 })).toBeInTheDocument()
   })
 })
 

@@ -3,7 +3,16 @@ import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const defaultMockData = {
-  summary: { requests: 42, total_tokens: 56789, prompt_tokens: 30000, completion_tokens: 26789, estimated_cost: 0.056 },
+  summary: {
+    requests: 42,
+    total_tokens: 56789,
+    prompt_tokens: 30000,
+    completion_tokens: 26789,
+    estimated_cost: 0.056,
+    avg_latency_ms: 123.4,
+    provider_error_rate: 0.02,
+    cache_hit_rate: 0.88,
+  },
   model_distribution: [
     { key: 'gpt-4', requests: 30, total_tokens: 40000, estimated_cost: 0.04 },
     { key: 'gpt-3.5', requests: 12, total_tokens: 16789, estimated_cost: 0.016 },
@@ -51,6 +60,17 @@ describe('UserDashboardView', () => {
     expect(screen.getByText('0.0560')).toBeInTheDocument()
   })
 
+  it('renders enhanced summary metrics', async () => {
+    const { UserDashboardView } = await import('./UserDashboardView')
+    renderWithQuery(<UserDashboardView />)
+    expect(await screen.findByText('平均延迟 (ms)')).toBeInTheDocument()
+    expect(screen.getByText('123.4')).toBeInTheDocument()
+    expect(screen.getByText('缓存命中率')).toBeInTheDocument()
+    expect(screen.getByText('88.0%')).toBeInTheDocument()
+    expect(screen.getByText('错误率')).toBeInTheDocument()
+    expect(screen.getByText('2.0%')).toBeInTheDocument()
+  })
+
   it('renders API keys table', async () => {
     const { UserDashboardView } = await import('./UserDashboardView')
     renderWithQuery(<UserDashboardView />)
@@ -68,7 +88,7 @@ describe('UserDashboardView', () => {
     )
     renderWithQuery(<UserDashboardView />)
     expect(await screen.findByText('42')).toBeInTheDocument()
-    expect(screen.queryByText('最近 API Keys')).not.toBeInTheDocument()
+    expect(screen.queryByText('我的 API Keys')).not.toBeInTheDocument()
   })
 
   it('shows loading state', async () => {
@@ -85,6 +105,26 @@ describe('UserDashboardView', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('fetch error')))
     renderWithQuery(<UserDashboardView />)
     expect(await screen.findByText('用户面板加载失败')).toBeInTheDocument()
+  })
+
+  it('renders model distribution section when data exists', async () => {
+    const { UserDashboardView } = await import('./UserDashboardView')
+    vi.restoreAllMocks()
+    vi.stubGlobal('fetch', setupFetchMocks())
+    renderWithQuery(<UserDashboardView />)
+    expect(await screen.findByText('模型分布')).toBeInTheDocument()
+  })
+
+  it('hides model distribution when no data', async () => {
+    const { UserDashboardView } = await import('./UserDashboardView')
+    vi.restoreAllMocks()
+    vi.stubGlobal(
+      'fetch',
+      setupFetchMocks({ ...defaultMockData, model_distribution: [] }),
+    )
+    renderWithQuery(<UserDashboardView />)
+    expect(await screen.findByText('42')).toBeInTheDocument()
+    expect(screen.queryByText('模型分布')).not.toBeInTheDocument()
   })
 })
 

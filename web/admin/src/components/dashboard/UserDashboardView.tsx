@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { SummaryMetricCard } from './SummaryMetricCard'
 import { DailyRequestsChart, ModelDistributionChart } from '../charts'
 import { getUserDashboard, getUserUsage } from '../../lib/api/dashboard'
+import type { UserDashboardData } from '../../types/dashboard'
 
 export function UserDashboardView() {
   const dashboardQuery = useQuery({
@@ -48,11 +49,14 @@ export function UserDashboardView() {
         <SummaryMetricCard label="Prompt Tokens" value={summary.prompt_tokens} />
         <SummaryMetricCard label="Completion Tokens" value={summary.completion_tokens} />
         <SummaryMetricCard label="估算成本" value={summary.estimated_cost.toFixed(4)} />
+        <SummaryMetricCard label="平均延迟 (ms)" value={Number(summary.avg_latency_ms.toFixed(1))} />
+        <SummaryMetricCard label="缓存命中率" value={`${(summary.cache_hit_rate * 100).toFixed(1)}%`} />
+        <SummaryMetricCard label="错误率" value={`${(summary.provider_error_rate * 100).toFixed(1)}%`} />
       </div>
 
       {data.recent_api_keys && data.recent_api_keys.length > 0 && (
         <div className="page-surface" style={{ marginTop: '1rem' }}>
-          <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem', fontWeight: 600 }}>最近 API Keys</h3>
+          <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem', fontWeight: 600 }}>我的 API Keys</h3>
           <table className="data-table">
             <thead>
               <tr>
@@ -79,12 +83,16 @@ export function UserDashboardView() {
       )}
 
       <div className="page-surface" style={{ marginTop: '1rem' }}>
+        <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem', fontWeight: 600 }}>调用趋势</h3>
         <DailyRequestsChart data={usageData} />
       </div>
 
-      <div className="page-surface" style={{ marginTop: '1rem' }}>
-        <ModelDistributionChart data={modelData} />
-      </div>
+      {modelData && modelData.length > 0 && (
+        <div className="page-surface" style={{ marginTop: '1rem' }}>
+          <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem', fontWeight: 600 }}>模型分布</h3>
+          <ModelDistributionChart data={modelData} />
+        </div>
+      )}
     </div>
   )
 }
