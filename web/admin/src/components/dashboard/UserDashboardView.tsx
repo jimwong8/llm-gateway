@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { SummaryMetricCard } from './SummaryMetricCard'
 import { DailyRequestsChart, ModelDistributionChart } from '../charts'
@@ -5,6 +6,7 @@ import { getUserDashboard, getUserUsage } from '../../lib/api/dashboard'
 import type { UserDashboardData } from '../../types/dashboard'
 
 export function UserDashboardView() {
+  const { t } = useTranslation()
   const dashboardQuery = useQuery({
     queryKey: ['user-dashboard'],
     queryFn: getUserDashboard,
@@ -18,11 +20,11 @@ export function UserDashboardView() {
   })
 
   if (dashboardQuery.isLoading) {
-    return <div className="event-state">正在加载用户面板…</div>
+    return <div className="event-state">{t('dashboard.userLoading')}</div>
   }
 
   if (dashboardQuery.error) {
-    return <div className="config-error" role="alert">用户面板加载失败</div>
+    return <div className="config-error" role="alert">{t('dashboard.userPanelLoadError')}</div>
   }
 
   const data = dashboardQuery.data
@@ -44,27 +46,27 @@ export function UserDashboardView() {
   return (
     <div>
       <div className="summary-card-grid">
-        <SummaryMetricCard label="总请求数" value={summary.requests} />
-        <SummaryMetricCard label="总 Token" value={summary.total_tokens} />
+        <SummaryMetricCard label={t('dashboard.totalRequests')} value={summary.requests} />
+        <SummaryMetricCard label={t('dashboard.totalTokens')} value={summary.total_tokens} />
         <SummaryMetricCard label="Prompt Tokens" value={summary.prompt_tokens} />
         <SummaryMetricCard label="Completion Tokens" value={summary.completion_tokens} />
-        <SummaryMetricCard label="估算成本" value={summary.estimated_cost.toFixed(4)} />
-        <SummaryMetricCard label="平均延迟 (ms)" value={Number(summary.avg_latency_ms.toFixed(1))} />
-        <SummaryMetricCard label="缓存命中率" value={`${(summary.cache_hit_rate * 100).toFixed(1)}%`} />
-        <SummaryMetricCard label="错误率" value={`${(summary.provider_error_rate * 100).toFixed(1)}%`} />
+        <SummaryMetricCard label={t('dashboard.estimatedCost')} value={summary.estimated_cost.toFixed(4)} />
+        <SummaryMetricCard label={t('dashboard.avgLatency')} value={Number(summary.avg_latency_ms.toFixed(1))} />
+        <SummaryMetricCard label={t('dashboard.cacheHitRate')} value={`${(summary.cache_hit_rate * 100).toFixed(1)}%`} />
+        <SummaryMetricCard label={t('dashboard.errorRate')} value={`${(summary.provider_error_rate * 100).toFixed(1)}%`} />
       </div>
 
       {data.recent_api_keys && data.recent_api_keys.length > 0 && (
         <div className="page-surface" style={{ marginTop: '1rem' }}>
-          <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem', fontWeight: 600 }}>我的 API Keys</h3>
+          <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem', fontWeight: 600 }}>{t('dashboard.myApiKeys')}</h3>
           <table className="data-table">
             <thead>
               <tr>
-                <th>名称</th>
-                <th>Key 前缀</th>
-                <th>状态</th>
-                <th>最近使用</th>
-                <th>创建时间</th>
+                <th>{t('dashboard.keyName')}</th>
+                <th>{t('dashboard.keyPrefix')}</th>
+                <th>{t('dashboard.keyStatus')}</th>
+                <th>{t('dashboard.keyLastUsed')}</th>
+                <th>{t('dashboard.keyCreatedAt')}</th>
               </tr>
             </thead>
             <tbody>
@@ -73,7 +75,7 @@ export function UserDashboardView() {
                   <td>{k.name}</td>
                   <td><code>{k.key_prefix}...</code></td>
                   <td>{k.status}</td>
-                  <td>{k.last_used_at ? new Date(k.last_used_at).toLocaleString() : '从未使用'}</td>
+                  <td>{k.last_used_at ? new Date(k.last_used_at).toLocaleString() : t('dashboard.neverUsed')}</td>
                   <td>{new Date(k.created_at).toLocaleString()}</td>
                 </tr>
               ))}

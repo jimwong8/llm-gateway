@@ -28,6 +28,7 @@ import { AuditExportPage } from './pages/AuditExportPage'
 import { BillingPage } from './pages/BillingPage'
 import { PricingPage } from './pages/admin/PricingPage'
 import { BroadcastPage } from './pages/admin/BroadcastPage'
+import { OAuthCallbackPage } from './pages/OAuthCallback'
 
 export const router = createBrowserRouter([
   {
@@ -41,6 +42,10 @@ export const router = createBrowserRouter([
   {
     path: 'signup',
     element: <SignupPage />,
+  },
+  {
+    path: 'oauth/callback',
+    element: <OAuthCallbackPage />,
   },
   {
     element: <ProtectedRoute />,

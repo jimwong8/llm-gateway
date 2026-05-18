@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { AppShell } from '../components/layout/AppShell'
 import { DashboardAdminOverviewSection } from '../components/dashboard/DashboardAdminOverviewSection'
@@ -21,12 +22,7 @@ type AdminHealth = {
 
 type ChartTab = 'tokens' | 'models' | 'cache' | 'channels'
 
-const CHART_TABS = [
-  { key: 'tokens', label: 'Token 趋势' },
-  { key: 'models', label: '模型分布' },
-  { key: 'cache', label: '缓存命中' },
-  { key: 'channels', label: '渠道状态' },
-]
+
 
 type TokenUsagePoint = { date: string; prompt: number; completion: number; total: number }
 type ModelDistributionPoint = { name: string; value: number }
@@ -34,7 +30,15 @@ type CacheHitPoint = { date: string; hitRate: number; requests: number }
 type ChannelStatusPoint = { name: string; healthy: number; degraded: number; down: number }
 
 function DashboardAdminView() {
+  const { t } = useTranslation()
   const [activeTab, setActiveTab] = useState<ChartTab>('tokens')
+
+  const CHART_TABS = [
+    { key: 'tokens', label: t('dashboard.chartTokens') },
+    { key: 'models', label: t('dashboard.chartModels') },
+    { key: 'cache', label: t('dashboard.chartCache') },
+    { key: 'channels', label: t('dashboard.chartChannels') },
+  ]
 
   const healthQuery = useQuery({
     queryKey: ['dashboard-health'],
@@ -91,8 +95,8 @@ function DashboardAdminView() {
 
   return (
     <>
-      {loading ? <div className="event-state">正在加载首页概览…</div> : null}
-      {hasError ? <div className="config-error" role="alert">首页概览加载失败，请检查后端接口状态。</div> : null}
+      {loading ? <div className="event-state">{t('dashboard.loading')}</div> : null}
+      {hasError ? <div className="config-error" role="alert">{t('dashboard.loadError')}</div> : null}
 
       {!loading && !hasError ? (
         <DashboardAdminOverviewSection
@@ -115,8 +119,8 @@ function DashboardAdminView() {
         <Tabs tabs={CHART_TABS} activeKey={activeTab} onChange={(key) => setActiveTab(key as ChartTab)} />
 
         <div style={{ marginTop: '1rem' }}>
-          {chartLoading ? <div className="event-state">加载图表数据中…</div> : null}
-          {chartError ? <div className="config-error" role="alert">图表数据加载失败</div> : null}
+          {chartLoading ? <div className="event-state">{t('dashboard.chartLoading')}</div> : null}
+          {chartError ? <div className="config-error" role="alert">{t('dashboard.chartError')}</div> : null}
           {!chartLoading && !chartError ? (
             <>
               {activeTab === 'tokens' && <TokenUsageChart data={tokenData} />}
@@ -147,14 +151,15 @@ function useUserRole(): 'admin' | 'user' | null {
 }
 
 export function DashboardPage() {
+  const { t } = useTranslation()
   const role = useUserRole()
   const isAdmin = role === 'admin'
   const isUser = !!getUserToken()
 
   return (
     <AppShell
-      title={isUser && !isAdmin ? '我的面板' : '仪表盘'}
-      description={isUser && !isAdmin ? '查看您的配额使用、API Keys 和调用统计。' : '聚合展示服务状态、请求量、缓存命中率与 Provider 错误率，作为控制台首页。'}
+      title={isUser && !isAdmin ? t('dashboard.myPanel') : t('dashboard.title')}
+      description={isUser && !isAdmin ? t('dashboard.userDescription') : t('dashboard.description')}
     >
       <div className="events-page">
         {isUser && !isAdmin ? <UserDashboardView /> : <DashboardAdminView />}

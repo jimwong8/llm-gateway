@@ -35,12 +35,13 @@ func (m *mockOAuthStore) DeleteOAuthBinding(ctx context.Context, userID int64, p
 
 func newTestServerWithOAuth() *Server {
 	cfg := config.Config{
-		JWTSecret:        "test-secret-key-at-least-32-characters!!",
-		GitHubClientID:   "test-client-id",
+		JWTSecret:          "test-secret-key-at-least-32-characters!!",
+		GitHubClientID:     "test-client-id",
 		GitHubClientSecret: "test-client-secret",
 	}
 	s := New(cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	s.userStore = &mockStore{}
+	s.oauthStore = &mockOAuthStore{}
 	return s
 }
 
@@ -49,7 +50,6 @@ func TestOAuthConfig_ReturnsEnabled(t *testing.T) {
 	mux := http.NewServeMux()
 	s.mountUserAuthRoutes(mux)
 
-	mux.HandleFunc("/api/auth/oauth/config", s.oauthConfig)
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/oauth/config", nil)
 	rr := httptest.NewRecorder()
 
