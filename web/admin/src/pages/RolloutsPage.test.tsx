@@ -17,8 +17,15 @@ describe('RolloutsPage', () => {
   })
 
   it('renders rollout rows and summary metrics', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(
         JSON.stringify({
           object: 'list',
           data: [
@@ -56,14 +63,14 @@ describe('RolloutsPage', () => {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         },
-      ),
-    )
+      )
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     renderPage()
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
     })
 
     expect(await screen.findByRole('heading', { name: '灰度发布', level: 1 })).toBeInTheDocument()
@@ -86,36 +93,37 @@ describe('RolloutsPage', () => {
 
   it('opens rollback dialog and submits rollback request', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            object: 'list',
-            data: [
-              {
-                id: 'ro-1',
-                policy_version_id: 'pv-1',
-                environment: 'prod',
-                rollout_mode: 'progressive',
-                rollout_percent: 60,
-                status: 'running',
-                triggered_by: 'ops-bot',
-                error_rate: 0.018,
-                p95_latency: 720,
-                fallback_rate: 0.006,
-                sample_count: 900,
-              },
-            ],
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
+    const baseList = {
+      object: 'list',
+      data: [
+        {
+          id: 'ro-1',
+          policy_version_id: 'pv-1',
+          environment: 'prod',
+          rollout_mode: 'progressive',
+          rollout_percent: 60,
+          status: 'running',
+          triggered_by: 'ops-bot',
+          error_rate: 0.018,
+          p95_latency: 720,
+          fallback_rate: 0.006,
+          sample_count: 900,
+        },
+      ],
+    }
+
+    let postSeen = false
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url.includes('/admin/governance/rollbacks') && init?.method === 'POST') {
+        postSeen = true
+        return new Response(
           JSON.stringify({
             id: 'rb-1',
             rollout_id: 'ro-1',
@@ -126,38 +134,14 @@ describe('RolloutsPage', () => {
             reason: 'manual rollback',
             status: 'completed',
           }),
-          {
-            status: 201,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            object: 'list',
-            data: [
-              {
-                id: 'ro-1',
-                policy_version_id: 'pv-1',
-                environment: 'prod',
-                rollout_mode: 'progressive',
-                rollout_percent: 60,
-                status: 'running',
-                triggered_by: 'ops-bot',
-                error_rate: 0.018,
-                p95_latency: 720,
-                fallback_rate: 0.006,
-                sample_count: 900,
-              },
-            ],
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
+          { status: 201, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      return new Response(JSON.stringify(baseList), {
+        status: postSeen ? 200 : 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
 
     vi.stubGlobal('fetch', fetchMock)
 
@@ -176,10 +160,15 @@ describe('RolloutsPage', () => {
     await user.click(within(form).getByRole('button', { name: '确认回滚' }))
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(3)
+      expect(fetchMock).toHaveBeenCalledTimes(4)
     })
 
-    const [rollbackUrl, rollbackInit] = fetchMock.mock.calls[1]
+    const rollbackCall = fetchMock.mock.calls.find((call) => {
+      const [url, init] = call
+      return String(url).includes('/admin/governance/rollbacks') && init?.method === 'POST'
+    })
+    expect(rollbackCall).toBeDefined()
+    const [rollbackUrl, rollbackInit] = rollbackCall!
     expect(String(rollbackUrl)).toBe('/admin/governance/rollbacks')
     expect(rollbackInit).toMatchObject({ method: 'POST' })
     const body = rollbackInit?.body ? JSON.parse(String(rollbackInit.body)) : {}
@@ -192,8 +181,15 @@ describe('RolloutsPage', () => {
     expect(await screen.findByText('已触发回滚：rb-1')).toBeInTheDocument()
   })
   it('highlights rollout row from policy version query param', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(
         JSON.stringify({
           object: 'list',
           data: [
@@ -229,8 +225,8 @@ describe('RolloutsPage', () => {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         },
-      ),
-    )
+      )
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     renderPage('/rollouts?policyVersionId=pv-2')

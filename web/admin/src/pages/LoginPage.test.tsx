@@ -5,10 +5,16 @@ import { LoginPage } from './LoginPage'
 import { ADMIN_TOKEN_KEY } from '../lib/auth'
 
 function mockOAuthConfig(enabled: boolean) {
-  globalThis.fetch = vi.fn().mockResolvedValue({
-    ok: true,
-    headers: new Headers({ 'Content-Type': 'application/json' }),
-    json: () => Promise.resolve({ github_enabled: enabled }),
+  globalThis.fetch = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url.includes('/api/user/broadcasts')) {
+      return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+    return {
+      ok: true,
+      headers: new Headers({ 'Content-Type': 'application/json' }),
+      json: () => Promise.resolve({ github_enabled: enabled }),
+    }
   })
 }
 

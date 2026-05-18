@@ -14,16 +14,22 @@ function makeJWT(role: string): string {
 }
 
 const adminFetchMocks = () =>
-  vi
-    .fn()
-    .mockResolvedValueOnce(
-      new Response(JSON.stringify({ service: 'llm-gateway', admin_auth: 'enabled' }), {
+  vi.fn(async (input: RequestInfo | URL) => {
+    const url = typeof input === 'string' ? input : input.toString()
+    if (url.includes('/api/user/broadcasts')) {
+      return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
-      }),
-    )
-    .mockResolvedValueOnce(
-      new Response(
+      })
+    }
+    if (url.includes('/admin/health')) {
+      return new Response(JSON.stringify({ service: 'llm-gateway', admin_auth: 'enabled' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+    if (url.includes('/admin/observability/summary')) {
+      return new Response(
         JSON.stringify({
           requests: 12,
           total_tokens: 345,
@@ -35,26 +41,32 @@ const adminFetchMocks = () =>
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         },
-      ),
-    )
-    .mockResolvedValue(
-      new Response(JSON.stringify({ data: [] }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    )
+      )
+    }
+    return new Response(JSON.stringify({ data: [] }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  })
 
 const userFetchMocks = () =>
-  vi.fn().mockResolvedValue(
-    new Response(
+  vi.fn(async (input: RequestInfo | URL) => {
+    const url = typeof input === 'string' ? input : input.toString()
+    if (url.includes('/api/user/broadcasts')) {
+      return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+    return new Response(
       JSON.stringify({
         summary: { requests: 5, total_tokens: 1000, prompt_tokens: 600, completion_tokens: 400, estimated_cost: 0.002, avg_latency_ms: 50, provider_error_rate: 0.01, cache_hit_rate: 0.9 },
         model_distribution: [],
         recent_api_keys: [],
       }),
       { status: 200, headers: { 'Content-Type': 'application/json' } },
-    ),
-  )
+    )
+  })
 
 describe('DashboardPage - admin view', () => {
   beforeEach(() => {
@@ -67,29 +79,34 @@ describe('DashboardPage - admin view', () => {
   })
 
   it('renders service and summary cards from admin endpoints', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ service: 'llm-gateway', admin_auth: 'enabled' }), {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url.includes('/admin/health')) {
+        return new Response(JSON.stringify({ service: 'llm-gateway', admin_auth: 'enabled' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(
+        JSON.stringify({
+          requests: 12,
+          total_tokens: 345,
+          cache_hit_rate: 0.88,
+          provider_error_rate: 0.125,
+          avg_latency_ms: 123.4,
         }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
       )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            requests: 12,
-            total_tokens: 345,
-            cache_hit_rate: 0.88,
-            provider_error_rate: 0.125,
-            avg_latency_ms: 123.4,
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     renderPage()

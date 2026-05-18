@@ -16,12 +16,19 @@ describe('PoliciesPage', () => {
   })
 
   it('renders policy models page', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ tenant_id: '', models: ['gpt-4o-mini', 'claude-sonnet'] }), {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(JSON.stringify({ tenant_id: '', models: ['gpt-4o-mini', 'claude-sonnet'] }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
-      }),
-    )
+      })
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     renderPage()

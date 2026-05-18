@@ -112,7 +112,8 @@ describe('UserDashboardView', () => {
     vi.restoreAllMocks()
     vi.stubGlobal('fetch', setupFetchMocks())
     renderWithQuery(<UserDashboardView />)
-    expect(await screen.findByText('模型分布')).toBeInTheDocument()
+    const headings = await screen.findAllByRole('heading', { level: 3, name: '模型分布' })
+    expect(headings.length).toBeGreaterThan(0)
   })
 
   it('hides model distribution when no data', async () => {
@@ -124,7 +125,7 @@ describe('UserDashboardView', () => {
     )
     renderWithQuery(<UserDashboardView />)
     expect(await screen.findByText('42')).toBeInTheDocument()
-    expect(screen.queryByText('模型分布')).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 3, name: '模型分布' })).not.toBeInTheDocument()
   })
 })
 

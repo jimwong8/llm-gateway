@@ -36,12 +36,19 @@ describe('SystemPage', () => {
   })
 
   it('loads site config form', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify(defaultSiteConfig), {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(JSON.stringify(defaultSiteConfig), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
-      }),
-    )
+      })
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     renderWithQuery(<SystemPage />)
@@ -51,12 +58,19 @@ describe('SystemPage', () => {
   })
 
   it('updates site config on form submit', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify(defaultSiteConfig), {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(JSON.stringify(defaultSiteConfig), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
-      }),
-    )
+      })
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     renderWithQuery(<SystemPage />)
@@ -72,24 +86,30 @@ describe('SystemPage', () => {
   })
 
   it('rotates JWT secret', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(
-      new Response(JSON.stringify(defaultSiteConfig), {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url.includes('/admin/config/jwt/rotate')) {
+        return new Response(JSON.stringify({ jwt_secret: 'abc123', jwt_secret_rotated_at: '2026-01-01T00:00:00Z', message: 'ok' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(JSON.stringify(defaultSiteConfig), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
-      }),
-    )
+      })
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     renderWithQuery(<SystemPage />)
 
     await screen.findByDisplayValue('LLM Gateway')
-
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ jwt_secret: 'abc123', jwt_secret_rotated_at: '2026-01-01T00:00:00Z' }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    )
 
     const rotateBtn = screen.getByRole('button', { name: '重新生成 JWT Secret' })
     await userEvent.click(rotateBtn)

@@ -15,9 +15,13 @@ const listResponse = {
 describe('debug', () => {
   beforeEach(() => {
     setToken('demo-admin-token')
-    vi.spyOn(global, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(listResponse), { status: 200, headers: { 'Content-Type': 'application/json' } }),
-    )
+    vi.spyOn(global, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      return new Response(JSON.stringify(listResponse), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    })
   })
   afterEach(() => {
     clearToken()

@@ -17,48 +17,48 @@ describe('PolicyVersionsPage', () => {
   })
 
   it('renders policy versions and selected diff content', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            object: 'list',
-            data: [
-              {
-                id: 'pv-3',
-                environment: 'prod',
-                status: 'active',
-                created_by: 'ops',
-                approved_by: 'owner',
-                activated_at: '2026-04-19T10:00:00Z',
-              },
-              {
-                id: 'pv-2',
-                environment: 'prod',
-                status: 'approved',
-                created_by: 'ops',
-              },
-            ],
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            from: 'pv-2',
-            to: 'pv-3',
-            changed_fields: ['routing.default_model'],
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
+    let callIndex = 0
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      const responses = [
+        JSON.stringify({
+          object: 'list',
+          data: [
+            {
+              id: 'pv-3',
+              environment: 'prod',
+              status: 'active',
+              created_by: 'ops',
+              approved_by: 'owner',
+              activated_at: '2026-04-19T10:00:00Z',
+            },
+            {
+              id: 'pv-2',
+              environment: 'prod',
+              status: 'approved',
+              created_by: 'ops',
+            },
+          ],
+        }),
+        JSON.stringify({
+          from: 'pv-2',
+          to: 'pv-3',
+          changed_fields: ['routing.default_model'],
+        }),
+      ]
+      const body = responses[Math.min(callIndex, responses.length - 1)]
+      callIndex++
+      return new Response(body, {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
 
     vi.stubGlobal('fetch', fetchMock)
 
@@ -69,132 +69,103 @@ describe('PolicyVersionsPage', () => {
     expect(screen.getByRole('button', { name: 'pv-2' })).toBeInTheDocument()
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2)
     })
 
-    expect(String(fetchMock.mock.calls[0][0])).toContain('/admin/governance/policy-versions?limit=50')
-    expect(String(fetchMock.mock.calls[1][0])).toContain('/admin/governance/policy-versions/pv-3/diff')
+    const nonBroadcastCalls = fetchMock.mock.calls.filter(
+      (call) => !String(call[0]).includes('/api/user/broadcasts'),
+    )
+    expect(String(nonBroadcastCalls[0][0])).toContain('/admin/governance/policy-versions?limit=50')
+    expect(String(nonBroadcastCalls[1][0])).toContain('/admin/governance/policy-versions/pv-3/diff')
 
     expect(screen.getByTestId('policy-diff-content')).toHaveTextContent('routing.default_model')
   })
 
   it('supports approve and activate actions for straightforward transitions', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            object: 'list',
-            data: [
-              {
-                id: 'pv-draft',
-                environment: 'prod',
-                status: 'draft',
-                created_by: 'ops',
-              },
-              {
-                id: 'pv-approved',
-                environment: 'prod',
-                status: 'approved',
-                created_by: 'ops',
-              },
-            ],
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            diff: 'initial diff payload',
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            id: 'pv-draft',
-            environment: 'prod',
-            status: 'approved',
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            object: 'list',
-            data: [
-              {
-                id: 'pv-draft',
-                environment: 'prod',
-                status: 'approved',
-                created_by: 'ops',
-                approved_by: 'admin-ui',
-              },
-              {
-                id: 'pv-approved',
-                environment: 'prod',
-                status: 'approved',
-                created_by: 'ops',
-              },
-            ],
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            id: 'pv-approved',
-            environment: 'prod',
-            status: 'active',
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            object: 'list',
-            data: [
-              {
-                id: 'pv-approved',
-                environment: 'prod',
-                status: 'active',
-                created_by: 'ops',
-              },
-              {
-                id: 'pv-draft',
-                environment: 'prod',
-                status: 'approved',
-                created_by: 'ops',
-              },
-            ],
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
+    let callIndex = 0
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      const responses = [
+        JSON.stringify({
+          object: 'list',
+          data: [
+            {
+              id: 'pv-draft',
+              environment: 'prod',
+              status: 'draft',
+              created_by: 'ops',
+            },
+            {
+              id: 'pv-approved',
+              environment: 'prod',
+              status: 'approved',
+              created_by: 'ops',
+            },
+          ],
+        }),
+        JSON.stringify({
+          diff: 'initial diff payload',
+        }),
+        JSON.stringify({
+          id: 'pv-draft',
+          environment: 'prod',
+          status: 'approved',
+        }),
+        JSON.stringify({
+          object: 'list',
+          data: [
+            {
+              id: 'pv-draft',
+              environment: 'prod',
+              status: 'approved',
+              created_by: 'ops',
+              approved_by: 'admin-ui',
+            },
+            {
+              id: 'pv-approved',
+              environment: 'prod',
+              status: 'approved',
+              created_by: 'ops',
+            },
+          ],
+        }),
+        JSON.stringify({
+          id: 'pv-approved',
+          environment: 'prod',
+          status: 'active',
+        }),
+        JSON.stringify({
+          object: 'list',
+          data: [
+            {
+              id: 'pv-approved',
+              environment: 'prod',
+              status: 'active',
+              created_by: 'ops',
+            },
+            {
+              id: 'pv-draft',
+              environment: 'prod',
+              status: 'approved',
+              created_by: 'ops',
+            },
+          ],
+        }),
+      ]
+      const body = responses[Math.min(callIndex, responses.length - 1)]
+      callIndex++
+      return new Response(body, {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
 
     vi.stubGlobal('fetch', fetchMock)
 
@@ -234,11 +205,18 @@ describe('PolicyVersionsPage', () => {
   })
 
   it('shows graceful message when diff API is unavailable', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
+    let callIndex = 0
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      const responses = [
+        {
+          body: JSON.stringify({
             object: 'list',
             data: [
               {
@@ -248,18 +226,20 @@ describe('PolicyVersionsPage', () => {
               },
             ],
           }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: { message: 'route not found' } }), {
+          status: 200,
+        },
+        {
+          body: JSON.stringify({ error: { message: 'route not found' } }),
           status: 404,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
+        },
+      ]
+      const resp = responses[Math.min(callIndex, responses.length - 1)]
+      callIndex++
+      return new Response(resp.body, {
+        status: resp.status,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
 
     vi.stubGlobal('fetch', fetchMock)
 
@@ -269,42 +249,42 @@ describe('PolicyVersionsPage', () => {
     expect(await screen.findByText('版本差异暂不可用（diff API 尚未就绪或返回异常）。')).toBeInTheDocument()
   })
   it('selects version from environment query and offers rollout deep link', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            object: 'list',
-            data: [
-              {
-                id: 'pv-staging',
-                environment: 'staging',
-                status: 'approved',
-                created_by: 'ops',
-              },
-              {
-                id: 'pv-prod',
-                environment: 'prod',
-                status: 'active',
-                created_by: 'ops',
-              },
-            ],
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({ diff: 'staging diff payload' }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
+    let callIndex = 0
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      const responses = [
+        JSON.stringify({
+          object: 'list',
+          data: [
+            {
+              id: 'pv-staging',
+              environment: 'staging',
+              status: 'approved',
+              created_by: 'ops',
+            },
+            {
+              id: 'pv-prod',
+              environment: 'prod',
+              status: 'active',
+              created_by: 'ops',
+            },
+          ],
+        }),
+        JSON.stringify({ diff: 'staging diff payload' }),
+      ]
+      const body = responses[Math.min(callIndex, responses.length - 1)]
+      callIndex++
+      return new Response(body, {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
 
     vi.stubGlobal('fetch', fetchMock)
 
