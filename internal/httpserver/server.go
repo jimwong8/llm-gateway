@@ -72,6 +72,7 @@ type Server struct {
 	emailService                  emailService
 	usageLogStore                 usageLogStore
 	chatStore                     chatStore
+	presetStore                   presetStore
 	apiKeyRateLimiter             *APIKeyRateLimiter
 	defaultAPIKeyRPM              int
 	apiKeyUsageStore              *auth.APIKeyUsageStore
@@ -218,6 +219,7 @@ func (s *Server) Handler() http.Handler {
 	s.mountBillingRoutes(mux)
 	s.mountBroadcastAdminRoutes(mux)
 	s.mountBroadcastUserRoutes(mux)
+	s.mountPresetRoutes(mux)
 	mux.HandleFunc("/admin/ui", s.adminUI)
 	mux.HandleFunc("/admin/ui/", s.adminUI)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/admin/ui", http.StatusTemporaryRedirect) })
