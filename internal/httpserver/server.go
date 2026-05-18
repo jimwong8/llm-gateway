@@ -60,6 +60,7 @@ type Server struct {
 	modelRuntime                  *ModelRuntimeHandler
 	memoryAdmin                   *MemoryAdminHandler
 	tenantKeys                    *tenant.Store
+	userStore                     userStore
 }
 
 func New(cfg config.Config, registry *providers.Registry, redisCache cache.L1Cache, rt *router.Router, auditStore *audit.Store, semanticCache semantic.L2Cache, memoryStore *memory.Store, billingStore *billing.Store, limiter *quota.Limiter, adminStore *admin.Store, policyStore *policy.Store) *Server {
@@ -166,6 +167,7 @@ func (s *Server) Handler() http.Handler {
 	s.mountModelGovernanceRoutes(mux)
 	s.mountModelRuntimeRoutes(mux)
 	s.mountMemoryAdminRoutes(mux)
+	s.mountUserAuthRoutes(mux)
 	mux.HandleFunc("/admin/ui", s.adminUI)
 	mux.HandleFunc("/admin/ui/", s.adminUI)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/admin/ui", http.StatusTemporaryRedirect) })
@@ -226,6 +228,26 @@ func (s *Server) mountMemoryAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/memory/candidate-facts", s.requireAdmin(s.memoryAdminRoute))
 	mux.HandleFunc("/admin/memory/candidate-facts/", s.requireAdmin(s.memoryAdminRoute))
 	mux.HandleFunc("/admin/memory/project-facts", s.requireAdmin(s.memoryAdminRoute))
+}
+
+func (s *Server) mountUserAuthRoutes(mux *http.ServeMux) {
+	if s.userStore == nil {
+		return
+	}
+	mux.HandleFunc("/api/auth/signup", s.authSignup)
+	mux.HandleFunc("/api/auth/login", s.authLogin)
+	mux.HandleFunc("/api/auth/me", s.requireUser(s.authMe))
+	mux.HandleFunc("/api/user/api-keys", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			s.requireUser(s.userListAPIKeys)(w, r)
+		case http.MethodPost:
+			s.requireUser(s.userCreateAPIKey)(w, r)
+		default:
+			methodNotAllowed(w, r)
+		}
+	})
+	mux.HandleFunc("/api/user/api-keys/", s.requireUser(s.userRevokeAPIKey))
 }
 
 func (s *Server) controlPlaneRoute(w http.ResponseWriter, r *http.Request) {
