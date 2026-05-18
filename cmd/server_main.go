@@ -18,6 +18,7 @@ import (
 	"llm-gateway/gateway/internal/config"
 	"llm-gateway/gateway/internal/controlplane"
 	"llm-gateway/gateway/internal/governance"
+	"llm-gateway/gateway/internal/health"
 	"llm-gateway/gateway/internal/httpserver"
 	"llm-gateway/gateway/internal/memory"
 	"llm-gateway/gateway/internal/policy"
@@ -190,6 +191,31 @@ func main() {
 		srv = srv.WithModelGovernanceHandler(modelGovernanceHandler).
 			WithModelRuntimeHandler(modelRuntimeHandler)
 	}
+	// 创建并启动 HealthChecker
+	pingers := make(map[string]health.Pinger)
+	if auditStore != nil {
+		pingers["audit"] = auditStore
+	}
+	if redisCache != nil {
+		pingers["redis"] = redisCache
+	}
+	if memoryStore != nil {
+		pingers["memory"] = memoryStore
+	}
+	if billingStore != nil {
+		pingers["billing"] = billingStore
+	}
+
+	checkerCfg := health.CheckerConfig{
+		Interval:           30 * time.Second,
+		FailureThreshold:   3,
+		MemoryThresholdPct: 85.0,
+		GoroutineThreshold: 10000,
+	}
+	healthChecker := health.NewHealthChecker(cfg, registry, pingers, checkerCfg)
+	healthChecker.Start()
+	srv = srv.WithHealthChecker(healthChecker)
+
 	log.Printf("starting %s on %s mock_mode=%v redis=%s audit=%v semantic=%v memory=%v billing=%v governance=%v", cfg.AppName, cfg.Addr(), cfg.MockMode, cfg.RedisAddr, auditStore != nil, semanticCache != nil, memoryStore != nil, billingStore != nil, governanceStore != nil)
 
 	httpServer := &http.Server{
@@ -202,6 +228,8 @@ func main() {
 		signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
 		sig := <-sigChan
 		log.Printf("received signal %v, initiating graceful shutdown", sig)
+
+		healthChecker.Stop()
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

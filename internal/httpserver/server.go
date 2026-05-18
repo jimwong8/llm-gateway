@@ -24,6 +24,7 @@ import (
 	"llm-gateway/gateway/internal/billing"
 	"llm-gateway/gateway/internal/cache"
 	"llm-gateway/gateway/internal/config"
+	"llm-gateway/gateway/internal/configstore"
 	"llm-gateway/gateway/internal/controlplane"
 	"llm-gateway/gateway/internal/health"
 	"llm-gateway/gateway/internal/i18n"
@@ -84,6 +85,9 @@ type Server struct {
 	defaultAPIKeyRPM              int
 	apiKeyUsageStore              *auth.APIKeyUsageStore
 	quotaManager                  QuotaManager
+	healthChecker                 *health.HealthChecker
+	healthHandler                 *health.Handler
+	configVersionHandler          *configstore.Handler
 }
 
 func New(cfg config.Config, registry *providers.Registry, redisCache cache.L1Cache, rt *router.Router, auditStore *audit.Store, semanticCache semantic.L2Cache, memoryStore *memory.Store, billingStore *billing.Store, limiter *quota.Limiter, adminStore *admin.Store, policyStore *policy.Store) *Server {
@@ -191,9 +195,21 @@ func (s *Server) WithWebhookRegistry(registry *webhook.WebhookRegistry) *Server 
 	return s
 }
 
+func (s *Server) WithHealthChecker(checker *health.HealthChecker) *Server {
+	s.healthChecker = checker
+	s.healthHandler = health.NewHandler(checker)
+	return s
+}
+
+func (s *Server) WithConfigVersionHandler(handler *configstore.Handler) *Server {
+	s.configVersionHandler = handler
+	return s
+}
+
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.healthz)
+	mux.HandleFunc("/healthz/detailed", s.healthzDetailed)
 	mux.HandleFunc("/v1/models", s.models)
 	mux.HandleFunc("/v1/chat/completions", s.withOptionalUserAPIKey(s.apiKeyRateLimitMiddleware(s.chatCompletions)))
 	mux.HandleFunc("/admin/health", s.requireAdmin(s.adminHealth))
@@ -209,6 +225,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/admin/dashboard/charts/model-distribution", s.requireAdmin(s.adminDashboardModelDistribution))
 	mux.HandleFunc("/admin/dashboard/charts/cache-hit-rate", s.requireAdmin(s.adminDashboardCacheHitRate))
 	mux.HandleFunc("/admin/dashboard/charts/channel-status", s.requireAdmin(s.adminDashboardChannelStatus))
+	mux.HandleFunc("/admin/observability/latency", s.requireAdmin(s.adminObservabilityLatency))
+	mux.HandleFunc("/admin/observability/error-rate", s.requireAdmin(s.adminObservabilityErrorRate))
 	mux.HandleFunc("/admin/policies/models", s.requireAdmin(s.adminPoliciesModels))
 	mux.HandleFunc("/admin/channels", s.requireAdmin(s.adminChannels))
 	mux.HandleFunc("/admin/channels/", s.requireAdmin(s.adminChannelByID))
@@ -240,6 +258,7 @@ func (s *Server) Handler() http.Handler {
 	s.mountBroadcastAdminRoutes(mux)
 	s.mountBroadcastUserRoutes(mux)
 	s.mountPresetRoutes(mux)
+	s.mountConfigVersionRoutes(mux)
 	s.mountWebhookRoutes(mux)
 	s.mountFileParserRoutes(mux)
 	s.mountOpenAPIRoutes(mux)
@@ -258,6 +277,14 @@ func (s *Server) mountAdminConfigRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/config/jwt/rotate", s.requireAdmin(s.adminConfig.ServeHTTP))
 	mux.HandleFunc("/admin/config/versions", s.requireAdmin(s.adminConfig.ServeHTTP))
 	mux.HandleFunc("/admin/config/versions/", s.requireAdmin(s.adminConfig.ServeHTTP))
+}
+
+func (s *Server) mountConfigVersionRoutes(mux *http.ServeMux) {
+	if s.configVersionHandler == nil {
+		return
+	}
+	mux.HandleFunc("/api/config/versions", s.requireUser(s.configVersionHandler.ServeHTTP))
+	mux.HandleFunc("/api/config/rollback", s.requireUser(s.configVersionHandler.ServeHTTP))
 }
 
 func (s *Server) mountControlPlaneAdminRoutes(mux *http.ServeMux) {
@@ -587,6 +614,14 @@ func containsSensitive(req providers.ChatCompletionRequest, rules []policy.Sensi
 	return "", false
 }
 
+func (s *Server) healthzDetailed(w http.ResponseWriter, r *http.Request) {
+	if s.healthHandler == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "health checker not initialized"})
+		return
+	}
+	s.healthHandler.HealthzDetailed(w, r)
+}
+
 func (s *Server) healthz(w http.ResponseWriter, _ *http.Request) {
 	cacheStatus := "disabled"
 	if s.cache != nil {
@@ -816,6 +851,62 @@ func (s *Server) adminDashboardChannelStatus(w http.ResponseWriter, r *http.Requ
 		{"name": "Anthropic", "healthy": 90, "degraded": 7, "down": 3},
 		{"name": "Azure", "healthy": 88, "degraded": 8, "down": 4},
 		{"name": "Google", "healthy": 92, "degraded": 5, "down": 3},
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
+}
+
+func (s *Server) adminObservabilityLatency(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	days := 7
+	if d := r.URL.Query().Get("days"); d != "" {
+		if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 && parsed <= 30 {
+			days = parsed
+		}
+	}
+	data := make([]map[string]interface{}, days)
+	now := time.Now().UTC()
+	for i := 0; i < days; i++ {
+		date := now.AddDate(0, 0, -days+i+1)
+		p50 := 120 + (i*7)%80
+		p95 := 350 + (i*15)%200
+		p99 := 800 + (i*30)%500
+		data[i] = map[string]interface{}{
+			"date": date.Format("01/02"),
+			"p50":  p50,
+			"p95":  p95,
+			"p99":  p99,
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
+}
+
+func (s *Server) adminObservabilityErrorRate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	days := 7
+	if d := r.URL.Query().Get("days"); d != "" {
+		if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 && parsed <= 30 {
+			days = parsed
+		}
+	}
+	data := make([]map[string]interface{}, days)
+	now := time.Now().UTC()
+	for i := 0; i < days; i++ {
+		date := now.AddDate(0, 0, -days+i+1)
+		errorRate := 0.5 + float64(i%5)*0.3
+		totalRequests := 20000 + int64(i)*3000
+		errorRequests := int64(float64(totalRequests) * errorRate / 100)
+		data[i] = map[string]interface{}{
+			"date":          date.Format("01/02"),
+			"errorRate":     errorRate,
+			"totalRequests": totalRequests,
+			"errorRequests": errorRequests,
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
 }

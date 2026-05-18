@@ -160,6 +160,8 @@
   "dashboard.totalCost": "总费用",
   "dashboard.totalTokensPeriod": "总 Token",
   "dashboard.totalRequestsPeriod": "总请求",
+  "dashboard.chartLatency": "延迟趋势",
+  "dashboard.chartErrorRate": "错误率",
 
   "sidebar.brand": "LLM Gateway",
   "sidebar.adminConsole": "管理控制台",

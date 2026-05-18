@@ -7,6 +7,8 @@ import type {
   ModelDistributionPoint,
   CacheHitPoint,
   ChannelStatusPoint,
+  LatencyPoint,
+  ErrorRatePoint,
 } from '../../types/dashboard'
 
 export type {
@@ -20,6 +22,8 @@ export type {
   ModelDistributionPoint,
   CacheHitPoint,
   ChannelStatusPoint,
+  LatencyPoint,
+  ErrorRatePoint,
 } from '../../types/dashboard'
 
 function userAuthHeaders(): HeadersInit {
@@ -44,6 +48,14 @@ export async function getCacheHitRate(days = 7): Promise<{ data: CacheHitPoint[]
 
 export async function getChannelStatus(): Promise<{ data: ChannelStatusPoint[] }> {
   return apiRequest<{ data: ChannelStatusPoint[] }>('/admin/dashboard/charts/channel-status')
+}
+
+export async function getLatencyTrend(days = 7): Promise<{ data: LatencyPoint[] }> {
+  return apiRequest<{ data: LatencyPoint[] }>(`/admin/observability/latency?days=${days}`)
+}
+
+export async function getErrorRateTrend(days = 7): Promise<{ data: ErrorRatePoint[] }> {
+  return apiRequest<{ data: ErrorRatePoint[] }>(`/admin/observability/error-rate?days=${days}`)
 }
 
 export async function getUserDashboard(): Promise<UserDashboardData> {

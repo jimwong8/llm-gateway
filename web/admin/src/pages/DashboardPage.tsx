@@ -5,11 +5,11 @@ import { AppShell } from '../components/layout/AppShell'
 import { DashboardAdminOverviewSection } from '../components/dashboard/DashboardAdminOverviewSection'
 import { DashboardSessionOpsSection } from '../components/dashboard/DashboardSessionOpsSection'
 import { UserDashboardView } from '../components/dashboard/UserDashboardView'
-import { TokenUsageChart, ModelDistributionChart, CacheHitRateChart, ChannelStatusChart } from '../components/charts'
+import { TokenUsageChart, ModelDistributionChart, CacheHitRateChart, ChannelStatusChart, LatencyChart, ErrorRateChart } from '../components/charts'
 import { Tabs } from '../components/ui'
 import { apiRequest } from '../lib/http'
 import { getUserToken } from '../lib/api/identity'
-import { getTokenUsage, getModelDistribution, getCacheHitRate, getChannelStatus } from '../lib/api/dashboard'
+import { getTokenUsage, getModelDistribution, getCacheHitRate, getChannelStatus, getLatencyTrend, getErrorRateTrend } from '../lib/api/dashboard'
 import type { AdminSummary } from '../types/dashboard'
 import type { SessionAdminDashboard } from '../types/sessionDashboard'
 import { formatPercent } from '../lib/format'
@@ -20,7 +20,7 @@ type AdminHealth = {
   time?: string
 }
 
-type ChartTab = 'tokens' | 'models' | 'cache' | 'channels'
+type ChartTab = 'tokens' | 'models' | 'cache' | 'channels' | 'latency' | 'errorRate'
 
 
 
@@ -28,6 +28,8 @@ type TokenUsagePoint = { date: string; prompt: number; completion: number; total
 type ModelDistributionPoint = { name: string; value: number }
 type CacheHitPoint = { date: string; hitRate: number; requests: number }
 type ChannelStatusPoint = { name: string; healthy: number; degraded: number; down: number }
+type LatencyPoint = { date: string; p50: number; p95: number; p99: number }
+type ErrorRatePoint = { date: string; errorRate: number; totalRequests: number; errorRequests: number }
 
 function DashboardAdminView() {
   const { t } = useTranslation()
@@ -38,6 +40,8 @@ function DashboardAdminView() {
     { key: 'models', label: t('dashboard.chartModels') },
     { key: 'cache', label: t('dashboard.chartCache') },
     { key: 'channels', label: t('dashboard.chartChannels') },
+    { key: 'latency', label: t('dashboard.chartLatency') },
+    { key: 'errorRate', label: t('dashboard.chartErrorRate') },
   ]
 
   const healthQuery = useQuery({
@@ -82,16 +86,30 @@ function DashboardAdminView() {
     refetchInterval: 30_000,
   })
 
+  const latencyQuery = useQuery({
+    queryKey: ['dashboard-charts', 'latency'],
+    queryFn: () => getLatencyTrend(7),
+    refetchInterval: 30_000,
+  })
+
+  const errorRateQuery = useQuery({
+    queryKey: ['dashboard-charts', 'error-rate'],
+    queryFn: () => getErrorRateTrend(7),
+    refetchInterval: 30_000,
+  })
+
   const loading = healthQuery.isLoading || summaryQuery.isLoading
   const hasError = healthQuery.error || summaryQuery.error
 
-  const chartLoading = tokenUsageQuery.isLoading || modelDistributionQuery.isLoading || cacheHitRateQuery.isLoading || channelStatusQuery.isLoading
-  const chartError = tokenUsageQuery.error || modelDistributionQuery.error || cacheHitRateQuery.error || channelStatusQuery.error
+  const chartLoading = tokenUsageQuery.isLoading || modelDistributionQuery.isLoading || cacheHitRateQuery.isLoading || channelStatusQuery.isLoading || latencyQuery.isLoading || errorRateQuery.isLoading
+  const chartError = tokenUsageQuery.error || modelDistributionQuery.error || cacheHitRateQuery.error || channelStatusQuery.error || latencyQuery.error || errorRateQuery.error
 
   const tokenData = tokenUsageQuery.data?.data
   const modelData = modelDistributionQuery.data?.data
   const cacheData = cacheHitRateQuery.data?.data
   const channelData = channelStatusQuery.data?.data
+  const latencyData = latencyQuery.data?.data
+  const errorRateData = errorRateQuery.data?.data
 
   return (
     <>
@@ -127,6 +145,8 @@ function DashboardAdminView() {
               {activeTab === 'models' && <ModelDistributionChart data={modelData} />}
               {activeTab === 'cache' && <CacheHitRateChart data={cacheData} />}
               {activeTab === 'channels' && <ChannelStatusChart data={channelData} />}
+              {activeTab === 'latency' && <LatencyChart data={latencyData} />}
+              {activeTab === 'errorRate' && <ErrorRateChart data={errorRateData} />}
             </>
           ) : null}
         </div>

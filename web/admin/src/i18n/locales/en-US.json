@@ -160,6 +160,8 @@
   "dashboard.totalCost": "Total Cost",
   "dashboard.totalTokensPeriod": "Total Tokens",
   "dashboard.totalRequestsPeriod": "Total Requests",
+  "dashboard.chartLatency": "Latency Trends",
+  "dashboard.chartErrorRate": "Error Rate",
 
   "sidebar.brand": "LLM Gateway",
   "sidebar.adminConsole": "Admin Console",

@@ -104,3 +104,17 @@ export interface CostTrendPoint {
   tokens: number
   requests: number
 }
+
+export interface LatencyPoint {
+  date: string
+  p50: number
+  p95: number
+  p99: number
+}
+
+export interface ErrorRatePoint {
+  date: string
+  errorRate: number
+  totalRequests: number
+  errorRequests: number
+}
