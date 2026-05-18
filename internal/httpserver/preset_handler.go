@@ -19,6 +19,7 @@ type presetStore interface {
 	CreateMaskRule(ctx context.Context, userID int64, name, pattern, replace string) (*memory.MaskRule, error)
 	ListMaskRules(ctx context.Context, userID int64) ([]memory.MaskRule, error)
 	DeleteMaskRule(ctx context.Context, ruleID, userID int64) error
+	UpdateMaskRule(ctx context.Context, ruleID, userID int64, name, pattern, replace string, enabled bool) error
 }
 
 func (s *Server) WithPresetStore(store presetStore) *Server {
@@ -76,6 +77,8 @@ func (s *Server) mountPresetRoutes(mux *http.ServeMux) {
 			return
 		}
 		switch r.Method {
+		case http.MethodPut:
+			s.maskUpdate(w, r, id)
 		case http.MethodDelete:
 			s.maskDelete(w, r, id)
 		default:
@@ -238,6 +241,38 @@ func (s *Server) maskCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, rule)
+}
+
+func (s *Server) maskUpdate(w http.ResponseWriter, r *http.Request, id int64) {
+	claims := getUserClaims(r.Context())
+	if claims == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]any{"message": "not authenticated", "type": "authentication_error"}})
+		return
+	}
+	var body struct {
+		Name    string `json:"name"`
+		Pattern string `json:"pattern"`
+		Replace string `json:"replace"`
+		Enabled bool   `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		badRequest(w, "invalid JSON")
+		return
+	}
+	body.Name = strings.TrimSpace(body.Name)
+	body.Pattern = strings.TrimSpace(body.Pattern)
+	if body.Name == "" || body.Pattern == "" {
+		badRequest(w, "name and pattern are required")
+		return
+	}
+	if body.Replace == "" {
+		body.Replace = "[REDACTED]"
+	}
+	if err := s.presetStore.UpdateMaskRule(r.Context(), id, claims.UserID, body.Name, body.Pattern, body.Replace, body.Enabled); err != nil {
+		internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
 func (s *Server) maskDelete(w http.ResponseWriter, r *http.Request, id int64) {

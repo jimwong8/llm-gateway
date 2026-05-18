@@ -6,6 +6,7 @@ import { ApiError } from '../lib/http'
 import {
   listMemoryCandidateFacts,
   listMemoryProjectFacts,
+  searchMemory,
   submitMemoryCandidateFactAction,
   submitMemoryCandidateFactBatchAction,
 } from '../lib/memory'
@@ -18,6 +19,7 @@ import type {
   MemoryFactFilters,
   MemoryProjectFact,
   MemoryProjectFactFilters,
+  MemorySearchResult,
 } from '../types/memory'
 
 const initialFilters: MemoryFactFilters = {
@@ -271,6 +273,7 @@ function buildPaginationSummary(total: number, page: number, pageSize: number): 
 }
 
 export function MemoryGovernancePage() {
+  const [activeTab, setActiveTab] = useState<'governance' | 'search'>('governance')
   const [draftFilters, setDraftFilters] = useState<MemoryFactFilters>(initialFilters)
   const [draftCandidateStatus, setDraftCandidateStatus] = useState('')
   const [draftProjectStatus, setDraftProjectStatus] = useState('')
@@ -295,6 +298,15 @@ export function MemoryGovernancePage() {
   const [candidatePage, setCandidatePage] = useState(1)
   const [projectPage, setProjectPage] = useState(1)
   const selectAllVisibleRef = useRef<HTMLInputElement | null>(null)
+
+  // Hybrid Search state
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchTenantId, setSearchTenantId] = useState('')
+  const [searchUserId, setSearchUserId] = useState('')
+  const [searchResults, setSearchResults] = useState<MemorySearchResult[]>([])
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [searchError, setSearchError] = useState('')
+  const [searchSubmitted, setSearchSubmitted] = useState(false)
 
   const candidateFactsQuery = useQuery({
     queryKey: ['memory-candidate-facts', candidateFilters],
@@ -484,6 +496,35 @@ export function MemoryGovernancePage() {
     setActionSuccess('')
   }
 
+  async function handleSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!searchQuery.trim()) {
+      setSearchError('请输入检索内容')
+      return
+    }
+    setSearchLoading(true)
+    setSearchError('')
+    setSearchSubmitted(true)
+    try {
+      const response = await searchMemory({
+        query: searchQuery.trim(),
+        tenant_id: searchTenantId.trim() || undefined,
+        user_id: searchUserId.trim() || undefined,
+        limit: 20,
+      })
+      setSearchResults(response.results ?? [])
+    } catch (unknownError) {
+      if (unknownError instanceof ApiError) {
+        setSearchError(unknownError.message)
+      } else {
+        setSearchError(unknownError instanceof Error ? unknownError.message : '检索失败')
+      }
+      setSearchResults([])
+    } finally {
+      setSearchLoading(false)
+    }
+  }
+
   function handleToggleCandidateSelection(row: MemoryCandidateFact, checked: boolean) {
     const key = candidateRowKey(row)
     setSelectedCandidateKeys((previous) => {
@@ -653,6 +694,29 @@ export function MemoryGovernancePage() {
           </div>
         </form>
 
+        <div className="memory-governance__tabs" role="tablist" aria-label="记忆治理功能切换">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'governance'}
+            className={`memory-governance__tab ${activeTab === 'governance' ? 'memory-governance__tab--active' : ''}`}
+            onClick={() => setActiveTab('governance')}
+          >
+            治理面板
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'search'}
+            className={`memory-governance__tab ${activeTab === 'search' ? 'memory-governance__tab--active' : ''}`}
+            onClick={() => setActiveTab('search')}
+          >
+            检索测试
+          </button>
+        </div>
+
+        {activeTab === 'governance' ? (
+        <>
         {candidateFactsQuery.isLoading || projectFactsQuery.isLoading ? <div className="event-state">正在加载记忆事实…</div> : null}
         {candidateFactsQuery.error ? <div className="config-error">候选事实加载失败，请检查记忆管理接口状态。</div> : null}
         {projectFactsQuery.error ? <div className="config-error">项目事实加载失败，请检查记忆管理接口状态。</div> : null}
@@ -664,8 +728,112 @@ export function MemoryGovernancePage() {
             <div>候选事实与项目事实列表已自动刷新，可直接继续审阅下一条。</div>
           </div>
         ) : null}
+        </>
+        ) : null}
 
-        {!candidateFactsQuery.isLoading && !projectFactsQuery.isLoading && !candidateFactsQuery.error && !projectFactsQuery.error ? (
+        {activeTab === 'search' ? (
+        <div className="memory-governance__search-panel">
+          <form className="config-filters" aria-label="Hybrid Search 检索测试" onSubmit={handleSearch}>
+            <label>
+              检索内容
+              <input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="输入自然语言查询，例如：用户的技术栈偏好"
+              />
+            </label>
+            <label>
+              租户 ID
+              <input
+                value={searchTenantId}
+                onChange={(event) => setSearchTenantId(event.target.value)}
+                placeholder="可选，限定租户范围"
+              />
+            </label>
+            <label>
+              用户 ID
+              <input
+                value={searchUserId}
+                onChange={(event) => setSearchUserId(event.target.value)}
+                placeholder="可选，限定用户范围"
+              />
+            </label>
+            <div className="config-filters__actions">
+              <button type="submit" disabled={searchLoading}>
+                {searchLoading ? '检索中…' : '检索'}
+              </button>
+              <button
+                type="button"
+                className="rollouts-action"
+                onClick={() => {
+                  setSearchQuery('')
+                  setSearchTenantId('')
+                  setSearchUserId('')
+                  setSearchResults([])
+                  setSearchError('')
+                  setSearchSubmitted(false)
+                }}
+              >
+                清空
+              </button>
+            </div>
+          </form>
+
+          {searchError ? <div className="config-error">{searchError}</div> : null}
+
+          {searchLoading ? (
+            <div className="event-state">正在执行 Hybrid Search…</div>
+          ) : null}
+
+          {!searchLoading && searchSubmitted && searchResults.length === 0 && !searchError ? (
+            <div className="event-state">未找到匹配的记忆片段，请调整查询内容或放宽筛选条件。</div>
+          ) : null}
+
+          {!searchLoading && searchResults.length > 0 ? (
+            <section className="event-table" aria-label="Hybrid Search 结果">
+              <div className="memory-governance__search-summary">
+                检索到 <strong>{searchResults.length}</strong> 条结果
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th className="memory-governance__rank-cell">排名</th>
+                    <th>内容</th>
+                    <th className="memory-governance__score-cell">分数</th>
+                    <th>来源</th>
+                    <th>事实键</th>
+                    <th>租户</th>
+                    <th>用户</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {searchResults.map((result, index) => (
+                    <tr key={`${result.rank}-${result.source}-${index}`}>
+                      <td className="memory-governance__rank-cell">
+                        <span className="memory-governance__rank-badge">{result.rank}</span>
+                      </td>
+                      <td>
+                        <div className="memory-fact-cell">
+                          <strong>{result.content}</strong>
+                        </div>
+                      </td>
+                      <td className="memory-governance__score-cell">
+                        <span className="memory-governance__score-pill">{result.score.toFixed(4)}</span>
+                      </td>
+                      <td>{result.source}</td>
+                      <td>{result.fact_key || '—'}</td>
+                      <td>{result.tenant_id || '—'}</td>
+                      <td>{result.user_id || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          ) : null}
+        </div>
+        ) : null}
+
+        {activeTab === 'governance' && !candidateFactsQuery.isLoading && !projectFactsQuery.isLoading && !candidateFactsQuery.error && !projectFactsQuery.error ? (
           <>
             <div className="summary-card-grid">
               <section className="summary-card">

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -48,7 +48,7 @@ const samplePresets = [
     id: 1,
     tenant_id: 'default',
     name: 'Code Review',
-    system_prompt: 'You are a code review assistant.',
+    system_prompt: 'You are a code review assistant for {{language}}.',
     model: 'gpt-4o',
     temperature: 0.3,
     max_tokens: 4096,
@@ -436,6 +436,265 @@ describe('PresetsPage', () => {
 
       expect(window.confirm).toHaveBeenCalledWith('确定删除 Preset "Code Review"？')
       expect(deleteMutateMock).not.toHaveBeenCalled()
+    })
+  })
+
+  // ── 编辑 Preset ──────────────────────────────────────
+  describe('编辑 Preset', () => {
+    it('点击编辑按钮显示编辑表单并回显数据', async () => {
+      const user = userEvent.setup()
+      renderPage()
+
+      await screen.findByText('Code Review')
+
+      const editButtons = screen.getAllByRole('button', { name: '编辑' })
+      expect(editButtons.length).toBeGreaterThanOrEqual(2)
+      await user.click(editButtons[0])
+
+      expect(screen.getByText('编辑 Preset')).toBeInTheDocument()
+      expect(screen.getByDisplayValue('Code Review')).toBeInTheDocument()
+      expect(screen.getByDisplayValue('gpt-4o')).toBeInTheDocument()
+      expect(screen.getByDisplayValue('You are a code review assistant for {{language}}.')).toBeInTheDocument()
+    })
+
+    it('编辑表单提交调用 updatePreset', async () => {
+      const user = userEvent.setup()
+      const updateMutateMock = vi.fn()
+
+      mockUseQuery.mockImplementation((options: any) => {
+        const key = options.queryKey?.[0]
+        if (key === 'prompt-presets') {
+          return { data: samplePresets, isLoading: false }
+        }
+        if (key === 'mask-rules') {
+          return { data: sampleMasks, isLoading: false }
+        }
+        return { data: undefined, isLoading: false }
+      })
+      mockUseMutation.mockImplementation((options: any) => ({
+        ...defaultMutationMock(),
+        mutate: (...args: any[]) => {
+          updateMutateMock(...args)
+          options.onSuccess?.()
+        },
+      }))
+
+      renderPage()
+
+      await screen.findByText('Code Review')
+
+      const editButtons = screen.getAllByRole('button', { name: '编辑' })
+      await user.click(editButtons[0])
+
+      const nameInput = screen.getByDisplayValue('Code Review')
+      await user.clear(nameInput)
+      await user.type(nameInput, 'Updated Preset')
+
+      await user.click(screen.getByRole('button', { name: '保存' }))
+
+      expect(updateMutateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 1,
+          input: expect.objectContaining({
+            name: 'Updated Preset',
+          }),
+        }),
+      )
+    })
+
+    it('编辑表单标题显示"编辑 Preset"而非"新建 Preset"', async () => {
+      const user = userEvent.setup()
+      renderPage()
+
+      await screen.findByText('Code Review')
+
+      const editButtons = screen.getAllByRole('button', { name: '编辑' })
+      await user.click(editButtons[0])
+
+      expect(screen.getByText('编辑 Preset')).toBeInTheDocument()
+      expect(screen.queryByText('新建 Preset')).not.toBeInTheDocument()
+    })
+
+    it('编辑时点击取消关闭表单', async () => {
+      const user = userEvent.setup()
+      renderPage()
+
+      await screen.findByText('Code Review')
+
+      const editButtons = screen.getAllByRole('button', { name: '编辑' })
+      await user.click(editButtons[0])
+
+      expect(screen.getByText('编辑 Preset')).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: '取消' }))
+
+      expect(screen.queryByText('编辑 Preset')).not.toBeInTheDocument()
+    })
+  })
+
+  // ── 变量替换预览 ─────────────────────────────────────
+  describe('变量替换预览', () => {
+    it('创建表单中输入 variables 后显示预览', async () => {
+      const user = userEvent.setup()
+      renderPage()
+
+      await screen.findByText('Code Review')
+      await user.click(screen.getByRole('button', { name: '+ 新建 Preset' }))
+
+      // 用 fireEvent.change 直接设置值，避免 userEvent.type 解析花括号为快捷键
+      const promptTextarea = screen.getByPlaceholderText('You are a helpful assistant...')
+      fireEvent.change(promptTextarea, { target: { value: 'Hello {{name}}, welcome to {{app}}' } })
+      await user.type(screen.getByPlaceholderText('user_name, task_desc'), 'name, app')
+
+      expect(screen.getByText('替换预览')).toBeInTheDocument()
+      // 用 querySelector 查找包含预览文本的元素
+      const previewEl = document.querySelector('.page-surface .page-surface')
+      expect(previewEl?.textContent).toContain('Hello [name], welcome to [app]')
+    })
+
+    it('编辑表单中输入 variables 后显示预览', async () => {
+      const user = userEvent.setup()
+      renderPage()
+
+      await screen.findByText('Code Review')
+
+      const editButtons = screen.getAllByRole('button', { name: '编辑' })
+      await user.click(editButtons[0])
+
+      await user.type(screen.getByPlaceholderText('user_name, task_desc'), 'language')
+
+      expect(screen.getByText('替换预览')).toBeInTheDocument()
+      const previewEl = document.querySelector('.page-surface .page-surface')
+      expect(previewEl?.textContent).toContain('You are a code review assistant for [language].')
+    })
+
+    it('variables 为空时不显示预览区域', async () => {
+      const user = userEvent.setup()
+      renderPage()
+
+      await screen.findByText('Code Review')
+      await user.click(screen.getByRole('button', { name: '+ 新建 Preset' }))
+
+      await user.type(
+        screen.getByPlaceholderText('You are a helpful assistant...'),
+        'Hello {{name}}',
+      )
+
+      expect(screen.queryByText('替换预览')).not.toBeInTheDocument()
+    })
+  })
+
+  // ── Mask 启用/停用切换 ──────────────────────────────
+  describe('Mask 启用/停用切换', () => {
+    it('点击已启用的 mask 状态按钮并确认后调用 toggle', async () => {
+      const user = userEvent.setup()
+      const toggleMutateMock = vi.fn()
+
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+      mockUseQuery.mockImplementation((options: any) => {
+        const key = options.queryKey?.[0]
+        if (key === 'prompt-presets') {
+          return { data: samplePresets, isLoading: false }
+        }
+        if (key === 'mask-rules') {
+          return { data: sampleMasks, isLoading: false }
+        }
+        return { data: undefined, isLoading: false }
+      })
+      mockUseMutation.mockImplementation((options: any) => ({
+        ...defaultMutationMock(),
+        mutate: (...args: any[]) => {
+          toggleMutateMock(...args)
+          options.onSuccess?.()
+        },
+      }))
+
+      renderPage()
+
+      await screen.findByText('Code Review')
+      await user.click(screen.getByRole('tab', { name: 'Mask Rules' }))
+
+      await screen.findByText('手机号脱敏')
+
+      const enabledBadge = screen.getByRole('button', { name: '启用' })
+      await user.click(enabledBadge)
+
+      expect(window.confirm).toHaveBeenCalledWith('确定停用 Mask Rule "手机号脱敏"？')
+      expect(toggleMutateMock).toHaveBeenCalledWith({ id: 1, enabled: false })
+    })
+
+    it('点击已停用的 mask 状态按钮并确认后调用 toggle', async () => {
+      const user = userEvent.setup()
+      const toggleMutateMock = vi.fn()
+
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+      mockUseQuery.mockImplementation((options: any) => {
+        const key = options.queryKey?.[0]
+        if (key === 'prompt-presets') {
+          return { data: samplePresets, isLoading: false }
+        }
+        if (key === 'mask-rules') {
+          return { data: sampleMasks, isLoading: false }
+        }
+        return { data: undefined, isLoading: false }
+      })
+      mockUseMutation.mockImplementation((options: any) => ({
+        ...defaultMutationMock(),
+        mutate: (...args: any[]) => {
+          toggleMutateMock(...args)
+          options.onSuccess?.()
+        },
+      }))
+
+      renderPage()
+
+      await screen.findByText('Code Review')
+      await user.click(screen.getByRole('tab', { name: 'Mask Rules' }))
+
+      await screen.findByText('邮箱脱敏')
+
+      const disabledBadge = screen.getByRole('button', { name: '停用' })
+      await user.click(disabledBadge)
+
+      expect(window.confirm).toHaveBeenCalledWith('确定启用 Mask Rule "邮箱脱敏"？')
+      expect(toggleMutateMock).toHaveBeenCalledWith({ id: 2, enabled: true })
+    })
+
+    it('点击 mask 状态按钮但取消时不调用 toggle', async () => {
+      const user = userEvent.setup()
+      const toggleMutateMock = vi.fn()
+
+      vi.spyOn(window, 'confirm').mockReturnValue(false)
+
+      mockUseQuery.mockImplementation((options: any) => {
+        const key = options.queryKey?.[0]
+        if (key === 'prompt-presets') {
+          return { data: samplePresets, isLoading: false }
+        }
+        if (key === 'mask-rules') {
+          return { data: sampleMasks, isLoading: false }
+        }
+        return { data: undefined, isLoading: false }
+      })
+      mockUseMutation.mockReturnValue({
+        ...defaultMutationMock(),
+        mutate: (...args: any[]) => toggleMutateMock(...args),
+      })
+
+      renderPage()
+
+      await screen.findByText('Code Review')
+      await user.click(screen.getByRole('tab', { name: 'Mask Rules' }))
+
+      await screen.findByText('手机号脱敏')
+
+      const enabledBadge = screen.getByRole('button', { name: '启用' })
+      await user.click(enabledBadge)
+
+      expect(window.confirm).toHaveBeenCalledWith('确定停用 Mask Rule "手机号脱敏"？')
+      expect(toggleMutateMock).not.toHaveBeenCalled()
     })
   })
 })

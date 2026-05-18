@@ -235,5 +235,13 @@
   "presets.status": "Status",
   "presets.enabled": "Enabled",
   "presets.disabled": "Disabled",
-  "presets.confirmDeleteMask": "Are you sure you want to delete Mask Rule \"{{name}}\"?"
+  "presets.confirmDeleteMask": "Are you sure you want to delete Mask Rule \"{{name}}\"?",
+  "presets.editPreset": "Edit Preset",
+  "presets.variables": "Variables (comma-separated)",
+  "presets.variablesPlaceholder": "user_name, task_desc",
+  "presets.preview": "Replacement Preview",
+  "presets.previewEmpty": "Enter variables and system_prompt to preview the result here",
+  "presets.updating": "Saving…",
+  "presets.confirmToggleEnable": "Are you sure you want to enable Mask Rule \"{{name}}\"?",
+  "presets.confirmToggleDisable": "Are you sure you want to disable Mask Rule \"{{name}}\"?"
 }

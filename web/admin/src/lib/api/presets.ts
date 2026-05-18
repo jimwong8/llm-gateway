@@ -29,6 +29,10 @@ export function createMaskRule(input: MaskRuleInput) {
   return jsonRequest<MaskRule>('/api/memory/masks', input)
 }
 
+export function updateMaskRule(id: number, input: Partial<MaskRuleInput>) {
+  return jsonRequest<MaskRule>(`/api/memory/masks/${id}`, input, { method: 'PUT' } as RequestInit)
+}
+
 export function deleteMaskRule(id: number) {
   return apiRequest<void>(`/api/memory/masks/${id}`, { method: 'DELETE' } as RequestInit)
 }

@@ -220,6 +220,7 @@ func (s *Server) Handler() http.Handler {
 	s.mountBroadcastAdminRoutes(mux)
 	s.mountBroadcastUserRoutes(mux)
 	s.mountPresetRoutes(mux)
+	s.mountFileParserRoutes(mux)
 	mux.HandleFunc("/admin/ui", s.adminUI)
 	mux.HandleFunc("/admin/ui/", s.adminUI)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/admin/ui", http.StatusTemporaryRedirect) })

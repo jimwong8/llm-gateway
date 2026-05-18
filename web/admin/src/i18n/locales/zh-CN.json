@@ -235,5 +235,13 @@
   "presets.status": "状态",
   "presets.enabled": "启用",
   "presets.disabled": "停用",
-  "presets.confirmDeleteMask": "确定删除 Mask Rule \"{{name}}\"？"
+  "presets.confirmDeleteMask": "确定删除 Mask Rule \"{{name}}\"？",
+  "presets.editPreset": "编辑 Preset",
+  "presets.variables": "变量（逗号分隔）",
+  "presets.variablesPlaceholder": "user_name, task_desc",
+  "presets.preview": "替换预览",
+  "presets.previewEmpty": "输入 variables 和 system_prompt 后在此预览替换结果",
+  "presets.updating": "保存中…",
+  "presets.confirmToggleEnable": "确定启用 Mask Rule \"{{name}}\"？",
+  "presets.confirmToggleDisable": "确定停用 Mask Rule \"{{name}}\"？"
 }

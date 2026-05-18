@@ -41,6 +41,7 @@ type PresetStore interface {
 	CreateMaskRule(ctx context.Context, userID int64, name, pattern, replace string) (*MaskRule, error)
 	ListMaskRules(ctx context.Context, userID int64) ([]MaskRule, error)
 	DeleteMaskRule(ctx context.Context, ruleID, userID int64) error
+	UpdateMaskRule(ctx context.Context, ruleID, userID int64, name, pattern, replace string, enabled bool) error
 	ApplyMasks(ctx context.Context, userID int64, text string) (string, error)
 }
 
@@ -154,6 +155,13 @@ FROM mask_rules WHERE user_id=$1 AND is_active=TRUE ORDER BY created_at DESC`, u
 
 func (s *sqlPresetStore) DeleteMaskRule(ctx context.Context, ruleID, userID int64) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM mask_rules WHERE id=$1 AND user_id=$2`, ruleID, userID)
+	return err
+}
+
+func (s *sqlPresetStore) UpdateMaskRule(ctx context.Context, ruleID, userID int64, name, pattern, replace string, enabled bool) error {
+	_, err := s.db.ExecContext(ctx, `
+UPDATE mask_rules SET name=$3, pattern=$4, replace_with=$5, is_active=$6, updated_at=NOW()
+WHERE id=$1 AND user_id=$2`, ruleID, userID, name, pattern, replace, enabled)
 	return err
 }
 
