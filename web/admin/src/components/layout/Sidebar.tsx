@@ -59,6 +59,7 @@ export const navGroups: NavGroup[] = [
       { label: '配额管理', path: '/quota' },
       { label: '记忆治理', path: '/memory-governance' },
       { label: '推荐管理', path: '/recommendations' },
+      { label: 'API 密钥', path: '/api-keys' },
       { label: '租户密钥', path: '/tenant-keys' },
       { label: '在线测试', path: '/playground' },
       { label: '系统状态', path: '/system' },
