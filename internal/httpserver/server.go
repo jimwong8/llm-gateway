@@ -9,10 +9,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 
 	"llm-gateway/gateway/internal/admin"
 	"llm-gateway/gateway/internal/auth"
@@ -221,10 +224,11 @@ func (s *Server) Handler() http.Handler {
 	s.mountBroadcastUserRoutes(mux)
 	s.mountPresetRoutes(mux)
 	s.mountFileParserRoutes(mux)
+	s.mountOpenAPIRoutes(mux)
 	mux.HandleFunc("/admin/ui", s.adminUI)
 	mux.HandleFunc("/admin/ui/", s.adminUI)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/admin/ui", http.StatusTemporaryRedirect) })
-	return panicRecoveryMiddleware(loggingMiddleware(i18n.Middleware(mux)))
+	return panicRecoveryMiddleware(requestIDMiddleware(loggingMiddleware(i18n.Middleware(mux))))
 }
 
 func (s *Server) mountAdminConfigRoutes(mux *http.ServeMux) {
@@ -2976,11 +2980,39 @@ func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { next.ServeHTTP(w, r) })
 }
 
+type contextKey string
+
+const requestIDKey contextKey = "request_id"
+
+func requestIDMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestID := r.Header.Get("X-Request-Id")
+		if requestID == "" {
+			requestID = uuid.New().String()
+		}
+		w.Header().Set("X-Request-Id", requestID)
+		ctx := context.WithValue(r.Context(), requestIDKey, requestID)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func RequestIDFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(requestIDKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
 func panicRecoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				slog.Warn("panic recovered", "path", r.URL.Path, "method", r.Method, "err", rec)
+				slog.Error("panic recovered",
+					"path", r.URL.Path,
+					"method", r.Method,
+					"err", rec,
+					"stack", string(debug.Stack()),
+				)
 				writeJSON(w, http.StatusInternalServerError, map[string]any{"error": map[string]any{"message": "internal server error", "type": "internal_server_error"}})
 			}
 		}()
