@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearToken, setToken } from '../lib/auth'
 import { clearUserToken, setUserToken } from '../lib/api/identity'
 import { DashboardPage } from './DashboardPage'
+import '../i18n'
 
 function makeJWT(role: string): string {
   const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))

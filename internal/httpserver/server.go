@@ -68,6 +68,8 @@ type Server struct {
 	tenantKeys                    *tenant.Store
 	userStore                     userStore
 	oauthStore                    oauthStore
+	emailStore                    emailStore
+	emailService                  emailService
 	chatStore                     chatStore
 	apiKeyRateLimiter             *APIKeyRateLimiter
 	defaultAPIKeyRPM              int
@@ -295,6 +297,10 @@ func (s *Server) mountUserAuthRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/auth/signup", s.authSignup)
 	mux.HandleFunc("/api/auth/login", s.authLogin)
 	mux.HandleFunc("/api/auth/me", s.requireUser(s.authMe))
+	mux.HandleFunc("/api/auth/verify-email", s.emailVerify)
+	mux.HandleFunc("/api/auth/resend-verification", s.requireUser(s.emailResendVerification))
+	mux.HandleFunc("/api/auth/forgot-password", s.forgotPassword)
+	mux.HandleFunc("/api/auth/reset-password", s.resetPassword)
 	mux.HandleFunc("/api/user/api-keys", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:

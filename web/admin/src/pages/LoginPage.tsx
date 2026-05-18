@@ -142,7 +142,10 @@ export function LoginPage() {
                 </a>
               </div>
             )}
-            <p style={{ textAlign: 'center', marginTop: '1rem', color: '#94a3b8', fontSize: '0.85rem' }}>
+            <p style={{ textAlign: 'center', marginTop: '0.5rem' }}>
+              <Link to="/forgot-password" style={{ color: '#94a3b8', fontSize: '0.85rem' }}>忘记密码？</Link>
+            </p>
+            <p style={{ textAlign: 'center', marginTop: '0.5rem', color: '#94a3b8', fontSize: '0.85rem' }}>
               {t('auth.noAccount')}<Link to="/signup">{t('auth.register')}</Link>
             </p>
           </>

@@ -57,6 +57,11 @@ type Config struct {
 	DefaultAPIKeyRPM         int
 	GitHubClientID           string
 	GitHubClientSecret       string
+	SMTPHost                 string
+	SMTPPort                 int
+	SMTPUser                 string
+	SMTPPassword             string
+	SMTPFrom                 string
 }
 
 func Load() Config {
@@ -111,6 +116,11 @@ func Load() Config {
 		DefaultAPIKeyRPM:             getenvInt("DEFAULT_API_KEY_RPM", 60),
 		GitHubClientID:               getenv("GITHUB_CLIENT_ID", ""),
 		GitHubClientSecret:           getenv("GITHUB_CLIENT_SECRET", ""),
+		SMTPHost:                     getenv("SMTP_HOST", ""),
+		SMTPPort:                     getenvInt("SMTP_PORT", 587),
+		SMTPUser:                     getenv("SMTP_USER", ""),
+		SMTPPassword:                 getenv("SMTP_PASSWORD", ""),
+		SMTPFrom:                     getenv("SMTP_FROM", ""),
 	}
 	return cfg
 }

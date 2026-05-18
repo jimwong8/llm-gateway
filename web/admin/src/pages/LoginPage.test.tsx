@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { LoginPage } from './LoginPage'
 import { ADMIN_TOKEN_KEY } from '../lib/auth'
+import '../i18n'
 
 function mockOAuthConfig(enabled: boolean) {
   globalThis.fetch = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {

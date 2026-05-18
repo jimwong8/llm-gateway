@@ -145,6 +145,38 @@ UPDATE user_api_keys SET last_used_at = $1, updated_at = $1 WHERE id = $2`, now,
 	return err
 }
 
+func (s *Store) CreateVerificationToken(ctx context.Context, userID int64, token, tokenType string, expiresAt time.Time) error {
+	_, err := s.db.ExecContext(ctx, `
+INSERT INTO email_verification_tokens (user_id, token, token_type, expires_at)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (token) DO UPDATE SET expires_at = $4, used_at = NULL`,
+		userID, token, tokenType, expiresAt)
+	return err
+}
+
+func (s *Store) VerifyEmailToken(ctx context.Context, token string) (int64, error) {
+	var userID int64
+	err := s.db.QueryRowContext(ctx, `
+UPDATE email_verification_tokens SET used_at = NOW()
+WHERE token = $1 AND used_at IS NULL AND expires_at > NOW()
+RETURNING user_id`, token).Scan(&userID)
+	if err != nil {
+		return 0, err
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE users SET email_verified = TRUE WHERE id = $1`, userID)
+	return userID, err
+}
+
+func (s *Store) MarkTokenUsed(ctx context.Context, token string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE email_verification_tokens SET used_at = NOW() WHERE token = $1`, token)
+	return err
+}
+
+func (s *Store) UpdateUserPassword(ctx context.Context, userID int64, hashedPassword string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`, hashedPassword, userID)
+	return err
+}
+
 func (s *Store) GetAPIKeyByID(ctx context.Context, keyID int64) (*APIKey, error) {
 	var k APIKey
 	err := s.db.QueryRowContext(ctx, `

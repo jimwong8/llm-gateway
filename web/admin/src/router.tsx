@@ -29,6 +29,8 @@ import { BillingPage } from './pages/BillingPage'
 import { PricingPage } from './pages/admin/PricingPage'
 import { BroadcastPage } from './pages/admin/BroadcastPage'
 import { OAuthCallbackPage } from './pages/OAuthCallback'
+import { ForgotPasswordPage } from './pages/ForgotPassword'
+import { ResetPasswordPage } from './pages/ResetPassword'
 
 export const router = createBrowserRouter([
   {
@@ -46,6 +48,14 @@ export const router = createBrowserRouter([
   {
     path: 'oauth/callback',
     element: <OAuthCallbackPage />,
+  },
+  {
+    path: 'forgot-password',
+    element: <ForgotPasswordPage />,
+  },
+  {
+    path: 'reset-password',
+    element: <ResetPasswordPage />,
   },
   {
     element: <ProtectedRoute />,

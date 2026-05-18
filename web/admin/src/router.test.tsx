@@ -4,6 +4,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearToken, setToken } from './lib/auth'
 import { router as appRouter } from './router'
+import './i18n'
 
 describe('router protection', () => {
   beforeEach(() => {
