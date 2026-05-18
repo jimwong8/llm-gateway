@@ -1,8 +1,11 @@
 import { FormEvent, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { toast } from 'sonner'
 import { apiRequest } from '../lib/http'
 
 export function ResetPasswordPage() {
+  const { t } = useTranslation()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const [password, setPassword] = useState('')
@@ -15,25 +18,27 @@ export function ResetPasswordPage() {
     e.preventDefault()
     setError('')
     if (password.length < 8) {
-      setError('密码至少 8 个字符')
+      setError(t('password.minLength'))
       return
     }
     if (password !== confirmPassword) {
-      setError('两次输入的密码不一致')
+      setError(t('password.mismatch'))
       return
     }
     const token = searchParams.get('token')
     if (!token) {
-      setError('无效的重置链接')
+      setError(t('password.invalidLink'))
       return
     }
     setLoading(true)
     try {
       await apiRequest('/api/auth/reset-password', { token, password }, { auth: 'none', method: 'POST' })
       setSuccess(true)
+      toast.success(t('password.resetSuccessToast'))
       setTimeout(() => navigate('/login'), 2000)
     } catch (err: any) {
-      setError(err?.message ?? '重置失败，请稍后重试')
+      setError(err?.message ?? t('password.resetFailed'))
+      toast.error(err?.message ?? t('password.resetFailed'))
     } finally {
       setLoading(false)
     }
@@ -44,8 +49,8 @@ export function ResetPasswordPage() {
       <main className="login-page">
         <section className="login-card">
           <div className="login-card__header">
-            <h1>密码重置成功</h1>
-            <p>您的密码已更新，即将跳转到登录页面...</p>
+            <h1>{t('password.resetSuccessTitle')}</h1>
+            <p>{t('password.resetSuccessDescription')}</p>
           </div>
         </section>
       </main>
@@ -57,21 +62,21 @@ export function ResetPasswordPage() {
       <section className="login-card">
         <div className="login-card__header">
           <span className="login-badge">LLM Gateway</span>
-          <h1>重置密码</h1>
-          <p>输入新密码</p>
+          <h1>{t('password.resetTitle')}</h1>
+          <p>{t('password.resetDescription')}</p>
         </div>
         <form className="login-form" onSubmit={handleSubmit}>
           <label>
-            新密码
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="至少 8 个字符" />
+            {t('password.newPassword')}
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder={t('password.newPasswordPlaceholder')} />
           </label>
           <label>
-            确认密码
-            <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="再次输入新密码" />
+            {t('password.confirmPassword')}
+            <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder={t('password.confirmPasswordPlaceholder')} />
           </label>
           {error ? <div className="login-error" role="alert">{error}</div> : null}
           <button type="submit" className="button-primary" disabled={loading}>
-            {loading ? '重置中...' : '重置密码'}
+            {loading ? t('password.resetting') : t('password.resetAction')}
           </button>
         </form>
       </section>

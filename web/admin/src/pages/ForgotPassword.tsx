@@ -1,8 +1,11 @@
 import { FormEvent, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
+import { toast } from 'sonner'
 import { apiRequest } from '../lib/http'
 
 export function ForgotPasswordPage() {
+  const { t } = useTranslation()
   const [email, setEmail] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
@@ -12,15 +15,17 @@ export function ForgotPasswordPage() {
     e.preventDefault()
     setError('')
     if (!email.trim()) {
-      setError('请输入邮箱地址')
+      setError(t('password.emailRequired'))
       return
     }
     setLoading(true)
     try {
       await apiRequest('/api/auth/forgot-password', { email: email.trim() }, { auth: 'none', method: 'POST' })
       setSuccess(true)
+      toast.success(t('password.resetLinkSentToast'))
     } catch (err: any) {
-      setError(err?.message ?? '发送失败，请稍后重试')
+      setError(err?.message ?? t('password.sendFailed'))
+      toast.error(err?.message ?? t('password.sendFailed'))
     } finally {
       setLoading(false)
     }
@@ -31,11 +36,11 @@ export function ForgotPasswordPage() {
       <main className="login-page">
         <section className="login-card">
           <div className="login-card__header">
-            <h1>重置链接已发送</h1>
-            <p>如果您的邮箱已注册，我们将发送密码重置链接。请检查您的收件箱。</p>
+            <h1>{t('password.resetLinkSentTitle')}</h1>
+            <p>{t('password.resetLinkSentDescription')}</p>
           </div>
           <Link to="/login" className="button-primary" style={{ display: 'block', textAlign: 'center', marginTop: '1rem' }}>
-            返回登录
+            {t('password.backToLogin')}
           </Link>
         </section>
       </main>
@@ -47,21 +52,21 @@ export function ForgotPasswordPage() {
       <section className="login-card">
         <div className="login-card__header">
           <span className="login-badge">LLM Gateway</span>
-          <h1>找回密码</h1>
-          <p>输入您的邮箱地址，我们将发送重置链接</p>
+          <h1>{t('password.forgotTitle')}</h1>
+          <p>{t('password.forgotDescription')}</p>
         </div>
         <form className="login-form" onSubmit={handleSubmit}>
           <label>
-            邮箱
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="your@email.com" />
+            {t('auth.email')}
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder={t('auth.emailPlaceholder')} />
           </label>
           {error ? <div className="login-error" role="alert">{error}</div> : null}
           <button type="submit" className="button-primary" disabled={loading}>
-            {loading ? '发送中...' : '发送重置链接'}
+            {loading ? t('password.sending') : t('password.sendResetLink')}
           </button>
         </form>
         <p style={{ textAlign: 'center', marginTop: '1rem' }}>
-          <Link to="/login">返回登录</Link>
+          <Link to="/login">{t('password.backToLogin')}</Link>
         </p>
       </section>
     </main>

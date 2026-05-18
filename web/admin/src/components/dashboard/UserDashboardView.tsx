@@ -102,53 +102,54 @@ export function UserDashboardView() {
       )}
 
       <div className="page-surface" style={{ marginTop: '1rem' }}>
-        <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem', fontWeight: 600 }}>调用趋势</h3>
+        <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem', fontWeight: 600 }}>{t('dashboard.usageTrends')}</h3>
         <DailyRequestsChart data={usageData} />
       </div>
 
       {modelData && modelData.length > 0 && (
         <div className="page-surface" style={{ marginTop: '1rem' }}>
-          <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem', fontWeight: 600 }}>模型分布</h3>
+          <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem', fontWeight: 600 }}>{t('dashboard.modelDistribution')}</h3>
           <ModelDistributionChart data={modelData} />
         </div>
       )}
 
       <div className="page-surface" style={{ marginTop: '1rem' }}>
-        <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem', fontWeight: 600 }}>成本趋势</h3>
+        <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem', fontWeight: 600 }}>{t('dashboard.costTrend')}</h3>
         {costTrendQuery.isLoading ? (
-          <div className="event-state">加载中...</div>
+          <div className="event-state">{t('common.loading')}</div>
         ) : (
-          <CostTrendSummary data={costTrendQuery.data?.data} />
+          <CostTrendSummary data={costTrendQuery.data?.data} t={t} />
         )}
       </div>
 
       <div className="page-surface" style={{ marginTop: '1rem' }}>
-        <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem', fontWeight: 600 }}>调用日志</h3>
+        <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem', fontWeight: 600 }}>{t('dashboard.usageLogs')}</h3>
         <div style={{ marginBottom: '1rem' }}>
           <input
             type="text"
-            placeholder="搜索 provider 或 model..."
+            placeholder={t('dashboard.usageSearchPlaceholder')}
             value={logSearch}
             onChange={e => { setLogSearch(e.target.value); setLogPage(0) }}
             style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #d1d5db' }}
           />
         </div>
         {logsQuery.isLoading ? (
-          <div className="event-state">加载中...</div>
+          <div className="event-state">{t('common.loading')}</div>
         ) : (
           <>
             <UsageLogTable
+              t={t}
               logs={(logsQuery.data?.data || []).filter((l: UserUsageLog) =>
                 !logSearch || l.provider.includes(logSearch) || l.model.includes(logSearch)
               )}
             />
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}>
               <button type="button" onClick={() => setLogPage(p => Math.max(0, p - 1))} disabled={logPage === 0}>
-                上一页
+                {t('common.prev')}
               </button>
-              <span>第 {logPage + 1} 页</span>
+              <span>{t('common.page')} {logPage + 1}</span>
               <button type="button" onClick={() => setLogPage(p => p + 1)} disabled={(logsQuery.data?.data || []).length < logLimit}>
-                下一页
+                {t('common.next')}
               </button>
             </div>
           </>
@@ -158,9 +159,9 @@ export function UserDashboardView() {
   )
 }
 
-function CostTrendSummary({ data }: { data?: CostTrendPoint[] }) {
+function CostTrendSummary({ data, t }: { data?: CostTrendPoint[]; t: (key: string) => string }) {
   if (!data || data.length === 0) {
-    return <div className="event-state">暂无数据</div>
+    return <div className="event-state">{t('common.noData')}</div>
   }
   const totalCost = data.reduce((s, d) => s + d.cost_cents, 0)
   const totalTokens = data.reduce((s, d) => s + d.tokens, 0)
@@ -168,24 +169,24 @@ function CostTrendSummary({ data }: { data?: CostTrendPoint[] }) {
   return (
     <div className="summary-card-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
       <div className="summary-card">
-        <span>总费用</span>
+        <span>{t('dashboard.totalCost')}</span>
         <strong>¥{(totalCost / 100).toFixed(2)}</strong>
       </div>
       <div className="summary-card">
-        <span>总 Token</span>
+        <span>{t('dashboard.totalTokensPeriod')}</span>
         <strong>{totalTokens.toLocaleString()}</strong>
       </div>
       <div className="summary-card">
-        <span>总请求</span>
+        <span>{t('dashboard.totalRequestsPeriod')}</span>
         <strong>{totalRequests}</strong>
       </div>
     </div>
   )
 }
 
-function UsageLogTable({ logs }: { logs: UserUsageLog[] }) {
+function UsageLogTable({ logs, t }: { logs: UserUsageLog[]; t: (key: string) => string }) {
   if (logs.length === 0) {
-    return <div className="event-state">暂无调用记录</div>
+    return <div className="event-state">{t('dashboard.noUsageLogs')}</div>
   }
   return (
     <table className="data-table">
