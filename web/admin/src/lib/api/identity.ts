@@ -1,4 +1,4 @@
-import type { ApiKey, CreateApiKeyRequest, LoginRequest, LoginResponse, SignupRequest, User } from '../../types/identity'
+import type { ApiKey, CreateApiKeyRequest, LoginRequest, LoginResponse, OAuthBinding, SignupRequest, User } from '../../types/identity'
 import { apiRequest } from '../http'
 
 const USER_TOKEN_KEY = 'llm_gateway_user_token'
@@ -70,6 +70,24 @@ export async function createApiKey(data?: CreateApiKeyRequest): Promise<{ key: s
 
 export async function revokeApiKey(id: number): Promise<{ status: string }> {
   return apiRequest<{ status: string }>(`/api/user/api-keys/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  }, { auth: 'none' })
+}
+
+export function getGitHubLoginUrl(): string {
+  return '/api/auth/oauth/github'
+}
+
+export async function listOAuthBindings(): Promise<{ object: string; data: OAuthBinding[] }> {
+  return apiRequest('/api/user/oauth', {
+    method: 'GET',
+    headers: authHeaders(),
+  }, { auth: 'none' })
+}
+
+export async function deleteOAuthBinding(provider: string): Promise<{ status: string }> {
+  return apiRequest(`/api/user/oauth/${provider}`, {
     method: 'DELETE',
     headers: authHeaders(),
   }, { auth: 'none' })

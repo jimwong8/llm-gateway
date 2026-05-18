@@ -46,3 +46,9 @@ export interface SignupRequest {
 export interface CreateApiKeyRequest {
   name?: string
 }
+
+export interface OAuthBinding {
+  id: number
+  provider: string
+  created_at: string
+}

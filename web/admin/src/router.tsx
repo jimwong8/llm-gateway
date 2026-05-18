@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { ProtectedRoute } from './components/auth/ProtectedRoute'
+import { AccountPage } from './pages/AccountPage'
 import { ApprovalsPage } from './pages/ApprovalsPage'
 import { ChatPage } from './pages/ChatPage'
 import { AuditRuntimePage } from './pages/AuditRuntimePage'
@@ -26,6 +27,7 @@ import { TenantKeysPage } from './pages/TenantKeysPage'
 import { AuditExportPage } from './pages/AuditExportPage'
 import { BillingPage } from './pages/BillingPage'
 import { PricingPage } from './pages/admin/PricingPage'
+import { BroadcastPage } from './pages/admin/BroadcastPage'
 
 export const router = createBrowserRouter([
   {
@@ -140,8 +142,16 @@ export const router = createBrowserRouter([
         element: <BillingPage />,
       },
       {
+        path: 'account',
+        element: <AccountPage />,
+      },
+      {
         path: 'billing-pricing',
         element: <PricingPage />,
+      },
+      {
+        path: 'broadcasts',
+        element: <BroadcastPage />,
       },
       {
         path: '*',
