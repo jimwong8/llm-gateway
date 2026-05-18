@@ -40,6 +40,7 @@ type Config struct {
 	BillingEnabled           bool
 	TenantRPM                int
 	AdminAPIKey              string
+	JWTSecret                string
 	ProviderMaxRetries       int
 	ProviderFailureThreshold int
 	ProviderOpenSeconds      int
@@ -90,6 +91,7 @@ func Load() Config {
 		BillingEnabled:           getenvBool("BILLING_ENABLED", true),
 		TenantRPM:                getenvInt("TENANT_RPM", 60),
 		AdminAPIKey:              getenv("ADMIN_API_KEY", "ok0115ok"),
+		JWTSecret:                getenv("JWT_SECRET", "change-me-jwt-secret-at-least-32-characters"),
 		ProviderMaxRetries:       getenvInt("PROVIDER_MAX_RETRIES", 1),
 		ProviderFailureThreshold: getenvInt("PROVIDER_FAILURE_THRESHOLD", 2),
 		ProviderOpenSeconds:      getenvInt("PROVIDER_OPEN_SECONDS", 30),

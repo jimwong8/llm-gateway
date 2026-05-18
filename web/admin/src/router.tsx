@@ -6,6 +6,8 @@ import { ConfigCenterPage } from './pages/ConfigCenterPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { DriftDashboardPage } from './pages/DriftDashboardPage'
 import { MemoryGovernancePage } from './pages/MemoryGovernancePage'
+import { ApiKeysPage } from './pages/ApiKeysPage'
+import { SignupPage } from './pages/SignupPage'
 import { LoginPage } from './pages/LoginPage'
 import { ObservabilityPage } from './pages/ObservabilityPage'
 import { PlaygroundPage } from './pages/PlaygroundPage'
@@ -32,6 +34,10 @@ export const router = createBrowserRouter([
     element: <LoginPage />,
   },
   {
+    path: 'signup',
+    element: <SignupPage />,
+  },
+  {
     element: <ProtectedRoute />,
     children: [
       {
@@ -41,6 +47,10 @@ export const router = createBrowserRouter([
       {
         path: 'config-center',
         element: <ConfigCenterPage />,
+      },
+      {
+        path: 'api-keys',
+        element: <ApiKeysPage />,
       },
       {
         path: 'releases',
