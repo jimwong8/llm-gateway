@@ -301,11 +301,15 @@ func classifyTask(req providers.ChatCompletionRequest) string {
 	if hint := strings.TrimSpace(strings.ToLower(req.TaskHint)); hint != "" {
 		return hint
 	}
-	combined := make([]string, 0, len(req.Messages))
-	for _, msg := range req.Messages {
-		combined = append(combined, strings.ToLower(msg.Content))
+	buf := getBuffer()
+	for i, msg := range req.Messages {
+		if i > 0 {
+			buf.WriteByte(' ')
+		}
+		buf.WriteString(strings.ToLower(msg.Content))
 	}
-	text := strings.Join(combined, " ")
+	text := buf.String()
+	putBuffer(buf)
 	switch {
 	case strings.Contains(text, "code"), strings.Contains(text, "golang"), strings.Contains(text, "python"), strings.Contains(text, "hello world"), strings.Contains(text, "软件"), strings.Contains(text, "开发"), strings.Contains(text, "代码"):
 		return "code"

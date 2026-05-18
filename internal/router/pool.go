@@ -24,6 +24,12 @@ func putBuffer(buf *bytes.Buffer) {
 	bufferPool.Put(buf)
 }
 
+// GetBuffer 从池中获取一个已重置的 bytes.Buffer（导出供跨包使用）
+func GetBuffer() *bytes.Buffer { return getBuffer() }
+
+// PutBuffer 将 bytes.Buffer 归还到池中（导出供跨包使用）
+func PutBuffer(buf *bytes.Buffer) { putBuffer(buf) }
+
 var byteSlicePool = sync.Pool{
 	New: func() interface{} {
 		b := make([]byte, 0, 4096)
@@ -42,3 +48,9 @@ func putByteSlice(b *[]byte) {
 	*b = (*b)[:0]
 	byteSlicePool.Put(b)
 }
+
+// GetByteSlice 从池中获取一个已重置的 []byte（导出供跨包使用）
+func GetByteSlice() *[]byte { return getByteSlice() }
+
+// PutByteSlice 将 []byte 归还到池中（导出供跨包使用）
+func PutByteSlice(b *[]byte) { putByteSlice(b) }

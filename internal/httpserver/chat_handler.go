@@ -3,7 +3,6 @@ package httpserver
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -11,6 +10,7 @@ import (
 
 	"llm-gateway/gateway/internal/chat"
 	"llm-gateway/gateway/internal/providers"
+	"llm-gateway/gateway/internal/router"
 )
 
 type chatStore interface {
@@ -87,6 +87,8 @@ func (s *Server) mountChatRoutes(mux *http.ServeMux) {
 			methodNotAllowed(w, r)
 		}
 	}))
+
+	mux.HandleFunc("/api/ws/chat", s.requireUser(s.handleWSChatHTTP))
 
 	mux.HandleFunc("/api/chat/share/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -355,7 +357,12 @@ func (s *Server) chatStreamMessages(w http.ResponseWriter, r *http.Request) {
 			"type":    "chunk",
 			"content": chunk,
 		})
-		fmt.Fprintf(w, "data: %s\n\n", data)
+		buf := router.GetBuffer()
+		buf.WriteString("data: ")
+		buf.Write(data)
+		buf.WriteString("\n\n")
+		w.Write(buf.Bytes())
+		router.PutBuffer(buf)
 		flusher.Flush()
 	}
 
@@ -367,7 +374,12 @@ func (s *Server) chatStreamMessages(w http.ResponseWriter, r *http.Request) {
 		"tokens":        resp.Usage.CompletionTokens,
 		"prompt_tokens": resp.Usage.PromptTokens,
 	})
-	fmt.Fprintf(w, "data: %s\n\n", finalData)
+	buf := router.GetBuffer()
+	buf.WriteString("data: ")
+	buf.Write(finalData)
+	buf.WriteString("\n\n")
+	w.Write(buf.Bytes())
+	router.PutBuffer(buf)
 	flusher.Flush()
 }
 
@@ -379,7 +391,12 @@ func sendSSEError(w http.ResponseWriter, code, message string) {
 	})
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
-	fmt.Fprintf(w, "event: error\ndata: %s\n\n", data)
+	buf := router.GetBuffer()
+	buf.WriteString("event: error\ndata: ")
+	buf.Write(data)
+	buf.WriteString("\n\n")
+	w.Write(buf.Bytes())
+	router.PutBuffer(buf)
 }
 
 func parseSessionIDFromPath(path, prefix, suffix string) (int64, error) {

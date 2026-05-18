@@ -28,6 +28,7 @@ import { AuditExportPage } from './pages/AuditExportPage'
 import { BillingPage } from './pages/BillingPage'
 import { PricingPage } from './pages/admin/PricingPage'
 import { BroadcastPage } from './pages/admin/BroadcastPage'
+import { PresetsPage } from './pages/PresetsPage'
 import { OAuthCallbackPage } from './pages/OAuthCallback'
 import { ForgotPasswordPage } from './pages/ForgotPassword'
 import { ResetPasswordPage } from './pages/ResetPassword'
@@ -127,6 +128,10 @@ export const router = createBrowserRouter([
       {
         path: 'memory-governance',
         element: <MemoryGovernancePage />,
+      },
+      {
+        path: 'presets',
+        element: <PresetsPage />,
       },
       {
         path: 'recommendations',
