@@ -149,7 +149,7 @@ export function BroadcastPage() {
         <h3 style={{ marginBottom: '0.75rem', fontWeight: 600 }}>广播列表</h3>
         {listQuery.isLoading && <div className="event-state">加载中…</div>}
         {listQuery.error && <div className="config-error" role="alert">加载失败</div>}
-        {listQuery.data && (
+        {Array.isArray(listQuery.data?.data) && (
           <table className="data-table">
             <thead>
               <tr>

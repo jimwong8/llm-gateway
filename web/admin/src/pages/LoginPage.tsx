@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { setToken } from '../lib/auth'
 import { apiRequest } from '../lib/http'
 import { getGitHubLoginUrl, login, setUserToken } from '../lib/api/identity'
+import { Button, Input, Tabs } from '../components/ui'
 
 type LocationState = {
   from?: {
@@ -11,6 +12,11 @@ type LocationState = {
 }
 
 type LoginMode = 'admin' | 'user'
+
+const MODE_TABS = [
+  { key: 'admin', label: '管理员' },
+  { key: 'user', label: '用户登录' },
+]
 
 export function LoginPage() {
   const navigate = useNavigate()
@@ -84,54 +90,34 @@ export function LoginPage() {
           <p>使用管理员 Token 或用户账号登录。</p>
         </div>
 
-        <div style={{ display: 'flex', marginBottom: '1.5rem', borderBottom: '2px solid #e2e8f0' }}>
-          <button
-            type="button"
-            style={{
-              flex: 1, padding: '0.75rem', border: 'none', background: mode === 'admin' ? '#3b82f6' : 'transparent',
-              color: mode === 'admin' ? '#fff' : '#64748b', cursor: 'pointer', fontWeight: 600,
-              borderRadius: '4px 4px 0 0',
-            }}
-            onClick={() => setMode('admin')}
-          >
-            管理员
-          </button>
-          <button
-            type="button"
-            style={{
-              flex: 1, padding: '0.75rem', border: 'none', background: mode === 'user' ? '#3b82f6' : 'transparent',
-              color: mode === 'user' ? '#fff' : '#64748b', cursor: 'pointer', fontWeight: 600,
-              borderRadius: '4px 4px 0 0',
-            }}
-            onClick={() => setMode('user')}
-          >
-            用户登录
-          </button>
+        <div style={{ marginBottom: '1.5rem' }}>
+          <Tabs tabs={MODE_TABS} activeKey={mode} onChange={(key) => { setMode(key as LoginMode); setError('') }} />
         </div>
 
         {mode === 'admin' ? (
           <form className="login-form" onSubmit={handleAdminSubmit}>
-            <label htmlFor="admin-token">管理员 Token</label>
-            <input
+            <Input
               id="admin-token"
-              name="admin-token"
+              label="管理员 Token"
               type="password"
               placeholder="sk-admin-..."
               value={token}
               onChange={(event) => setTokenValue(event.target.value)}
+              error={error}
             />
-            {error ? <div className="login-error" role="alert">{error}</div> : null}
-            <button type="submit">进入控制台</button>
+            <Button type="submit" variant="primary" size="lg">进入控制台</Button>
           </form>
         ) : (
           <>
             <form className="login-form" onSubmit={handleUserSubmit}>
-              <label htmlFor="email">邮箱</label>
-              <input id="email" type="email" placeholder="user@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-              <label htmlFor="password">密码</label>
-              <input id="password" type="password" placeholder="输入密码" value={password} onChange={(e) => setPassword(e.target.value)} />
-              {error ? <div className="login-error" role="alert">{error}</div> : null}
-              <button type="submit" disabled={loading}>{loading ? '登录中...' : '登录'}</button>
+              <Input label="邮箱" id="email" type="email" placeholder="user@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+              <Input label="密码" id="password" type="password" placeholder="输入密码" value={password} onChange={(e) => setPassword(e.target.value)} />
+              {error ? (
+                <div className="login-error" role="alert">{error}</div>
+              ) : null}
+              <Button type="submit" variant="primary" size="lg" loading={loading} disabled={loading}>
+                {loading ? '登录中...' : '登录'}
+              </Button>
             </form>
             {githubEnabled && (
               <div style={{ marginTop: '1rem', textAlign: 'center' }}>

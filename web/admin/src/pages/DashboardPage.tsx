@@ -5,6 +5,7 @@ import { DashboardAdminOverviewSection } from '../components/dashboard/Dashboard
 import { DashboardSessionOpsSection } from '../components/dashboard/DashboardSessionOpsSection'
 import { UserDashboardView } from '../components/dashboard/UserDashboardView'
 import { TokenUsageChart, ModelDistributionChart, CacheHitRateChart, ChannelStatusChart } from '../components/charts'
+import { Tabs } from '../components/ui'
 import { apiRequest } from '../lib/http'
 import { getUserToken } from '../lib/api/identity'
 import type { BillingSummary } from '../types/observability'
@@ -19,7 +20,7 @@ type AdminHealth = {
 
 type ChartTab = 'tokens' | 'models' | 'cache' | 'channels'
 
-const CHART_TABS: { key: ChartTab; label: string }[] = [
+const CHART_TABS = [
   { key: 'tokens', label: 'Token 趋势' },
   { key: 'models', label: '模型分布' },
   { key: 'cache', label: '缓存命中' },
@@ -110,20 +111,7 @@ function DashboardAdminView() {
       />
 
       <div className="page-surface" style={{ marginTop: '1rem' }}>
-        <div className="chart-tabs">
-          <div className="tab-strip">
-            {CHART_TABS.map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                className={activeTab === tab.key ? 'tab active' : 'tab'}
-                onClick={() => setActiveTab(tab.key)}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        <Tabs tabs={CHART_TABS} activeKey={activeTab} onChange={(key) => setActiveTab(key as ChartTab)} />
 
         <div style={{ marginTop: '1rem' }}>
           {chartLoading ? <div className="event-state">加载图表数据中…</div> : null}

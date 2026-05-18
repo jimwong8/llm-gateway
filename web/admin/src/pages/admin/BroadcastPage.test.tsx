@@ -36,15 +36,15 @@ describe('BroadcastPage', () => {
   })
 
   it('renders page title', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    vi.spyOn(global, 'fetch').mockResolvedValue(
       new Response(JSON.stringify(listResponse), { status: 200, headers: { 'Content-Type': 'application/json' } }),
     )
     renderPage()
-    expect(await screen.findByText('广播管理')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: /广播管理/ })).toBeInTheDocument()
   })
 
   it('displays broadcast list', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    vi.spyOn(global, 'fetch').mockResolvedValue(
       new Response(JSON.stringify(listResponse), { status: 200, headers: { 'Content-Type': 'application/json' } }),
     )
     renderPage()
@@ -53,7 +53,7 @@ describe('BroadcastPage', () => {
   })
 
   it('shows empty state when no broadcasts', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    vi.spyOn(global, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ object: 'list', data: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
     )
     renderPage()
@@ -61,14 +61,13 @@ describe('BroadcastPage', () => {
   })
 
   it('can create a broadcast', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch')
+    const fetchMock = vi.spyOn(global, 'fetch')
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify(listResponse), { status: 200, headers: { 'Content-Type': 'application/json' } }),
     )
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ id: 3, title: '新广播', content: '新内容', type: 'critical', start_at: '2025-01-01T00:00:00Z', end_at: '2026-01-01T00:00:00Z', created_by: 'admin', created_at: '2025-01-01T00:00:00Z', updated_at: '2025-01-01T00:00:00Z' }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
     )
-    // Subsequent GET refetches
     fetchMock.mockResolvedValue(
       new Response(JSON.stringify(listResponse), { status: 200, headers: { 'Content-Type': 'application/json' } }),
     )

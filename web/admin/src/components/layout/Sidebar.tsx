@@ -1,4 +1,5 @@
 import { useInRouterContext, useLocation, useNavigate } from 'react-router-dom'
+import { Button } from '../ui'
 
 type SidebarProps = {
   mobile?: boolean
@@ -106,9 +107,9 @@ function SidebarLayout({ mobile = false, open = false, onClose, currentPath = ''
           <p>管理控制台</p>
         </div>
         {mobile ? (
-          <button type="button" onClick={onClose} aria-label="关闭导航">
+          <Button variant="ghost" size="sm" onClick={onClose} aria-label="关闭导航">
             关闭
-          </button>
+          </Button>
         ) : null}
       </div>
       <nav className="app-sidebar__nav">

@@ -22,6 +22,7 @@ import (
 	"llm-gateway/gateway/internal/config"
 	"llm-gateway/gateway/internal/controlplane"
 	"llm-gateway/gateway/internal/health"
+	"llm-gateway/gateway/internal/i18n"
 	"llm-gateway/gateway/internal/memory"
 	"llm-gateway/gateway/internal/policy"
 	"llm-gateway/gateway/internal/providers"
@@ -217,7 +218,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/admin/ui", s.adminUI)
 	mux.HandleFunc("/admin/ui/", s.adminUI)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/admin/ui", http.StatusTemporaryRedirect) })
-	return panicRecoveryMiddleware(loggingMiddleware(mux))
+	return panicRecoveryMiddleware(loggingMiddleware(i18n.Middleware(mux)))
 }
 
 func (s *Server) mountAdminConfigRoutes(mux *http.ServeMux) {
@@ -438,7 +439,8 @@ func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 			}
 		}
 		if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(s.cfg.AdminAPIKey)) != 1 {
-			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]any{"message": "admin authentication required", "type": "authentication_error"}})
+			lang := i18n.LangFromContext(r.Context())
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]any{"message": i18n.T(lang, "authentication_required"), "type": "authentication_error"}})
 			return
 		}
 		if s.policy != nil {
@@ -450,7 +452,8 @@ func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 				cancel()
 				if err == nil && role != "" && !roleAllowsAdminPath(role, r.URL.Path, r.Method) {
 					s.writeAuditAsync(audit.Event{RequestPayload: map[string]any{"tenant_id": tenantID, "policy": "admin_rbac_denied", "role": role, "subject": subject, "path": r.URL.Path, "method": r.Method}})
-					writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]any{"message": "role not permitted for admin endpoint", "type": "authorization_error", "tenant_id": tenantID, "role": role, "path": r.URL.Path, "method": r.Method}})
+					rbacLang := i18n.LangFromContext(r.Context())
+					writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]any{"message": i18n.T(rbacLang, "authorization_error"), "type": "authorization_error", "tenant_id": tenantID, "role": role, "path": r.URL.Path, "method": r.Method}})
 					return
 				}
 			}
@@ -2949,7 +2952,8 @@ func responseToMap(resp providers.ChatCompletionResponse) map[string]any {
 }
 
 func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"message": "route not found", "type": "not_found_error", "path": r.URL.Path}})
+	lang := i18n.LangFromContext(r.Context())
+	writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"message": i18n.T(lang, "route_not_found"), "type": "not_found_error", "path": r.URL.Path}})
 }
 func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -2971,6 +2975,11 @@ func panicRecoveryMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+func badRequestLang(w http.ResponseWriter, r *http.Request, key string) {
+	lang := i18n.LangFromContext(r.Context())
+	writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": i18n.T(lang, key), "type": "invalid_request_error", "key": key}})
+}
+
 func badRequest(w http.ResponseWriter, message string) {
 	writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": message, "type": "invalid_request_error"}})
 }
@@ -2984,8 +2993,21 @@ func internalError(w http.ResponseWriter, err error) {
 	}
 	writeJSON(w, http.StatusInternalServerError, map[string]any{"error": map[string]any{"message": err.Error(), "type": "internal_server_error"}})
 }
+
+func internalErrorLang(w http.ResponseWriter, r *http.Request, err error, key string) {
+	lang := i18n.LangFromContext(r.Context())
+	if err == nil {
+		err = errors.New(i18n.T(lang, "internal_server_error"))
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"message": i18n.T(lang, "resource_not_found"), "type": "not_found_error"}})
+		return
+	}
+	writeJSON(w, http.StatusInternalServerError, map[string]any{"error": map[string]any{"message": i18n.T(lang, key), "type": "internal_server_error", "key": key, "detail": err.Error()}})
+}
 func methodNotAllowed(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": map[string]any{"message": "method not allowed", "type": "method_not_allowed", "method": r.Method}})
+	lang := i18n.LangFromContext(r.Context())
+	writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": map[string]any{"message": i18n.T(lang, "method_not_allowed"), "type": "method_not_allowed", "method": r.Method}})
 }
 
 func (s *Server) mountBroadcastAdminRoutes(mux *http.ServeMux) {
