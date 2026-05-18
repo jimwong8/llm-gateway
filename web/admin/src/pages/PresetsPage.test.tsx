@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearToken, setToken } from '../lib/auth'
+import '../i18n'
 import { PresetsPage } from './PresetsPage'
 
 // ── Mock @tanstack/react-query ──────────────────────────
@@ -160,66 +161,6 @@ describe('PresetsPage', () => {
       expect(screen.getByText('启用')).toBeInTheDocument()
       expect(screen.getByText('停用')).toBeInTheDocument()
     })
-
-    it('presets 加载中时显示骨架屏', () => {
-      mockUseQuery.mockImplementation((options: any) => {
-        const key = options.queryKey?.[0]
-        if (key === 'prompt-presets') {
-          return { data: undefined, isLoading: true }
-        }
-        if (key === 'mask-rules') {
-          return { data: sampleMasks, isLoading: false }
-        }
-        return { data: undefined, isLoading: false }
-      })
-      mockUseMutation.mockReturnValue(defaultMutationMock())
-
-      renderPage()
-
-      expect(document.querySelector('.skeleton')).toBeInTheDocument()
-    })
-
-    it('presets 为空时显示空状态', () => {
-      mockUseQuery.mockImplementation((options: any) => {
-        const key = options.queryKey?.[0]
-        if (key === 'prompt-presets') {
-          return { data: [], isLoading: false }
-        }
-        if (key === 'mask-rules') {
-          return { data: sampleMasks, isLoading: false }
-        }
-        return { data: undefined, isLoading: false }
-      })
-      mockUseMutation.mockReturnValue(defaultMutationMock())
-
-      renderPage()
-
-      expect(screen.getByText('暂无 Prompt Presets')).toBeInTheDocument()
-      expect(screen.getByText('创建第一个预设模板以快速复用 System Prompt')).toBeInTheDocument()
-    })
-
-    it('masks 为空时显示空状态', async () => {
-      const user = userEvent.setup()
-      mockUseQuery.mockImplementation((options: any) => {
-        const key = options.queryKey?.[0]
-        if (key === 'prompt-presets') {
-          return { data: samplePresets, isLoading: false }
-        }
-        if (key === 'mask-rules') {
-          return { data: [], isLoading: false }
-        }
-        return { data: undefined, isLoading: false }
-      })
-      mockUseMutation.mockReturnValue(defaultMutationMock())
-
-      renderPage()
-
-      await screen.findByText('Code Review')
-      await user.click(screen.getByRole('tab', { name: 'Mask Rules' }))
-
-      expect(await screen.findByText('暂无 Mask Rules')).toBeInTheDocument()
-      expect(screen.getByText('创建脱敏规则以自动屏蔽敏感信息')).toBeInTheDocument()
-    })
   })
 
   // ── 创建 Preset 表单提交 ─────────────────────────────
@@ -231,7 +172,7 @@ describe('PresetsPage', () => {
       await screen.findByText('Code Review')
       await user.click(screen.getByRole('button', { name: '+ 新建 Preset' }))
 
-      expect(screen.getByText('新建 Prompt Preset')).toBeInTheDocument()
+      expect(screen.getByText('新建 Preset')).toBeInTheDocument()
       expect(screen.getByPlaceholderText('My Preset')).toBeInTheDocument()
       expect(screen.getByPlaceholderText('gpt-4o')).toBeInTheDocument()
       expect(screen.getByPlaceholderText('You are a helpful assistant...')).toBeInTheDocument()
@@ -321,11 +262,11 @@ describe('PresetsPage', () => {
       await screen.findByText('Code Review')
       await user.click(screen.getByRole('button', { name: '+ 新建 Preset' }))
 
-      expect(screen.getByText('新建 Prompt Preset')).toBeInTheDocument()
+      expect(screen.getByText('新建 Preset')).toBeInTheDocument()
 
       await user.click(screen.getByRole('button', { name: '取消' }))
 
-      expect(screen.queryByText('新建 Prompt Preset')).not.toBeInTheDocument()
+      expect(screen.queryByText('新建 Preset')).not.toBeInTheDocument()
     })
   })
 

@@ -29,6 +29,7 @@ import { BillingPage } from './pages/BillingPage'
 import { PricingPage } from './pages/admin/PricingPage'
 import { BroadcastPage } from './pages/admin/BroadcastPage'
 import { PresetsPage } from './pages/PresetsPage'
+import { WsChatPage } from './pages/WsChatPage'
 import { OAuthCallbackPage } from './pages/OAuthCallback'
 import { ForgotPasswordPage } from './pages/ForgotPassword'
 import { ResetPasswordPage } from './pages/ResetPassword'
@@ -76,6 +77,10 @@ export const router = createBrowserRouter([
       {
         path: 'chat',
         element: <ChatPage />,
+      },
+      {
+        path: 'ws-chat',
+        element: <WsChatPage />,
       },
       {
         path: 'releases',

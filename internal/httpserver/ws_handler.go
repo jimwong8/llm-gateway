@@ -11,6 +11,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"llm-gateway/gateway/internal/providers"
+	"llm-gateway/gateway/internal/router"
 )
 
 var upgrader = websocket.Upgrader{
@@ -61,6 +62,7 @@ func (s *Server) handleWSChat(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	var mu sync.Mutex
+	rl := router.NewRateLimiter(10, 10)
 
 	for {
 		_, raw, err := conn.ReadMessage()
@@ -86,7 +88,7 @@ func (s *Server) handleWSChat(w http.ResponseWriter, r *http.Request) {
 			mu.Unlock()
 
 		case "chat":
-			s.handleWSChatMessage(ctx, conn, &mu, claims.UserID, msg)
+			s.handleWSChatMessage(ctx, conn, &mu, rl, claims.UserID, msg)
 
 		default:
 			mu.Lock()
@@ -96,7 +98,14 @@ func (s *Server) handleWSChat(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleWSChatMessage(ctx context.Context, conn *websocket.Conn, mu *sync.Mutex, userID int64, msg wsMessage) {
+func (s *Server) handleWSChatMessage(ctx context.Context, conn *websocket.Conn, mu *sync.Mutex, rl *router.RateLimiter, userID int64, msg wsMessage) {
+	if err := rl.Wait(ctx); err != nil {
+		mu.Lock()
+		conn.WriteJSON(wsResponse{Type: "error", Error: "rate limit exceeded"})
+		mu.Unlock()
+		return
+	}
+
 	content := strings.TrimSpace(msg.Content)
 	if content == "" {
 		mu.Lock()
