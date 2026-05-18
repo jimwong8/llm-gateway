@@ -146,3 +146,18 @@ SELECT tenant_id, provider, is_active, created_at FROM tenant_api_keys ORDER BY 
 }
 
 func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
+
+// DefaultTenant 返回最近活跃的一个 tenant_id 作为默认值。
+// 当 JWT claims 中不包含 tenant_id 时降级使用。
+// 若 tenant_api_keys 表为空则返回空字符串。
+func (s *Store) DefaultTenant(ctx context.Context) (string, error) {
+	var tenantID string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT tenant_id FROM tenant_api_keys WHERE is_active = true
+		ORDER BY updated_at DESC LIMIT 1
+	`).Scan(&tenantID)
+	if err != nil {
+		return "", err
+	}
+	return tenantID, nil
+}

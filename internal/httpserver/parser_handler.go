@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"llm-gateway/gateway/internal/audit"
 	"llm-gateway/gateway/internal/parser"
 )
 
@@ -34,8 +35,6 @@ func (s *Server) handleFileParse(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	_ = claims
-
 	// 限制上传大小：10MB
 	const maxUploadSize = 10 << 20
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
@@ -79,6 +78,14 @@ func (s *Server) handleFileParse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.writeAuditAsync(audit.Event{
+		RequestPayload: map[string]any{
+			"action":    "file_parsed",
+			"filename":  filename,
+			"size":      len(content),
+			"actor_id":  fmt.Sprintf("%d", claims.UserID),
+		},
+	})
 	writeJSON(w, http.StatusOK, map[string]any{
 		"text":     text,
 		"filename": filename,

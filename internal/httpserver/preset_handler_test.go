@@ -18,18 +18,18 @@ type mockPresetStore struct {
 	nextID    int64
 }
 
-func (m *mockPresetStore) CreatePreset(_ context.Context, userID int64, name, description, template string, variables []string, tags []string, isPublic bool) (*memory.PromptPreset, error) {
+func (m *mockPresetStore) CreatePreset(_ context.Context, userID int64, tenantID, name, description, template string, variables []string, tags []string, isPublic bool) (*memory.PromptPreset, error) {
 	m.nextID++
 	p := memory.PromptPreset{ID: m.nextID, UserID: userID, Name: name, Description: description, Template: template, IsPublic: isPublic}
 	m.presets = append(m.presets, p)
 	return &p, nil
 }
 
-func (m *mockPresetStore) ListPresets(_ context.Context, userID int64, includePublic bool) ([]memory.PromptPreset, error) {
+func (m *mockPresetStore) ListPresets(_ context.Context, userID int64, tenantID string, includePublic bool) ([]memory.PromptPreset, error) {
 	return m.presets, nil
 }
 
-func (m *mockPresetStore) GetPreset(_ context.Context, presetID int64) (*memory.PromptPreset, error) {
+func (m *mockPresetStore) GetPreset(_ context.Context, presetID int64, tenantID string) (*memory.PromptPreset, error) {
 	for i := range m.presets {
 		if m.presets[i].ID == presetID {
 			return &m.presets[i], nil
@@ -38,7 +38,7 @@ func (m *mockPresetStore) GetPreset(_ context.Context, presetID int64) (*memory.
 	return nil, errNotFound
 }
 
-func (m *mockPresetStore) UpdatePreset(_ context.Context, presetID int64, name, description, template string, variables []string, tags []string) (*memory.PromptPreset, error) {
+func (m *mockPresetStore) UpdatePreset(_ context.Context, presetID int64, tenantID, name, description, template string, variables []string, tags []string) (*memory.PromptPreset, error) {
 	for i := range m.presets {
 		if m.presets[i].ID == presetID {
 			m.presets[i].Name = name
@@ -50,7 +50,7 @@ func (m *mockPresetStore) UpdatePreset(_ context.Context, presetID int64, name, 
 	return nil, errNotFound
 }
 
-func (m *mockPresetStore) DeletePreset(_ context.Context, presetID, userID int64) error {
+func (m *mockPresetStore) DeletePreset(_ context.Context, presetID, userID int64, tenantID string) error {
 	for i, p := range m.presets {
 		if p.ID == presetID && p.UserID == userID {
 			m.presets = append(m.presets[:i], m.presets[i+1:]...)
@@ -60,18 +60,18 @@ func (m *mockPresetStore) DeletePreset(_ context.Context, presetID, userID int64
 	return errNotFound
 }
 
-func (m *mockPresetStore) CreateMaskRule(_ context.Context, userID int64, name, pattern, replace string) (*memory.MaskRule, error) {
+func (m *mockPresetStore) CreateMaskRule(_ context.Context, userID int64, tenantID, name, pattern, replace string) (*memory.MaskRule, error) {
 	m.nextID++
 	r := memory.MaskRule{ID: m.nextID, UserID: userID, Name: name, Pattern: pattern, Replace: replace, IsActive: true}
 	m.masks = append(m.masks, r)
 	return &r, nil
 }
 
-func (m *mockPresetStore) ListMaskRules(_ context.Context, userID int64) ([]memory.MaskRule, error) {
+func (m *mockPresetStore) ListMaskRules(_ context.Context, userID int64, tenantID string) ([]memory.MaskRule, error) {
 	return m.masks, nil
 }
 
-func (m *mockPresetStore) DeleteMaskRule(_ context.Context, ruleID, userID int64) error {
+func (m *mockPresetStore) DeleteMaskRule(_ context.Context, ruleID, userID int64, tenantID string) error {
 	for i, r := range m.masks {
 		if r.ID == ruleID && r.UserID == userID {
 			m.masks = append(m.masks[:i], m.masks[i+1:]...)
@@ -81,7 +81,7 @@ func (m *mockPresetStore) DeleteMaskRule(_ context.Context, ruleID, userID int64
 	return errNotFound
 }
 
-func (m *mockPresetStore) UpdateMaskRule(_ context.Context, ruleID, userID int64, name, pattern, replace string, enabled bool) error {
+func (m *mockPresetStore) UpdateMaskRule(_ context.Context, ruleID, userID int64, tenantID, name, pattern, replace string, enabled bool) error {
 	for i := range m.masks {
 		if m.masks[i].ID == ruleID && m.masks[i].UserID == userID {
 			m.masks[i].Name = name

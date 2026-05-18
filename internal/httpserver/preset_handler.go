@@ -3,27 +3,29 @@ package httpserver
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"llm-gateway/gateway/internal/audit"
 	"llm-gateway/gateway/internal/memory"
 )
 
 type presetStore interface {
-	CreatePreset(ctx context.Context, userID int64, name, description, template string, variables []string, tags []string, isPublic bool) (*memory.PromptPreset, error)
-	ListPresets(ctx context.Context, userID int64, includePublic bool) ([]memory.PromptPreset, error)
-	GetPreset(ctx context.Context, presetID int64) (*memory.PromptPreset, error)
-	UpdatePreset(ctx context.Context, presetID int64, name, description, template string, variables []string, tags []string) (*memory.PromptPreset, error)
-	DeletePreset(ctx context.Context, presetID, userID int64) error
-	CreateMaskRule(ctx context.Context, userID int64, name, pattern, replace string) (*memory.MaskRule, error)
-	ListMaskRules(ctx context.Context, userID int64) ([]memory.MaskRule, error)
-	DeleteMaskRule(ctx context.Context, ruleID, userID int64) error
-	UpdateMaskRule(ctx context.Context, ruleID, userID int64, name, pattern, replace string, enabled bool) error
+	CreatePreset(ctx context.Context, userID int64, tenantID, name, description, template string, variables []string, tags []string, isPublic bool) (*memory.PromptPreset, error)
+	ListPresets(ctx context.Context, userID int64, tenantID string, includePublic bool) ([]memory.PromptPreset, error)
+	GetPreset(ctx context.Context, presetID int64, tenantID string) (*memory.PromptPreset, error)
+	UpdatePreset(ctx context.Context, presetID int64, tenantID, name, description, template string, variables []string, tags []string) (*memory.PromptPreset, error)
+	DeletePreset(ctx context.Context, presetID, userID int64, tenantID string) error
+	CreateMaskRule(ctx context.Context, userID int64, tenantID, name, pattern, replace string) (*memory.MaskRule, error)
+	ListMaskRules(ctx context.Context, userID int64, tenantID string) ([]memory.MaskRule, error)
+	DeleteMaskRule(ctx context.Context, ruleID, userID int64, tenantID string) error
+	UpdateMaskRule(ctx context.Context, ruleID, userID int64, tenantID, name, pattern, replace string, enabled bool) error
 }
 
 func (s *Server) WithPresetStore(store presetStore) *Server {
-	s.presetStore = store
+	s.presetStore = newCachedPresetStore(store)
 	return s
 }
 
@@ -93,7 +95,8 @@ func (s *Server) presetList(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]any{"message": "not authenticated", "type": "authentication_error"}})
 		return
 	}
-	presets, err := s.presetStore.ListPresets(r.Context(), claims.UserID, true)
+	tenantID := TenantIDFromContext(r.Context())
+	presets, err := s.presetStore.ListPresets(r.Context(), claims.UserID, tenantID, true)
 	if err != nil {
 		internalError(w, err)
 		return
@@ -128,11 +131,19 @@ func (s *Server) presetCreate(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "name and template are required")
 		return
 	}
-	p, err := s.presetStore.CreatePreset(r.Context(), claims.UserID, body.Name, body.Description, body.Template, body.Variables, body.Tags, body.IsPublic)
+	tenantID := TenantIDFromContext(r.Context())
+	p, err := s.presetStore.CreatePreset(r.Context(), claims.UserID, tenantID, body.Name, body.Description, body.Template, body.Variables, body.Tags, body.IsPublic)
 	if err != nil {
 		internalError(w, err)
 		return
 	}
+	s.writeAuditAsync(audit.Event{
+		RequestPayload: map[string]any{
+			"action":    "preset_created",
+			"target_id": fmt.Sprintf("%d", p.ID),
+			"actor_id":  fmt.Sprintf("%d", claims.UserID),
+		},
+	})
 	writeJSON(w, http.StatusCreated, p)
 }
 
@@ -142,7 +153,8 @@ func (s *Server) presetGet(w http.ResponseWriter, r *http.Request, id int64) {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]any{"message": "not authenticated", "type": "authentication_error"}})
 		return
 	}
-	p, err := s.presetStore.GetPreset(r.Context(), id)
+	tenantID := TenantIDFromContext(r.Context())
+	p, err := s.presetStore.GetPreset(r.Context(), id, tenantID)
 	if err != nil {
 		internalError(w, err)
 		return
@@ -173,11 +185,19 @@ func (s *Server) presetUpdate(w http.ResponseWriter, r *http.Request, id int64) 
 		badRequest(w, "name and template are required")
 		return
 	}
-	p, err := s.presetStore.UpdatePreset(r.Context(), id, body.Name, body.Description, body.Template, body.Variables, body.Tags)
+	tenantID := TenantIDFromContext(r.Context())
+	p, err := s.presetStore.UpdatePreset(r.Context(), id, tenantID, body.Name, body.Description, body.Template, body.Variables, body.Tags)
 	if err != nil {
 		internalError(w, err)
 		return
 	}
+	s.writeAuditAsync(audit.Event{
+		RequestPayload: map[string]any{
+			"action":    "preset_updated",
+			"target_id": fmt.Sprintf("%d", id),
+			"actor_id":  fmt.Sprintf("%d", claims.UserID),
+		},
+	})
 	writeJSON(w, http.StatusOK, p)
 }
 
@@ -187,10 +207,18 @@ func (s *Server) presetDelete(w http.ResponseWriter, r *http.Request, id int64) 
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]any{"message": "not authenticated", "type": "authentication_error"}})
 		return
 	}
-	if err := s.presetStore.DeletePreset(r.Context(), id, claims.UserID); err != nil {
+	tenantID := TenantIDFromContext(r.Context())
+	if err := s.presetStore.DeletePreset(r.Context(), id, claims.UserID, tenantID); err != nil {
 		internalError(w, err)
 		return
 	}
+	s.writeAuditAsync(audit.Event{
+		RequestPayload: map[string]any{
+			"action":    "preset_deleted",
+			"target_id": fmt.Sprintf("%d", id),
+			"actor_id":  fmt.Sprintf("%d", claims.UserID),
+		},
+	})
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
@@ -200,7 +228,8 @@ func (s *Server) maskList(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]any{"message": "not authenticated", "type": "authentication_error"}})
 		return
 	}
-	rules, err := s.presetStore.ListMaskRules(r.Context(), claims.UserID)
+	tenantID := TenantIDFromContext(r.Context())
+	rules, err := s.presetStore.ListMaskRules(r.Context(), claims.UserID, tenantID)
 	if err != nil {
 		internalError(w, err)
 		return
@@ -235,11 +264,19 @@ func (s *Server) maskCreate(w http.ResponseWriter, r *http.Request) {
 	if body.Replace == "" {
 		body.Replace = "[REDACTED]"
 	}
-	rule, err := s.presetStore.CreateMaskRule(r.Context(), claims.UserID, body.Name, body.Pattern, body.Replace)
+	tenantID := TenantIDFromContext(r.Context())
+	rule, err := s.presetStore.CreateMaskRule(r.Context(), claims.UserID, tenantID, body.Name, body.Pattern, body.Replace)
 	if err != nil {
 		internalError(w, err)
 		return
 	}
+	s.writeAuditAsync(audit.Event{
+		RequestPayload: map[string]any{
+			"action":    "mask_created",
+			"target_id": fmt.Sprintf("%d", rule.ID),
+			"actor_id":  fmt.Sprintf("%d", claims.UserID),
+		},
+	})
 	writeJSON(w, http.StatusCreated, rule)
 }
 
@@ -268,10 +305,18 @@ func (s *Server) maskUpdate(w http.ResponseWriter, r *http.Request, id int64) {
 	if body.Replace == "" {
 		body.Replace = "[REDACTED]"
 	}
-	if err := s.presetStore.UpdateMaskRule(r.Context(), id, claims.UserID, body.Name, body.Pattern, body.Replace, body.Enabled); err != nil {
+	tenantID := TenantIDFromContext(r.Context())
+	if err := s.presetStore.UpdateMaskRule(r.Context(), id, claims.UserID, tenantID, body.Name, body.Pattern, body.Replace, body.Enabled); err != nil {
 		internalError(w, err)
 		return
 	}
+	s.writeAuditAsync(audit.Event{
+		RequestPayload: map[string]any{
+			"action":    "mask_updated",
+			"target_id": fmt.Sprintf("%d", id),
+			"actor_id":  fmt.Sprintf("%d", claims.UserID),
+		},
+	})
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
@@ -281,9 +326,17 @@ func (s *Server) maskDelete(w http.ResponseWriter, r *http.Request, id int64) {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]any{"message": "not authenticated", "type": "authentication_error"}})
 		return
 	}
-	if err := s.presetStore.DeleteMaskRule(r.Context(), id, claims.UserID); err != nil {
+	tenantID := TenantIDFromContext(r.Context())
+	if err := s.presetStore.DeleteMaskRule(r.Context(), id, claims.UserID, tenantID); err != nil {
 		internalError(w, err)
 		return
 	}
+	s.writeAuditAsync(audit.Event{
+		RequestPayload: map[string]any{
+			"action":    "mask_deleted",
+			"target_id": fmt.Sprintf("%d", id),
+			"actor_id":  fmt.Sprintf("%d", claims.UserID),
+		},
+	})
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }

@@ -8,9 +8,10 @@ import (
 )
 
 type Claims struct {
-	UserID int64  `json:"uid"`
-	Email  string `json:"email"`
-	Role   string `json:"role"`
+	UserID   int64  `json:"uid"`
+	Email    string `json:"email"`
+	Role     string `json:"role"`
+	TenantID string `json:"tenant_id,omitempty"`
 	jwt.RegisteredClaims
 }
 

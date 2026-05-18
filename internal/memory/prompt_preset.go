@@ -12,6 +12,7 @@ import (
 type PromptPreset struct {
 	ID          int64     `json:"id"`
 	UserID      int64     `json:"user_id"`
+	TenantID    string    `json:"tenant_id"`
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
 	Template    string    `json:"template"`
@@ -25,6 +26,7 @@ type PromptPreset struct {
 type MaskRule struct {
 	ID        int64     `json:"id"`
 	UserID    int64     `json:"user_id"`
+	TenantID  string    `json:"tenant_id"`
 	Name      string    `json:"name"`
 	Pattern   string    `json:"pattern"`
 	Replace   string    `json:"replace"`
@@ -33,16 +35,16 @@ type MaskRule struct {
 }
 
 type PresetStore interface {
-	CreatePreset(ctx context.Context, userID int64, name, description, template string, variables []string, tags []string, isPublic bool) (*PromptPreset, error)
-	ListPresets(ctx context.Context, userID int64, includePublic bool) ([]PromptPreset, error)
-	GetPreset(ctx context.Context, presetID int64) (*PromptPreset, error)
-	UpdatePreset(ctx context.Context, presetID int64, name, description, template string, variables []string, tags []string) (*PromptPreset, error)
-	DeletePreset(ctx context.Context, presetID, userID int64) error
-	CreateMaskRule(ctx context.Context, userID int64, name, pattern, replace string) (*MaskRule, error)
-	ListMaskRules(ctx context.Context, userID int64) ([]MaskRule, error)
-	DeleteMaskRule(ctx context.Context, ruleID, userID int64) error
-	UpdateMaskRule(ctx context.Context, ruleID, userID int64, name, pattern, replace string, enabled bool) error
-	ApplyMasks(ctx context.Context, userID int64, text string) (string, error)
+	CreatePreset(ctx context.Context, userID int64, tenantID, name, description, template string, variables []string, tags []string, isPublic bool) (*PromptPreset, error)
+	ListPresets(ctx context.Context, userID int64, tenantID string, includePublic bool) ([]PromptPreset, error)
+	GetPreset(ctx context.Context, presetID int64, tenantID string) (*PromptPreset, error)
+	UpdatePreset(ctx context.Context, presetID int64, tenantID, name, description, template string, variables []string, tags []string) (*PromptPreset, error)
+	DeletePreset(ctx context.Context, presetID, userID int64, tenantID string) error
+	CreateMaskRule(ctx context.Context, userID int64, tenantID, name, pattern, replace string) (*MaskRule, error)
+	ListMaskRules(ctx context.Context, userID int64, tenantID string) ([]MaskRule, error)
+	DeleteMaskRule(ctx context.Context, ruleID, userID int64, tenantID string) error
+	UpdateMaskRule(ctx context.Context, ruleID, userID int64, tenantID, name, pattern, replace string, enabled bool) error
+	ApplyMasks(ctx context.Context, userID int64, tenantID, text string) (string, error)
 }
 
 type sqlPresetStore struct {
@@ -53,14 +55,14 @@ func NewPresetStore(db *sql.DB) PresetStore {
 	return &sqlPresetStore{db: db}
 }
 
-func (s *sqlPresetStore) CreatePreset(ctx context.Context, userID int64, name, description, template string, variables []string, tags []string, isPublic bool) (*PromptPreset, error) {
+func (s *sqlPresetStore) CreatePreset(ctx context.Context, userID int64, tenantID, name, description, template string, variables []string, tags []string, isPublic bool) (*PromptPreset, error) {
 	varsJSON, _ := json.Marshal(variables)
 	var p PromptPreset
 	err := s.db.QueryRowContext(ctx, `
-INSERT INTO prompt_presets (user_id, name, description, template, variables, tags, is_public)
-VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
+INSERT INTO prompt_presets (user_id, tenant_id, name, description, template, variables, tags, is_public)
+VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
 RETURNING id, user_id, name, description, template, variables::text, tags, is_public, created_at, updated_at`,
-		userID, name, description, template, varsJSON, pqArray(tags), isPublic,
+		userID, tenantID, name, description, template, varsJSON, pqArray(tags), isPublic,
 	).Scan(&p.ID, &p.UserID, &p.Name, &p.Description, &p.Template, &p.Variables, pqArrayScanner(&p.Tags), &p.IsPublic, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("create preset: %w", err)
@@ -68,7 +70,7 @@ RETURNING id, user_id, name, description, template, variables::text, tags, is_pu
 	return &p, nil
 }
 
-func (s *sqlPresetStore) ListPresets(ctx context.Context, userID int64, includePublic bool) ([]PromptPreset, error) {
+func (s *sqlPresetStore) ListPresets(ctx context.Context, userID int64, tenantID string, includePublic bool) ([]PromptPreset, error) {
 	var query string
 	var args []interface{}
 	if includePublic {
@@ -88,7 +90,7 @@ FROM prompt_presets WHERE user_id = $1 ORDER BY created_at DESC`
 	return scanPresets(rows)
 }
 
-func (s *sqlPresetStore) GetPreset(ctx context.Context, presetID int64) (*PromptPreset, error) {
+func (s *sqlPresetStore) GetPreset(ctx context.Context, presetID int64, tenantID string) (*PromptPreset, error) {
 	var p PromptPreset
 	err := s.db.QueryRowContext(ctx, `
 SELECT id, user_id, name, description, template, variables::text, tags, is_public, created_at, updated_at
@@ -100,7 +102,7 @@ FROM prompt_presets WHERE id = $1`, presetID,
 	return &p, nil
 }
 
-func (s *sqlPresetStore) UpdatePreset(ctx context.Context, presetID int64, name, description, template string, variables []string, tags []string) (*PromptPreset, error) {
+func (s *sqlPresetStore) UpdatePreset(ctx context.Context, presetID int64, tenantID, name, description, template string, variables []string, tags []string) (*PromptPreset, error) {
 	varsJSON, _ := json.Marshal(variables)
 	var p PromptPreset
 	err := s.db.QueryRowContext(ctx, `
@@ -115,12 +117,12 @@ RETURNING id, user_id, name, description, template, variables::text, tags, is_pu
 	return &p, nil
 }
 
-func (s *sqlPresetStore) DeletePreset(ctx context.Context, presetID, userID int64) error {
+func (s *sqlPresetStore) DeletePreset(ctx context.Context, presetID, userID int64, tenantID string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM prompt_presets WHERE id=$1 AND user_id=$2`, presetID, userID)
 	return err
 }
 
-func (s *sqlPresetStore) CreateMaskRule(ctx context.Context, userID int64, name, pattern, replace string) (*MaskRule, error) {
+func (s *sqlPresetStore) CreateMaskRule(ctx context.Context, userID int64, tenantID, name, pattern, replace string) (*MaskRule, error) {
 	var r MaskRule
 	err := s.db.QueryRowContext(ctx, `
 INSERT INTO mask_rules (user_id, name, pattern, replace_with)
@@ -134,7 +136,7 @@ RETURNING id, user_id, name, pattern, replace_with, is_active, created_at`,
 	return &r, nil
 }
 
-func (s *sqlPresetStore) ListMaskRules(ctx context.Context, userID int64) ([]MaskRule, error) {
+func (s *sqlPresetStore) ListMaskRules(ctx context.Context, userID int64, tenantID string) ([]MaskRule, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id, user_id, name, pattern, replace_with, is_active, created_at
 FROM mask_rules WHERE user_id=$1 AND is_active=TRUE ORDER BY created_at DESC`, userID)
@@ -153,20 +155,20 @@ FROM mask_rules WHERE user_id=$1 AND is_active=TRUE ORDER BY created_at DESC`, u
 	return rules, rows.Err()
 }
 
-func (s *sqlPresetStore) DeleteMaskRule(ctx context.Context, ruleID, userID int64) error {
+func (s *sqlPresetStore) DeleteMaskRule(ctx context.Context, ruleID, userID int64, tenantID string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM mask_rules WHERE id=$1 AND user_id=$2`, ruleID, userID)
 	return err
 }
 
-func (s *sqlPresetStore) UpdateMaskRule(ctx context.Context, ruleID, userID int64, name, pattern, replace string, enabled bool) error {
+func (s *sqlPresetStore) UpdateMaskRule(ctx context.Context, ruleID, userID int64, tenantID, name, pattern, replace string, enabled bool) error {
 	_, err := s.db.ExecContext(ctx, `
 UPDATE mask_rules SET name=$3, pattern=$4, replace_with=$5, is_active=$6, updated_at=NOW()
 WHERE id=$1 AND user_id=$2`, ruleID, userID, name, pattern, replace, enabled)
 	return err
 }
 
-func (s *sqlPresetStore) ApplyMasks(ctx context.Context, userID int64, text string) (string, error) {
-	rules, err := s.ListMaskRules(ctx, userID)
+func (s *sqlPresetStore) ApplyMasks(ctx context.Context, userID int64, tenantID, text string) (string, error) {
+	rules, err := s.ListMaskRules(ctx, userID, tenantID)
 	if err != nil {
 		return text, err
 	}
