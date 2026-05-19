@@ -266,10 +266,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/admin/ui/", s.adminUI)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/admin/ui", http.StatusTemporaryRedirect) })
 	securityCfg := DefaultSecurityConfig()
-	return applySecurityMiddlewares(
-		panicRecoveryMiddleware(requestIDMiddleware(loggingMiddleware(i18n.Middleware(mux)))),
+	return panicRecoveryMiddleware(applySecurityMiddlewares(
+		requestIDMiddleware(loggingMiddleware(i18n.Middleware(mux))),
 		securityCfg,
-	)
+	))
 }
 
 func (s *Server) mountAdminConfigRoutes(mux *http.ServeMux) {

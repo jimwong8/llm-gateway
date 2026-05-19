@@ -1,4 +1,5 @@
 import { apiRequest } from '../http'
+import { getToken } from './identity'
 
 export type AuditExportParams = {
   tenant_id: string
@@ -16,7 +17,7 @@ export type CleanupResult = {
 }
 
 export async function exportAuditData(tenantID: string, format = 'json'): Promise<Blob> {
-  const token = sessionStorage.getItem('llm_gateway_admin_token')
+  const token = getToken()
   const resp = await fetch(`/admin/audit/export?tenant_id=${encodeURIComponent(tenantID)}&format=${format}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })

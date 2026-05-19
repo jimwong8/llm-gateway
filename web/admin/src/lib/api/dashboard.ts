@@ -58,8 +58,18 @@ export async function getErrorRateTrend(days = 7): Promise<{ data: ErrorRatePoin
   return apiRequest<{ data: ErrorRatePoint[] }>(`/admin/observability/error-rate?days=${days}`)
 }
 
+async function userFetch(input: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(input, init)
+  if (res.status === 401) {
+    sessionStorage.removeItem('llm_gateway_user_token')
+    window.location.href = '/login'
+    throw new Error('Unauthorized')
+  }
+  return res
+}
+
 export async function getUserDashboard(): Promise<UserDashboardData> {
-  const res = await fetch('/api/user/dashboard', {
+  const res = await userFetch('/api/user/dashboard', {
     headers: { ...userAuthHeaders() },
   })
   if (!res.ok) {
@@ -69,7 +79,7 @@ export async function getUserDashboard(): Promise<UserDashboardData> {
 }
 
 export async function getUserUsage(days = 7): Promise<UserUsageResponse> {
-  const res = await fetch(`/api/user/usage?days=${days}`, {
+  const res = await userFetch(`/api/user/usage?days=${days}`, {
     headers: { ...userAuthHeaders() },
   })
   if (!res.ok) {

@@ -16,8 +16,18 @@ function userAuthHeaders(): HeadersInit {
   return {}
 }
 
+async function userFetch(input: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(input, init)
+  if (res.status === 401) {
+    sessionStorage.removeItem('llm_gateway_user_token')
+    window.location.href = '/login'
+    throw new Error('Unauthorized')
+  }
+  return res
+}
+
 export async function createSession(data: CreateSessionRequest): Promise<ChatSession> {
-  const res = await fetch('/api/chat/sessions', {
+  const res = await userFetch('/api/chat/sessions', {
     method: 'POST',
     headers: { ...userAuthHeaders(), 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -27,7 +37,7 @@ export async function createSession(data: CreateSessionRequest): Promise<ChatSes
 }
 
 export async function listSessions(limit = 50, offset = 0): Promise<{ object: string; data: ChatSession[] }> {
-  const res = await fetch(`/api/chat/sessions?limit=${limit}&offset=${offset}`, {
+  const res = await userFetch(`/api/chat/sessions?limit=${limit}&offset=${offset}`, {
     headers: { ...userAuthHeaders() },
   })
   if (!res.ok) throw new Error('Failed to list sessions')
@@ -35,7 +45,7 @@ export async function listSessions(limit = 50, offset = 0): Promise<{ object: st
 }
 
 export async function getSession(id: number): Promise<SessionResponse> {
-  const res = await fetch(`/api/chat/sessions/${id}`, {
+  const res = await userFetch(`/api/chat/sessions/${id}`, {
     headers: { ...userAuthHeaders() },
   })
   if (!res.ok) throw new Error('Failed to get session')
@@ -43,7 +53,7 @@ export async function getSession(id: number): Promise<SessionResponse> {
 }
 
 export async function updateSessionTitle(id: number, data: UpdateSessionRequest): Promise<ChatSession> {
-  const res = await fetch(`/api/chat/sessions/${id}`, {
+  const res = await userFetch(`/api/chat/sessions/${id}`, {
     method: 'PUT',
     headers: { ...userAuthHeaders(), 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -53,7 +63,7 @@ export async function updateSessionTitle(id: number, data: UpdateSessionRequest)
 }
 
 export async function deleteSession(id: number): Promise<void> {
-  const res = await fetch(`/api/chat/sessions/${id}`, {
+  const res = await userFetch(`/api/chat/sessions/${id}`, {
     method: 'DELETE',
     headers: { ...userAuthHeaders() },
   })
@@ -61,7 +71,7 @@ export async function deleteSession(id: number): Promise<void> {
 }
 
 export async function getSharedSession(hash: string): Promise<SessionResponse> {
-  const res = await fetch(`/api/chat/sessions/share/${hash}`)
+  const res = await userFetch(`/api/chat/sessions/share/${hash}`)
   if (!res.ok) throw new Error('Failed to get shared session')
   return res.json()
 }

@@ -10,8 +10,18 @@ function userAuthHeaders(): HeadersInit {
   return {}
 }
 
+async function userFetch(input: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(input, init)
+  if (res.status === 401) {
+    sessionStorage.removeItem('llm_gateway_user_token')
+    window.location.href = '/login'
+    throw new Error('Unauthorized')
+  }
+  return res
+}
+
 export async function getBalance(): Promise<BalanceResponse> {
-  const res = await fetch('/api/billing/balance', { headers: { ...userAuthHeaders() } })
+  const res = await userFetch('/api/billing/balance', { headers: { ...userAuthHeaders() } })
   if (!res.ok) throw new Error('Failed to fetch balance')
   return res.json()
 }
@@ -30,7 +40,7 @@ export async function getLedger(params?: {
   if (params?.limit) query.set('limit', String(params.limit))
   if (params?.offset) query.set('offset', String(params.offset))
   const qs = query.toString()
-  const res = await fetch(`/api/billing/ledger${qs ? '?' + qs : ''}`, {
+  const res = await userFetch(`/api/billing/ledger${qs ? '?' + qs : ''}`, {
     headers: { ...userAuthHeaders() },
   })
   if (!res.ok) throw new Error('Failed to fetch ledger')

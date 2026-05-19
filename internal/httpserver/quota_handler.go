@@ -27,16 +27,16 @@ func (s *Server) mountQuotaRoutes(mux *http.ServeMux) {
 	if s.quotaManager == nil {
 		return
 	}
-	mux.HandleFunc("/api/tenant/quota", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/tenant/quota", s.requireUser(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			s.quotaGetStatus(w, r)
 		case http.MethodPut:
-			s.quotaPutConfig(w, r)
+			s.requireAdmin(http.HandlerFunc(s.quotaPutConfig)).ServeHTTP(w, r)
 		default:
 			methodNotAllowed(w, r)
 		}
-	})
+	}))
 }
 
 // quotaGetStatus GET /api/tenant/quota
