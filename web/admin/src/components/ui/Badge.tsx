@@ -1,3 +1,5 @@
+import React from 'react'
+
 type BadgeVariant = 'default' | 'success' | 'warning' | 'danger' | 'info'
 
 type BadgeProps = {
@@ -14,10 +16,10 @@ const variantStyles: Record<BadgeVariant, string> = {
   info: 'badge badge--info',
 }
 
-export function Badge({ children, variant = 'default', className = '' }: BadgeProps) {
+export const Badge = React.memo(function Badge({ children, variant = 'default', className = '' }: BadgeProps) {
   return (
     <span className={`${variantStyles[variant]} ${className}`.trim()}>
       {children}
     </span>
   )
-}
+})

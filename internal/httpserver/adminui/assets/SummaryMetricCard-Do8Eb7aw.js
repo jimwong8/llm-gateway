@@ -1,0 +1,1 @@
+import{j as r}from"./vendor-query-CFCvUePQ.js";function e({label:s,value:n}){return r.jsxs("section",{className:"summary-card",children:[r.jsx("span",{children:s}),r.jsx("strong",{children:n})]})}export{e as S};

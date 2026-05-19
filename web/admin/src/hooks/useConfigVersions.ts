@@ -1,23 +1,21 @@
 import { useQuery } from '@tanstack/react-query'
 import { apiRequest } from '../lib/http'
+import { buildQuery } from '../lib/format'
 import type { ConfigVersion, ConfigVersionFilters } from '../types/admin'
 
-function buildQuery(filters: ConfigVersionFilters) {
-  const params = new URLSearchParams()
-
-  if (filters.module.trim()) params.set('module', filters.module.trim())
-  if (filters.tenantID.trim()) params.set('tenant_id', filters.tenantID.trim())
-  if (filters.environment.trim()) params.set('environment', filters.environment.trim())
-  if (filters.scope.trim()) params.set('scope', filters.scope.trim())
-  if (filters.projectID.trim()) params.set('project_id', filters.projectID.trim())
-
-  const query = params.toString()
-  return query ? `/admin/config-versions?${query}` : '/admin/config-versions'
+function buildConfigQuery(filters: ConfigVersionFilters) {
+  const params: Record<string, string> = {}
+  if (filters.module.trim()) params.module = filters.module.trim()
+  if (filters.tenantID.trim()) params.tenant_id = filters.tenantID.trim()
+  if (filters.environment.trim()) params.environment = filters.environment.trim()
+  if (filters.scope.trim()) params.scope = filters.scope.trim()
+  if (filters.projectID.trim()) params.project_id = filters.projectID.trim()
+  return buildQuery('/admin/config-versions', params)
 }
 
 export function useConfigVersions(filters: ConfigVersionFilters) {
   return useQuery({
     queryKey: ['config-versions', filters],
-    queryFn: () => apiRequest<ConfigVersion[]>(buildQuery(filters)),
+    queryFn: () => apiRequest<ConfigVersion[]>(buildConfigQuery(filters)),
   })
 }

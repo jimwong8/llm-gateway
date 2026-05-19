@@ -60,48 +60,30 @@ export async function getErrorRateTrend(days = 7): Promise<{ data: ErrorRatePoin
   return apiRequest<{ data: ErrorRatePoint[] }>(`/admin/observability/error-rate?days=${days}`)
 }
 
-async function userFetch(input: string, init?: RequestInit): Promise<Response> {
-  const res = await fetch(input, init)
-  if (res.status === 401) {
-    sessionStorage.removeItem('llm_gateway_user_token')
-    window.location.href = '/admin/ui/login'
-    throw new Error('Unauthorized')
-  }
-  return res
-}
-
 export async function getUserDashboard(): Promise<UserDashboardData> {
-  const res = await userFetch('/api/user/dashboard', {
-    headers: { ...userAuthHeaders() },
-  })
-  if (!res.ok) {
-    throw new Error('Failed to fetch user dashboard')
-  }
-  return res.json()
+  return apiRequest<UserDashboardData>('/api/user/dashboard', {
+    method: 'GET',
+    headers: userAuthHeaders(),
+  }, { auth: 'none' })
 }
 
 export async function getUserUsage(days = 7): Promise<UserUsageResponse> {
-  const res = await userFetch(`/api/user/usage?days=${days}`, {
-    headers: { ...userAuthHeaders() },
-  })
-  if (!res.ok) {
-    throw new Error('Failed to fetch user usage')
-  }
-  return res.json()
+  return apiRequest<UserUsageResponse>(`/api/user/usage?days=${days}`, {
+    method: 'GET',
+    headers: userAuthHeaders(),
+  }, { auth: 'none' })
 }
 
 export async function getUserUsageLogs(limit = 50, offset = 0): Promise<{ object: string; data: UserUsageLog[]; total: number }> {
-  const res = await userFetch(`/api/user/usage-logs?limit=${limit}&offset=${offset}`, {
-    headers: { ...userAuthHeaders() },
-  })
-  if (!res.ok) throw new Error('Failed to fetch usage logs')
-  return res.json()
+  return apiRequest<{ object: string; data: UserUsageLog[]; total: number }>(`/api/user/usage-logs?limit=${limit}&offset=${offset}`, {
+    method: 'GET',
+    headers: userAuthHeaders(),
+  }, { auth: 'none' })
 }
 
 export async function getUserCostTrend(days = 30): Promise<{ object: string; data: CostTrendPoint[]; days: number }> {
-  const res = await userFetch(`/api/user/cost-trend?days=${days}`, {
-    headers: { ...userAuthHeaders() },
-  })
-  if (!res.ok) throw new Error('Failed to fetch cost trend')
-  return res.json()
+  return apiRequest<{ object: string; data: CostTrendPoint[]; days: number }>(`/api/user/cost-trend?days=${days}`, {
+    method: 'GET',
+    headers: userAuthHeaders(),
+  }, { auth: 'none' })
 }

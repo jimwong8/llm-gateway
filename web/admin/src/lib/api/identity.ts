@@ -1,5 +1,5 @@
 import type { ApiKey, CreateApiKeyRequest, LoginRequest, LoginResponse, OAuthBinding, SignupRequest, User } from '../../types/identity'
-import { apiRequest } from '../http'
+import { apiRequest, jsonRequest } from '../http'
 
 const USER_TOKEN_KEY = 'llm_gateway_user_token'
 
@@ -16,6 +16,7 @@ export function setUserToken(token: string) {
 export function clearUserToken() {
   if (typeof window === 'undefined') return
   window.sessionStorage.removeItem(USER_TOKEN_KEY)
+  window.sessionStorage.removeItem('llm_gateway_admin_token')
 }
 
 export function hasUserToken(): boolean {
@@ -23,19 +24,11 @@ export function hasUserToken(): boolean {
 }
 
 export async function signup(data: SignupRequest): Promise<LoginResponse> {
-  return apiRequest<LoginResponse>('/api/auth/signup', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  }, { auth: 'none' })
+  return jsonRequest<LoginResponse>('/api/auth/signup', data, { method: 'POST' }, { auth: 'none' })
 }
 
 export async function login(data: LoginRequest): Promise<LoginResponse> {
-  return apiRequest<LoginResponse>('/api/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  }, { auth: 'none' })
+  return jsonRequest<LoginResponse>('/api/auth/login', data, { method: 'POST' }, { auth: 'none' })
 }
 
 function authHeaders(): HeadersInit {
@@ -61,11 +54,7 @@ export async function listApiKeys(): Promise<{ object: string; data: ApiKey[] }>
 }
 
 export async function createApiKey(data?: CreateApiKeyRequest): Promise<{ key: string; api_key: ApiKey }> {
-  return apiRequest<{ key: string; api_key: ApiKey }>('/api/user/api-keys', {
-    method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify(data || {}),
-  }, { auth: 'none' })
+  return jsonRequest<{ key: string; api_key: ApiKey }>('/api/user/api-keys', data || {}, { method: 'POST', headers: authHeaders() }, { auth: 'none' })
 }
 
 export async function revokeApiKey(id: number): Promise<{ status: string }> {

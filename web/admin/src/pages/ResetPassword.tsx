@@ -36,9 +36,10 @@ export function ResetPasswordPage() {
       setSuccess(true)
       toast.success(t('password.resetSuccessToast'))
       setTimeout(() => navigate('/login'), 2000)
-    } catch (err: any) {
-      setError(err?.message ?? t('password.resetFailed'))
-      toast.error(err?.message ?? t('password.resetFailed'))
+    } catch (err: unknown) {
+      const message = (err as Error)?.message ?? t('password.resetFailed')
+      setError(message)
+      toast.error(message)
     } finally {
       setLoading(false)
     }

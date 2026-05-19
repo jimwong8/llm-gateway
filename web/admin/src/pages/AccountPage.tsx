@@ -15,8 +15,8 @@ export function AccountPage() {
     try {
       const res = await listOAuthBindings()
       setBindings(res.data)
-    } catch (err: any) {
-      setError(err?.message ?? t('account.loadError'))
+    } catch (err: unknown) {
+      setError((err as Error)?.message ?? t('account.loadError'))
     } finally {
       setLoading(false)
     }
@@ -29,8 +29,8 @@ export function AccountPage() {
     try {
       await deleteOAuthBinding(provider)
       setBindings(prev => prev.filter(b => b.provider !== provider))
-    } catch (err: any) {
-      setError(err?.message ?? t('account.unlinkFailed'))
+    } catch (err: unknown) {
+      setError((err as Error)?.message ?? t('account.unlinkFailed'))
     }
   }
 

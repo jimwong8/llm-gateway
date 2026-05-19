@@ -1,7 +1,9 @@
+import React from 'react'
 import { useInRouterContext, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Button } from '../ui'
 import { clearToken } from '../../lib/auth'
+import { clearUserToken } from '../../lib/api/identity'
 
 type SidebarProps = {
   mobile?: boolean
@@ -105,12 +107,14 @@ function RoutedSidebar(props: SidebarProps) {
   )
 }
 
-function SidebarLayout({ mobile = false, open = false, onClose, currentPath = '', onNavigate = () => undefined }: SidebarProps) {
+export const SidebarLayout = React.memo(function SidebarLayout({ mobile = false, open = false, onClose, currentPath = '', onNavigate = () => undefined }: SidebarProps) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
 
   const handleLogout = () => {
     clearToken()
-    window.location.href = '/admin/ui/login'
+    clearUserToken()
+    navigate('/login')
   }
 
   return (
@@ -166,4 +170,4 @@ function SidebarLayout({ mobile = false, open = false, onClose, currentPath = ''
       </div>
     </aside>
   )
-}
+})

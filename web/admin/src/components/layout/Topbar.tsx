@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import { listActiveBroadcasts, markBroadcastRead } from '../../lib/api/broadcasts'
 import { clearToken, getToken } from '../../lib/auth'
+import { clearUserToken } from '../../lib/api/identity'
 import type { Broadcast, BroadcastType } from '../../types/broadcast'
 
 const TYPE_STYLES: Record<BroadcastType, string> = {
@@ -50,10 +52,13 @@ export function Topbar({ onToggleNavigation }: { onToggleNavigation: () => void 
     }
   }, [])
 
+  const navigate = useNavigate()
+
   const handleLogout = useCallback(() => {
     clearToken()
-    window.location.href = '/admin/ui/login'
-  }, [])
+    clearUserToken()
+    navigate('/login')
+  }, [navigate])
 
   const fetchBanners = useCallback(async () => {
     try {

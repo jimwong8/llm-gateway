@@ -1,3 +1,4 @@
+import React from 'react'
 import {
   AreaChart,
   Area,
@@ -17,7 +18,7 @@ interface ErrorRateData {
   errorRequests: number
 }
 
-export function ErrorRateChart({ data }: { data?: ErrorRateData[] }) {
+export const ErrorRateChart = React.memo(function ErrorRateChart({ data }: { data?: ErrorRateData[] }) {
   if (!data || data.length === 0) return <ChartEmptyState label="暂无错误率数据" />
 
   return (
@@ -55,7 +56,7 @@ export function ErrorRateChart({ data }: { data?: ErrorRateData[] }) {
       </ResponsiveContainer>
     </div>
   )
-}
+})
 
 function ChartEmptyState({ label }: { label: string }) {
   return (

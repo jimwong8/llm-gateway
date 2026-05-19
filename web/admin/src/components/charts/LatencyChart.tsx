@@ -1,3 +1,4 @@
+import React from 'react'
 import {
   LineChart,
   Line,
@@ -17,7 +18,7 @@ interface LatencyData {
   p99: number
 }
 
-export function LatencyChart({ data }: { data?: LatencyData[] }) {
+export const LatencyChart = React.memo(function LatencyChart({ data }: { data?: LatencyData[] }) {
   if (!data || data.length === 0) return <ChartEmptyState label="暂无延迟数据" />
 
   return (
@@ -58,7 +59,7 @@ export function LatencyChart({ data }: { data?: LatencyData[] }) {
       </ResponsiveContainer>
     </div>
   )
-}
+})
 
 function ChartEmptyState({ label }: { label: string }) {
   return (

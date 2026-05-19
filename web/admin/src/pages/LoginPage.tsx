@@ -78,8 +78,8 @@ export function LoginPage() {
       const res = await login({ email: email.trim(), password })
       setUserToken(res.token)
       navigate(nextPath, { replace: true })
-    } catch (err: any) {
-      setError(err?.message ?? t('auth.loginFailed'))
+    } catch (err: unknown) {
+      setError((err as Error)?.message ?? t('auth.loginFailed'))
     } finally {
       setLoading(false)
     }

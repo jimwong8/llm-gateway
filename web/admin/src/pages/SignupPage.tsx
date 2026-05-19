@@ -30,8 +30,8 @@ export function SignupPage() {
       const res = await signup({ email: email.trim(), username: username.trim(), password })
       setUserToken(res.token)
       navigate('/dashboard', { replace: true })
-    } catch (err: any) {
-      setError(err?.message ?? t('signup.signupFailed'))
+    } catch (err: unknown) {
+      setError((err as Error)?.message ?? t('signup.signupFailed'))
     } finally {
       setLoading(false)
     }

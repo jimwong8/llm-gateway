@@ -1,3 +1,5 @@
+import React from 'react'
+
 type StatusDotVariant = 'healthy' | 'degraded' | 'down' | 'active' | 'disabled' | 'error'
 
 type StatusDotProps = {
@@ -15,11 +17,11 @@ const dotStyles: Record<StatusDotVariant, string> = {
   error: 'status-dot status-dot--error',
 }
 
-export function StatusDot({ status, label, className = '' }: StatusDotProps) {
+export const StatusDot = React.memo(function StatusDot({ status, label, className = '' }: StatusDotProps) {
   return (
     <span className={`status-dot-wrapper ${className}`.trim()} title={label}>
       <span className={dotStyles[status]} />
       {label ? <span className="status-dot__label">{label}</span> : null}
     </span>
   )
-}
+})

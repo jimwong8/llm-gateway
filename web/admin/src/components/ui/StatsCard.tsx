@@ -1,3 +1,5 @@
+import React from 'react'
+
 type StatsCardProps = {
   title: string
   value: string | number
@@ -7,7 +9,7 @@ type StatsCardProps = {
   className?: string
 }
 
-export function StatsCard({ title, value, subtitle, trend, icon, className = '' }: StatsCardProps) {
+export const StatsCard = React.memo(function StatsCard({ title, value, subtitle, trend, icon, className = '' }: StatsCardProps) {
   return (
     <div className={`stats-card ${className}`.trim()}>
       <div className="stats-card__header">
@@ -25,4 +27,4 @@ export function StatsCard({ title, value, subtitle, trend, icon, className = '' 
       {subtitle ? <span className="stats-card__subtitle">{subtitle}</span> : null}
     </div>
   )
-}
+})

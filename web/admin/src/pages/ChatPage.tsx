@@ -17,6 +17,7 @@ export function ChatPage() {
   const [error, setError] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const accumulatedRef = useRef('')
+  const abortRef = useRef<AbortController | null>(null)
 
   const fetchSessions = useCallback(async () => {
     try {
@@ -73,8 +74,20 @@ export function ChatPage() {
     }
   }, [activeId, t])
 
+  // 组件卸载时取消进行中的 SSE 流
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort()
+    }
+  }, [])
+
   const handleSend = useCallback((content: string) => {
     if (!activeId || sending) return
+
+    // 取消之前的流
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
 
     const userMsg: ChatMessage = {
       id: Date.now(),
@@ -94,10 +107,12 @@ export function ChatPage() {
       activeId,
       content,
       (chunk) => {
+        if (controller.signal.aborted) return
         accumulatedRef.current += chunk
         setStreamingContent(accumulatedRef.current)
       },
       (done) => {
+        if (controller.signal.aborted) return
         const assistantMsg: ChatMessage = {
           id: done.message_id,
           session_id: activeId,
@@ -113,10 +128,12 @@ export function ChatPage() {
         fetchSessions()
       },
       () => {
+        if (controller.signal.aborted) return
         setSending(false)
       },
+      controller.signal,
     )
-  }, [activeId, sending, streamingContent, fetchSessions])
+  }, [activeId, sending, fetchSessions])
 
   const displayMessages = messages
   const hasStream = streamingContent.length > 0

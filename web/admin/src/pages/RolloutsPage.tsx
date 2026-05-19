@@ -2,17 +2,12 @@ import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import { AppShell } from '../components/layout/AppShell'
+import { RollbackDialog } from '../components/rollouts/RollbackDialog'
 import { ApiError } from '../lib/http'
 import { createGovernanceRollback, listRolloutDashboard } from '../lib/rollouts'
 import type { RolloutRow } from '../types/rollout'
-import { useSearchParams } from 'react-router-dom'
-
-type RollbackDialogState = {
-  rolloutID: string
-  environment: string
-  open: boolean
-}
 
 type RollbackFormState = {
   actor: string
@@ -86,11 +81,9 @@ export function RolloutsPage() {
   const { t } = useTranslation()
   const [searchParams] = useSearchParams()
   const highlightedPolicyVersionID = searchParams.get('policyVersionId') ?? ''
-  const [dialogState, setDialogState] = useState<RollbackDialogState>({
-    rolloutID: '',
-    environment: 'prod',
-    open: false,
-  })
+  const [rolloutID, setRolloutID] = useState('')
+  const [environment, setEnvironment] = useState('prod')
+  const [dialogOpen, setDialogOpen] = useState(false)
   const [rollbackForm, setRollbackForm] = useState<RollbackFormState>(defaultRollbackFormState)
   const [rollbackSubmitting, setRollbackSubmitting] = useState(false)
   const [rollbackError, setRollbackError] = useState('')
@@ -149,20 +142,20 @@ export function RolloutsPage() {
   function openRollbackDialog(row: RolloutRow) {
     setRollbackError('')
     setRollbackSuccess('')
-    setDialogState({ rolloutID: row.id, environment: row.environment || 'prod', open: true })
-    setRollbackForm((previous) => ({
-      ...previous,
-    }))
+    setRolloutID(row.id)
+    setEnvironment(row.environment || 'prod')
+    setDialogOpen(true)
+    setRollbackForm((previous) => ({ ...previous }))
   }
 
   function closeRollbackDialog() {
-    setDialogState((previous) => ({ ...previous, open: false }))
+    setDialogOpen(false)
   }
 
   async function handleRollbackSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
-    if (!dialogState.rolloutID || !rollbackForm.actor.trim()) {
+    if (!rolloutID || !rollbackForm.actor.trim()) {
       setRollbackError(t('rollouts.actorRequired'))
       return
     }
@@ -173,13 +166,13 @@ export function RolloutsPage() {
 
     try {
       const response = await createGovernanceRollback({
-        rollout_id: dialogState.rolloutID,
+        rollout_id: rolloutID,
         actor: rollbackForm.actor.trim(),
         reason: rollbackForm.reason.trim() || undefined,
       })
 
       setRollbackSuccess(t('rollouts.rollbackTriggered', { id: response.id }))
-      setDialogState((previous) => ({ ...previous, open: false }))
+      setDialogOpen(false)
       void rolloutsQuery.refetch()
     } catch (unknownError) {
       if (unknownError instanceof ApiError) {
@@ -271,20 +264,20 @@ export function RolloutsPage() {
             <div className="event-table">
               <table>
                 <thead>
-                   <tr>
-                     <th>{t('rollouts.colRolloutId')}</th>
-                     <th>{t('rollouts.colPolicyVersion')}</th>
-                     <th>{t('rollouts.colEnvironment')}</th>
-                     <th>{t('rollouts.colStatus')}</th>
-                     <th>{t('rollouts.colRolloutPercent')}</th>
-                     <th>{t('rollouts.colErrorRate')}</th>
-                     <th>{t('rollouts.colP95Latency')}</th>
-                     <th>{t('rollouts.colFallbackRate')}</th>
-                     <th>{t('rollouts.colSampleCount')}</th>
-                     <th>{t('rollouts.colTriggeredBy')}</th>
-                     <th>{t('rollouts.colUpdatedAt')}</th>
-                     <th>{t('rollouts.colActions')}</th>
-                   </tr>
+                    <tr>
+                      <th>{t('rollouts.colRolloutId')}</th>
+                      <th>{t('rollouts.colPolicyVersion')}</th>
+                      <th>{t('rollouts.colEnvironment')}</th>
+                      <th>{t('rollouts.colStatus')}</th>
+                      <th>{t('rollouts.colRolloutPercent')}</th>
+                      <th>{t('rollouts.colErrorRate')}</th>
+                      <th>{t('rollouts.colP95Latency')}</th>
+                      <th>{t('rollouts.colFallbackRate')}</th>
+                      <th>{t('rollouts.colSampleCount')}</th>
+                      <th>{t('rollouts.colTriggeredBy')}</th>
+                      <th>{t('rollouts.colUpdatedAt')}</th>
+                      <th>{t('rollouts.colActions')}</th>
+                    </tr>
                 </thead>
                 <tbody>
                   {rollouts.map((row) => {
@@ -308,9 +301,9 @@ export function RolloutsPage() {
                         <td>{row.triggered_by || '—'}</td>
                         <td>{formatDate(row.updated_at)}</td>
                         <td>
-                           <button type="button" className="rollouts-action" onClick={() => openRollbackDialog(row)}>
-                             {t('rollouts.rollback')}
-                           </button>
+                          <button type="button" className="rollouts-action" onClick={() => openRollbackDialog(row)}>
+                            {t('rollouts.rollback')}
+                          </button>
                         </td>
                       </tr>
                     )
@@ -322,41 +315,19 @@ export function RolloutsPage() {
         ) : null}
       </div>
 
-      {dialogState.open ? (
-        <div className="dialog-backdrop" role="presentation">
-          <section
-            className="dialog-card"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="rollback-dialog-title"
-          >
-            <div className="dialog-card__header">
-              <div>
-                <h2 id="rollback-dialog-title">{t('rollouts.rollbackTitle')}</h2>
-                <p>Rollout ID: {dialogState.rolloutID} · Environment: {dialogState.environment}</p>
-              </div>
-              <button type="button" onClick={closeRollbackDialog}>
-                {t('common.close')}
-              </button>
-            </div>
-
-            <form className="release-panel__grid" aria-label={t('rollouts.rollbackFormLabel')} onSubmit={handleRollbackSubmit}>
-              <label>
-                {t('rollouts.actor')}
-                <input value={rollbackForm.actor} onChange={(event) => setRollbackForm((previous) => ({ ...previous, actor: event.target.value }))} />
-              </label>
-              <label>
-                {t('rollouts.reason')}
-                <input value={rollbackForm.reason} onChange={(event) => setRollbackForm((previous) => ({ ...previous, reason: event.target.value }))} />
-              </label>
-              <div className="dialog-card__actions">
-                <button type="button" onClick={closeRollbackDialog}>{t('common.cancel')}</button>
-                <button type="submit" disabled={rollbackSubmitting}>{rollbackSubmitting ? t('rollouts.rollingBack') : t('rollouts.confirmRollback')}</button>
-              </div>
-            </form>
-          </section>
-        </div>
-      ) : null}
+      <RollbackDialog
+        open={dialogOpen}
+        onClose={closeRollbackDialog}
+        onSubmit={handleRollbackSubmit}
+        rolloutID={rolloutID}
+        environment={environment}
+        actor={rollbackForm.actor}
+        onActorChange={(value) => setRollbackForm((prev) => ({ ...prev, actor: value }))}
+        reason={rollbackForm.reason}
+        onReasonChange={(value) => setRollbackForm((prev) => ({ ...prev, reason: value }))}
+        loading={rollbackSubmitting}
+        error={rollbackError}
+      />
     </AppShell>
   )
 }

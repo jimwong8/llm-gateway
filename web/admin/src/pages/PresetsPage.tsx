@@ -1,10 +1,12 @@
-import { FormEvent, useMemo, useState } from 'react'
+import { FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AppShell } from '../components/layout/AppShell'
 import { EmptyState } from '../components/ui/EmptyState'
 import { TableSkeleton } from '../components/ui/Skeleton'
 import { Tabs } from '../components/ui/Tabs'
+import { PresetFormModal } from '../components/presets/PresetFormModal'
+import { MaskFormModal } from '../components/presets/MaskFormModal'
 import {
   createPreset,
   createMaskRule,
@@ -15,7 +17,7 @@ import {
   updateMaskRule,
   updatePreset,
 } from '../lib/api/presets'
-import type { MaskRule, MaskRuleInput, PromptPreset, PromptPresetInput } from '../types/preset'
+import type { MaskRuleInput, PromptPreset, PromptPresetInput } from '../types/preset'
 
 type PresetFormState = {
   name: string
@@ -54,19 +56,6 @@ function buildPresetInput(form: PresetFormState): PromptPresetInput {
     description: form.description.trim(),
     variables,
   }
-}
-
-function previewTemplate(template: string, variablesStr: string): string {
-  const variables = variablesStr
-    .split(',')
-    .map((v) => v.trim())
-    .filter(Boolean)
-  if (variables.length === 0 || !template.trim()) return template
-  let result = template
-  for (const v of variables) {
-    result = result.replace(new RegExp(`\\{\\{\\s*${v}\\s*\\}\\}`, 'g'), `[${v}]`)
-  }
-  return result
 }
 
 export function PresetsPage() {
@@ -178,11 +167,10 @@ export function PresetsPage() {
     })
   }
 
-  // ── Variable preview ─────────────────────────────────
-  const variablePreview = useMemo(
-    () => previewTemplate(presetForm.template, presetForm.variables),
-    [presetForm.template, presetForm.variables],
-  )
+  function handleCancelMaskForm() {
+    setShowMaskForm(false)
+    setMaskForm(emptyMaskForm)
+  }
 
   const isEditing = editingPresetId !== null
   const presets = presetsQuery.data ?? []
@@ -213,99 +201,16 @@ export function PresetsPage() {
             </button>
           </div>
 
-          {showPresetForm || isEditing ? (
-            <form
-              className="page-surface"
-              onSubmit={isEditing ? handleUpdatePreset : handleCreatePreset}
-              style={{ marginBottom: '1.5rem' }}
-            >
-              <h3 style={{ margin: '0 0 1rem', fontSize: '1rem' }}>
-                {isEditing ? t('presets.editPreset') : t('presets.newPreset')}
-              </h3>
-              <div className="system-config-grid">
-                <label>
-                  {t('presets.name')}
-                  <input
-                    value={presetForm.name}
-                    onChange={(e) => setPresetForm((p) => ({ ...p, name: e.target.value }))}
-                    placeholder={t('presets.namePlaceholder')}
-                    required
-                  />
-                </label>
-                <label>
-                  {t('presets.description')}
-                  <input
-                    value={presetForm.description}
-                    onChange={(e) => setPresetForm((p) => ({ ...p, description: e.target.value }))}
-                    placeholder={t('presets.descriptionPlaceholder')}
-                  />
-                </label>
-                <label style={{ gridColumn: '1 / -1' }}>
-                  {t('presets.systemPrompt')}
-                  <textarea
-                    rows={4}
-                    value={presetForm.template}
-                    onChange={(e) => setPresetForm((p) => ({ ...p, template: e.target.value }))}
-                    placeholder={t('presets.systemPromptPlaceholder')}
-                    required
-                  />
-                </label>
-                <label style={{ gridColumn: '1 / -1' }}>
-                  {t('presets.variables')}
-                  <input
-                    value={presetForm.variables}
-                    onChange={(e) => setPresetForm((p) => ({ ...p, variables: e.target.value }))}
-                    placeholder={t('presets.variablesPlaceholder')}
-                  />
-                </label>
-                {presetForm.variables.trim() && presetForm.template.trim() ? (
-                  <div style={{ gridColumn: '1 / -1' }}>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                      {t('presets.preview')}
-                    </div>
-                    <div
-                      className="page-surface"
-                      style={{
-                        padding: '0.75rem',
-                        fontFamily: 'var(--font-mono, monospace)',
-                        fontSize: '0.85rem',
-                        whiteSpace: 'pre-wrap',
-                        background: 'var(--surface-alt, #f8f9fa)',
-                        border: '1px solid var(--border, #e5e7eb)',
-                        borderRadius: '6px',
-                        minHeight: '2.5rem',
-                      }}
-                    >
-                      {variablePreview}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-              <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
-                <button
-                  type="submit"
-                  className="btn btn--primary"
-                  disabled={createPresetMutation.isPending || updatePresetMutation.isPending}
-                >
-                  {isEditing
-                    ? (updatePresetMutation.isPending ? t('presets.updating') : t('common.save'))
-                    : (createPresetMutation.isPending ? t('presets.creating') : t('common.create'))}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--outline"
-                  onClick={handleCancelPresetForm}
-                >
-                  {t('common.cancel')}
-                </button>
-              </div>
-              {(createPresetMutation.error || updatePresetMutation.error) ? (
-                <div className="config-error" style={{ marginTop: '0.75rem' }}>
-                  {((createPresetMutation.error || updatePresetMutation.error) as Error).message}
-                </div>
-              ) : null}
-            </form>
-          ) : null}
+          <PresetFormModal
+            open={showPresetForm || isEditing}
+            onClose={handleCancelPresetForm}
+            onSubmit={isEditing ? handleUpdatePreset : handleCreatePreset}
+            form={presetForm}
+            onFormChange={setPresetForm}
+            loading={createPresetMutation.isPending || updatePresetMutation.isPending}
+            isEditing={isEditing}
+            error={createPresetMutation.error || updatePresetMutation.error}
+          />
 
           {presetsQuery.isLoading ? (
             <TableSkeleton rows={5} cols={3} />
@@ -373,59 +278,15 @@ export function PresetsPage() {
             </button>
           </div>
 
-          {showMaskForm ? (
-            <form className="page-surface" onSubmit={handleCreateMask} style={{ marginBottom: '1.5rem' }}>
-              <h3 style={{ margin: '0 0 1rem', fontSize: '1rem' }}>{t('presets.newMaskRule')}</h3>
-              <div className="system-config-grid">
-                <label>
-                  {t('presets.name')}
-                  <input
-                    value={maskForm.name}
-                    onChange={(e) => setMaskForm((f) => ({ ...f, name: e.target.value }))}
-                    placeholder={t('presets.maskNamePlaceholder')}
-                    required
-                  />
-                </label>
-                <label>
-                  {t('presets.replacement')}
-                  <input
-                    value={maskForm.replacement}
-                    onChange={(e) => setMaskForm((f) => ({ ...f, replacement: e.target.value }))}
-                    placeholder="***"
-                  />
-                </label>
-                <label style={{ gridColumn: '1 / -1' }}>
-                  {t('presets.pattern')}
-                  <input
-                    value={maskForm.pattern}
-                    onChange={(e) => setMaskForm((f) => ({ ...f, pattern: e.target.value }))}
-                    placeholder={t('presets.patternPlaceholder')}
-                    required
-                  />
-                </label>
-              </div>
-              <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
-                <button type="submit" className="btn btn--primary" disabled={createMaskMutation.isPending}>
-                  {createMaskMutation.isPending ? t('presets.creating') : t('common.create')}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--outline"
-                  onClick={() => {
-                    setShowMaskForm(false)
-                    setMaskForm(emptyMaskForm)
-                  }}
-                >
-                  {t('common.cancel')}
-                </button>
-              </div>
-              {createMaskMutation.error ? (
-                <div className="config-error" style={{ marginTop: '0.75rem' }}>
-                  {(createMaskMutation.error as Error).message}
-                </div>
-              ) : null}
-            </form>
-          ) : null}
+          <MaskFormModal
+            open={showMaskForm}
+            onClose={handleCancelMaskForm}
+            onSubmit={handleCreateMask}
+            form={maskForm}
+            onFormChange={setMaskForm}
+            loading={createMaskMutation.isPending}
+            error={createMaskMutation.error}
+          />
 
           {masksQuery.isLoading ? (
             <TableSkeleton rows={5} cols={4} />

@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { AppShell } from '../components/layout/AppShell'
 import { ApiError } from '../lib/http'
+import { formatDate } from '../lib/format'
 import { createGovernanceApproval, listGovernanceRecommendations } from '../lib/recommendations'
 import type { RecommendationRow } from '../types/recommendation'
 
@@ -26,17 +27,6 @@ const defaultApprovalFormState: ApprovalFormState = {
   environment: 'prod',
 }
 
-function formatDate(value?: string) {
-  if (!value) {
-    return '—'
-  }
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return value
-  }
-  return date.toLocaleString()
-}
-
 export function RecommendationCenterPage() {
   const { t } = useTranslation()
   const [dialogState, setDialogState] = useState<ApprovalDialogState>({
@@ -49,25 +39,25 @@ export function RecommendationCenterPage() {
   const [approvalError, setApprovalError] = useState('')
   const [approvalSuccess, setApprovalSuccess] = useState('')
 
-  const 推荐Query = useQuery({
-    queryKey: ['governance-推荐'],
+  const recommendationsQuery = useQuery({
+    queryKey: ['governance-recommendations'],
     queryFn: listGovernanceRecommendations,
   })
 
-  const 推荐 = useMemo(() => 推荐Query.data?.data ?? [], [推荐Query.data])
+  const recommendations = useMemo(() => recommendationsQuery.data?.data ?? [], [recommendationsQuery.data])
 
   const metrics = useMemo(() => {
-    const total = 推荐.length
-    const pending = 推荐.filter((item) => item.status === 'pending').length
-    const approved = 推荐.filter((item) => item.status === 'approved').length
+    const total = recommendations.length
+    const pending = recommendations.filter((item) => item.status === 'pending').length
+    const approved = recommendations.filter((item) => item.status === 'approved').length
 
     return {
       total,
       pending,
       approved,
-      uniqueAgents: new Set(推荐.map((item) => item.agent_id).filter(Boolean)).size,
+      uniqueAgents: new Set(recommendations.map((item) => item.agent_id).filter(Boolean)).size,
     }
-  }, [推荐])
+  }, [recommendations])
 
   function openApprovalDialog(row: RecommendationRow) {
     setApprovalError('')
@@ -108,7 +98,7 @@ export function RecommendationCenterPage() {
 
       setApprovalSuccess(t('recommendations.approvalCreated', { id: response.id }))
       setDialogState((previous) => ({ ...previous, open: false }))
-      void 推荐Query.refetch()
+      void recommendationsQuery.refetch()
     } catch (unknownError) {
       if (unknownError instanceof ApiError) {
         setApprovalError(t('recommendations.approvalFailed', { message: unknownError.message }))
@@ -126,12 +116,12 @@ export function RecommendationCenterPage() {
       description={t('recommendations.description')}
     >
       <div className="events-page">
-        {推荐Query.isLoading ? <div className="event-state">{t('recommendations.loading')}</div> : null}
-        {推荐Query.error ? <div className="config-error">{t('recommendations.loadError')}</div> : null}
+        {recommendationsQuery.isLoading ? <div className="event-state">{t('recommendations.loading')}</div> : null}
+        {recommendationsQuery.error ? <div className="config-error">{t('recommendations.loadError')}</div> : null}
         {approvalError ? <div className="config-error">{approvalError}</div> : null}
         {approvalSuccess ? <div className="event-state">{approvalSuccess}</div> : null}
 
-        {!推荐Query.isLoading && !推荐Query.error ? (
+        {!recommendationsQuery.isLoading && !recommendationsQuery.error ? (
           <>
             <div className="summary-card-grid">
               <section className="summary-card">
@@ -167,7 +157,7 @@ export function RecommendationCenterPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {推荐.map((row) => (
+                  {recommendations.map((row) => (
                     <tr key={row.id}>
                       <td>{row.id}</td>
                       <td>{row.agent_id || '—'}</td>

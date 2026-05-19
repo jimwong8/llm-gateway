@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react'
+import React, { type ReactNode } from 'react'
 import { cn } from '../../lib/cn'
 import styles from './Table.module.css'
 
@@ -18,6 +18,40 @@ type TableProps<T> = {
   className?: string
   emptyText?: string
 }
+
+type TableRowProps<T> = {
+  item: T
+  columns: Column<T>[]
+  onRowClick?: (item: T) => void
+  keyExtractor: (item: T) => string | number
+}
+
+const TableRow = React.memo(function TableRow<T>({ item, columns, onRowClick, keyExtractor }: TableRowProps<T>) {
+  return (
+    <tr
+      key={keyExtractor(item)}
+      className={cn(styles.tr, onRowClick ? styles.clickable : undefined)}
+      onClick={() => onRowClick?.(item)}
+      tabIndex={onRowClick ? 0 : undefined}
+      onKeyDown={
+        onRowClick
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onRowClick(item)
+              }
+            }
+          : undefined
+      }
+    >
+      {columns.map((col) => (
+        <td key={col.key} className={cn(styles.td, col.className)}>
+          {col.render ? col.render(item) : (item as Record<string, unknown>)[col.key] as ReactNode ?? '—'}
+        </td>
+      ))}
+    </tr>
+  )
+}) as <T>(props: TableRowProps<T>) => React.JSX.Element
 
 export function Table<T>({
   columns,
@@ -54,28 +88,13 @@ export function Table<T>({
         </thead>
         <tbody>
           {data.map((item) => (
-            <tr
+            <TableRow
               key={keyExtractor(item)}
-              className={cn(styles.tr, onRowClick ? styles.clickable : undefined)}
-              onClick={() => onRowClick?.(item)}
-              tabIndex={onRowClick ? 0 : undefined}
-              onKeyDown={
-                onRowClick
-                  ? (e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault()
-                        onRowClick(item)
-                      }
-                    }
-                  : undefined
-              }
-            >
-              {columns.map((col) => (
-                <td key={col.key} className={cn(styles.td, col.className)}>
-                  {col.render ? col.render(item) : (item as any)[col.key] ?? '—'}
-                </td>
-              ))}
-            </tr>
+              item={item}
+              columns={columns}
+              onRowClick={onRowClick}
+              keyExtractor={keyExtractor}
+            />
           ))}
         </tbody>
       </table>

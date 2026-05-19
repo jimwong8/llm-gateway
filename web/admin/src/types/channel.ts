@@ -44,26 +44,3 @@ export interface ChannelTestResult {
   error?: string
   model?: string
 }
-
-export interface CreateChannelRequest {
-  name: string
-  provider: ChannelProvider
-  base_url: string
-  api_key?: string
-  priority?: ChannelPriority
-  weight?: number
-  models?: string[]
-  tags?: string[]
-  notes?: string
-}
-
-export interface UpdateChannelRequest extends Partial<CreateChannelRequest> {
-  status?: ChannelStatus
-}
-
-export interface ChannelTestResult {
-  success: boolean
-  latency_ms?: number
-  error?: string
-  model?: string
-}

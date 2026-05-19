@@ -10,26 +10,11 @@ import { Tabs } from '../components/ui'
 import { apiRequest } from '../lib/http'
 import { getUserToken } from '../lib/api/identity'
 import { getTokenUsage, getModelDistribution, getCacheHitRate, getChannelStatus, getLatencyTrend, getErrorRateTrend } from '../lib/api/dashboard'
-import type { AdminSummary } from '../types/dashboard'
+import type { AdminHealth, AdminSummary, TokenUsagePoint, ModelDistributionPoint, CacheHitPoint, ChannelStatusPoint, LatencyPoint, ErrorRatePoint } from '../types/dashboard'
 import type { SessionAdminDashboard } from '../types/sessionDashboard'
 import { formatPercent } from '../lib/format'
 
-type AdminHealth = {
-  service?: string
-  admin_auth?: string
-  time?: string
-}
-
 type ChartTab = 'tokens' | 'models' | 'cache' | 'channels' | 'latency' | 'errorRate'
-
-
-
-type TokenUsagePoint = { date: string; prompt: number; completion: number; total: number }
-type ModelDistributionPoint = { name: string; value: number }
-type CacheHitPoint = { date: string; hitRate: number; requests: number }
-type ChannelStatusPoint = { name: string; healthy: number; degraded: number; down: number }
-type LatencyPoint = { date: string; p50: number; p95: number; p99: number }
-type ErrorRatePoint = { date: string; errorRate: number; totalRequests: number; errorRequests: number }
 
 function DashboardAdminView() {
   const { t } = useTranslation()
@@ -66,36 +51,42 @@ function DashboardAdminView() {
     queryKey: ['dashboard-charts', 'token-usage'],
     queryFn: () => getTokenUsage(7),
     refetchInterval: 30_000,
+    enabled: activeTab === 'tokens',
   })
 
   const modelDistributionQuery = useQuery({
     queryKey: ['dashboard-charts', 'model-distribution'],
     queryFn: getModelDistribution,
     refetchInterval: 30_000,
+    enabled: activeTab === 'models',
   })
 
   const cacheHitRateQuery = useQuery({
     queryKey: ['dashboard-charts', 'cache-hit-rate'],
     queryFn: () => getCacheHitRate(7),
     refetchInterval: 30_000,
+    enabled: activeTab === 'cache',
   })
 
   const channelStatusQuery = useQuery({
     queryKey: ['dashboard-charts', 'channel-status'],
     queryFn: getChannelStatus,
     refetchInterval: 30_000,
+    enabled: activeTab === 'channels',
   })
 
   const latencyQuery = useQuery({
     queryKey: ['dashboard-charts', 'latency'],
     queryFn: () => getLatencyTrend(7),
     refetchInterval: 30_000,
+    enabled: activeTab === 'latency',
   })
 
   const errorRateQuery = useQuery({
     queryKey: ['dashboard-charts', 'error-rate'],
     queryFn: () => getErrorRateTrend(7),
     refetchInterval: 30_000,
+    enabled: activeTab === 'errorRate',
   })
 
   const loading = healthQuery.isLoading || summaryQuery.isLoading
