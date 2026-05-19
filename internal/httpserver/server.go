@@ -265,7 +265,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/admin/ui", s.adminUI)
 	mux.HandleFunc("/admin/ui/", s.adminUI)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/admin/ui", http.StatusTemporaryRedirect) })
-	return panicRecoveryMiddleware(requestIDMiddleware(loggingMiddleware(i18n.Middleware(mux))))
+	securityCfg := DefaultSecurityConfig()
+	return applySecurityMiddlewares(
+		panicRecoveryMiddleware(requestIDMiddleware(loggingMiddleware(i18n.Middleware(mux)))),
+		securityCfg,
+	)
 }
 
 func (s *Server) mountAdminConfigRoutes(mux *http.ServeMux) {
@@ -2122,6 +2126,11 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.semantic != nil {
 		go func(req providers.ChatCompletionRequest, resp providers.ChatCompletionResponse) {
+			defer func() {
+				if rec := recover(); rec != nil {
+					slog.Error("semantic upsert panic", "err", rec, "stack", string(debug.Stack()))
+				}
+			}()
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 			if err := s.semantic.Upsert(ctx, req, resp); err != nil {
@@ -2131,6 +2140,11 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.memory != nil && req.SessionID != "" {
 		go func(req providers.ChatCompletionRequest, resp providers.ChatCompletionResponse) {
+			defer func() {
+				if rec := recover(); rec != nil {
+					slog.Error("memory append panic", "err", rec, "stack", string(debug.Stack()))
+				}
+			}()
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 			writeReq := req
@@ -2231,6 +2245,11 @@ func (s *Server) writeAssetReuseAuditAsync(requestID string, req providers.ChatC
 		return
 	}
 	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Error("asset reuse audit panic", "err", rec, "stack", string(debug.Stack()))
+			}
+		}()
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		if err := s.admin.RecordReuse(ctx, req.TenantID, assetID, requestID, routeModel, routeTask, hitSource); err != nil {
@@ -2244,6 +2263,11 @@ func (s *Server) writeAssetAsync(requestID string, req providers.ChatCompletionR
 		return
 	}
 	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Error("asset async panic", "err", rec, "stack", string(debug.Stack()))
+			}
+		}()
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		summary := strings.TrimSpace(resp.Choices[0].Message.Content)
@@ -2999,7 +3023,14 @@ func (s *Server) emitWebhook(event string, payload any) {
 	if s.webhookRegistry == nil {
 		return
 	}
-	go s.webhookRegistry.Send(context.Background(), event, payload)
+	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Error("webhook emit panic", "err", rec, "stack", string(debug.Stack()))
+			}
+		}()
+		s.webhookRegistry.Send(context.Background(), event, payload)
+	}()
 }
 
 func (s *Server) writeAuditAsync(event audit.Event) {
@@ -3007,6 +3038,11 @@ func (s *Server) writeAuditAsync(event audit.Event) {
 		return
 	}
 	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Error("audit insert panic", "err", rec, "stack", string(debug.Stack()))
+			}
+		}()
 		child, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		if err := s.audit.Insert(child, event); err != nil {
@@ -3020,6 +3056,11 @@ func (s *Server) writeBillingAsync(event billing.UsageEvent) {
 		return
 	}
 	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Error("billing insert panic", "err", rec, "stack", string(debug.Stack()))
+			}
+		}()
 		child, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		if event.EstimatedCost == 0 && event.TotalTokens > 0 {

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -197,6 +198,11 @@ func (r *WebhookRegistry) Send(ctx context.Context, event string, payload any) {
 		evt := event
 		p := payload
 		go func() {
+			defer func() {
+				if rec := recover(); rec != nil {
+					slog.Error("webhook send panic", "event", evt, "err", rec)
+				}
+			}()
 			sendCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			defer cancel()
 			_ = hook.Send(sendCtx, evt, p)

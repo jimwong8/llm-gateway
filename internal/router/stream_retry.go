@@ -2,6 +2,7 @@ package router
 
 import (
 	"context"
+	"log/slog"
 )
 
 type StreamChunk struct {
@@ -28,6 +29,11 @@ func CheckFirstStreamChunkForError(ctx context.Context, src <-chan StreamChunk, 
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
+				defer func() {
+					if rec := recover(); rec != nil {
+						slog.Error("stream drain panic", "err", rec)
+					}
+				}()
 				for range src {
 				}
 			}()
@@ -42,6 +48,11 @@ func CheckFirstStreamChunkForError(ctx context.Context, src <-chan StreamChunk, 
 	go func() {
 		defer close(done)
 		defer close(out)
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Error("stream relay panic", "err", rec)
+			}
+		}()
 		for {
 			select {
 			case chunk, ok := <-src:

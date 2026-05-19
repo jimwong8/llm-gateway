@@ -3,6 +3,7 @@ package httpserver
 import (
 	"context"
 	"log/slog"
+	"runtime/debug"
 	"time"
 
 	"llm-gateway/gateway/internal/auth"
@@ -14,6 +15,11 @@ func (s *Server) recordAPIKeyUsage(keyID int64, userID int64, requestID, model, 
 		return
 	}
 	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Error("api key usage insert panic", "err", rec, "stack", string(debug.Stack()))
+			}
+		}()
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		event := auth.APIKeyUsageEvent{

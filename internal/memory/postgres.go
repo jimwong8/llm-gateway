@@ -433,6 +433,11 @@ func (s *Store) updateConversationCacheAsync(ctx context.Context, conversationID
 	conversationKey := strconv.FormatInt(conversationID, 10)
 
 	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("memory cache update panic conversation_id=%s: %v", conversationKey, rec)
+			}
+		}()
 		cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 		defer cancel()
 
@@ -627,6 +632,11 @@ func (s *Store) refillConversationMetaCacheAsync(ctx context.Context, conversati
 	}
 	conversationKey := strconv.FormatInt(conversationID, 10)
 	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("memory cache meta refill panic conversation_id=%s: %v", conversationKey, rec)
+			}
+		}()
 		cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 		defer cancel()
 		if err := s.cache.CacheConversationMeta(cacheCtx, conversationKey, cache.ConversationMeta{
@@ -650,6 +660,11 @@ func (s *Store) refillRecentMessagesCacheAsync(ctx context.Context, conversation
 	}
 	conversationKey := strconv.FormatInt(conversationID, 10)
 	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("memory cache recent refill panic conversation_id=%s: %v", conversationKey, rec)
+			}
+		}()
 		cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 		defer cancel()
 		if err := s.cache.CacheRecentMessages(cacheCtx, conversationKey, recent, 50); err != nil {
@@ -2440,6 +2455,11 @@ func (s *Store) invalidateConversationCacheAsync(ctx context.Context, conversati
 	}
 	conversationKey := strconv.FormatInt(conversationID, 10)
 	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("memory cache invalidate panic conversation_id=%s: %v", conversationKey, rec)
+			}
+		}()
 		cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 		defer cancel()
 		if err := s.cache.InvalidateConversationCache(cacheCtx, conversationKey); err != nil {

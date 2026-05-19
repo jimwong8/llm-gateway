@@ -122,6 +122,11 @@ func (hc *HealthChecker) Start() {
 	hc.wg.Add(1)
 	go func() {
 		defer hc.wg.Done()
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Error("health checker panic", "err", rec)
+			}
+		}()
 		slog.Info("health checker started", "interval", hc.checkerCfg.Interval, "failure_threshold", hc.checkerCfg.FailureThreshold)
 		ticker := time.NewTicker(hc.checkerCfg.Interval)
 		defer ticker.Stop()
