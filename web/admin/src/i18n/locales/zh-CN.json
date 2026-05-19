@@ -32,6 +32,8 @@
   "common.pending": "保存中…",
   "common.titleRequired": "标题和内容不能为空",
   "common.confirmDelete": "确认删除？",
+  "common.logout": "登出",
+  "common.user": "用户",
 
   "nav.overview": "概览",
   "nav.dashboard": "仪表盘",
@@ -171,6 +173,11 @@
   "chat.selectOrCreate": "选择或创建一个会话开始对话",
   "chat.newChat": "新对话",
   "chat.streaming": "流式输出",
+  "chat.loadError": "加载会话列表失败",
+  "chat.loadSessionError": "加载会话详情失败",
+  "chat.createError": "创建会话失败",
+  "chat.deleteError": "删除会话失败",
+  "chat.confirmDelete": "确定删除此会话？",
 
   "broadcast.title": "广播管理",
   "broadcast.description": "管理系统广播通知，可创建信息、警告、紧急类型的广播消息。",

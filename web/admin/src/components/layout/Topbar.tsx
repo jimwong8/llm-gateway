@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { listActiveBroadcasts, markBroadcastRead } from '../../lib/api/broadcasts'
+import { clearToken, getToken } from '../../lib/auth'
 import type { Broadcast, BroadcastType } from '../../types/broadcast'
 
 const TYPE_STYLES: Record<BroadcastType, string> = {
@@ -31,8 +33,27 @@ function addDismissed(id: number) {
 }
 
 export function Topbar({ onToggleNavigation }: { onToggleNavigation: () => void }) {
+  const { t } = useTranslation()
   const [banners, setBanners] = useState<Broadcast[]>([])
   const [dismissed, setDismissed] = useState<Set<number>>(getDismissed)
+  const [showUserMenu, setShowUserMenu] = useState(false)
+
+  // Get user email from JWT token payload
+  const getUserEmail = useCallback(() => {
+    const token = getToken()
+    if (!token) return ''
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]))
+      return payload.email || payload.sub || ''
+    } catch {
+      return ''
+    }
+  }, [])
+
+  const handleLogout = useCallback(() => {
+    clearToken()
+    window.location.href = '/login'
+  }, [])
 
   const fetchBanners = useCallback(async () => {
     try {
@@ -91,6 +112,26 @@ export function Topbar({ onToggleNavigation }: { onToggleNavigation: () => void 
       </div>
       <div className="topbar__right">
         <span className="env-badge">环境: Local</span>
+        <div className="topbar__user" style={{ position: 'relative', marginLeft: '12px' }}>
+          <button
+            type="button"
+            onClick={() => setShowUserMenu(!showUserMenu)}
+            style={{ background: 'transparent', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '4px 10px', cursor: 'pointer', fontSize: '13px', color: 'var(--text-primary)' }}
+          >
+            {getUserEmail() || t('common.user')}
+          </button>
+          {showUserMenu && (
+            <div style={{ position: 'absolute', top: '100%', right: 0, background: 'var(--surface-color)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '4px 0', minWidth: '120px', zIndex: 1000 }}>
+              <button
+                type="button"
+                onClick={handleLogout}
+                style={{ display: 'block', width: '100%', padding: '6px 12px', background: 'transparent', border: 'none', textAlign: 'left', cursor: 'pointer', fontSize: '13px', color: 'var(--text-primary)' }}
+              >
+                {t('common.logout')}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   )

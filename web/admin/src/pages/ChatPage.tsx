@@ -14,6 +14,7 @@ export function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [streamingContent, setStreamingContent] = useState('')
   const [sending, setSending] = useState(false)
+  const [error, setError] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const accumulatedRef = useRef('')
 
@@ -21,9 +22,11 @@ export function ChatPage() {
     try {
       const res = await listSessions()
       setSessions(res.data || [])
-    } catch {
+      setError('')
+    } catch (e) {
+      setError(t('chat.loadError'))
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     fetchSessions()
@@ -36,13 +39,15 @@ export function ChatPage() {
   const loadSession = useCallback(async (id: number) => {
     setActiveId(id)
     setStreamingContent('')
+    setError('')
     try {
       const res = await getSession(id)
       setMessages(res.messages || [])
     } catch {
       setMessages([])
+      setError(t('chat.loadSessionError'))
     }
-  }, [])
+  }, [t])
 
   const handleNew = useCallback(async () => {
     try {
@@ -50,10 +55,12 @@ export function ChatPage() {
       setSessions((prev) => [session, ...prev])
       loadSession(session.id)
     } catch {
+      setError(t('chat.createError'))
     }
-  }, [loadSession])
+  }, [loadSession, t])
 
   const handleDelete = useCallback(async (id: number) => {
+    if (!window.confirm(t('chat.confirmDelete'))) return
     try {
       await deleteSession(id)
       setSessions((prev) => prev.filter((s) => s.id !== id))
@@ -62,8 +69,9 @@ export function ChatPage() {
         setMessages([])
       }
     } catch {
+      setError(t('chat.deleteError'))
     }
-  }, [activeId])
+  }, [activeId, t])
 
   const handleSend = useCallback((content: string) => {
     if (!activeId || sending) return
@@ -123,6 +131,14 @@ export function ChatPage() {
         onDelete={handleDelete}
       />
       <div className="chat-main">
+        {error && (
+          <div className="config-error" role="alert" style={{ margin: '8px 16px' }}>
+            {error}
+            <button type="button" onClick={fetchSessions} className="btn btn--sm" style={{ marginLeft: '8px' }}>
+              {t('common.retry')}
+            </button>
+          </div>
+        )}
         {!activeId ? (
           <div className="chat-empty">{t('chat.selectOrCreate')}</div>
         ) : (

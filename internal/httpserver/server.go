@@ -1271,12 +1271,12 @@ func (s *Server) adminAssetByID(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		rows, err := s.admin.ListAssets(ctx, admin.AssetFilter{TenantID: "", Keyword: strconv.FormatInt(id, 10), Limit: 1})
-		if err != nil || len(rows) == 0 {
-			writeJSON(w, http.StatusNotFound, map[string]any{"error": "asset not found"})
+		row, err := s.admin.GetAssetByID(ctx, id)
+		if err != nil {
+			writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"message": "asset not found", "type": "not_found_error"}})
 			return
 		}
-		writeJSON(w, http.StatusOK, rows[0])
+		writeJSON(w, http.StatusOK, row)
 	case http.MethodDelete:
 		tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -1543,9 +1543,20 @@ func (s *Server) adminChannelByID(w http.ResponseWriter, r *http.Request) {
 			badRequest(w, "invalid JSON body")
 			return
 		}
+		body.Name = strings.TrimSpace(body.Name)
+		body.Provider = strings.TrimSpace(body.Provider)
+		if body.Name == "" || body.Provider == "" {
+			badRequest(w, "name and provider are required")
+			return
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		row, err := s.admin.CreateChannel(ctx, admin.ChannelInput{
+		// Check channel exists first
+		if _, err := s.admin.GetChannel(ctx, id); err != nil {
+			writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"message": "channel not found", "type": "not_found_error"}})
+			return
+		}
+		row, err := s.admin.UpdateChannel(ctx, id, admin.ChannelInput{
 			ID: id, Name: body.Name, Provider: body.Provider, BaseURL: body.BaseURL,
 			APIKey: body.APIKey, Priority: body.Priority, Weight: body.Weight,
 			Models: body.Models, Tags: body.Tags, Notes: body.Notes, Status: body.Status,

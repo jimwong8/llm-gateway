@@ -1,5 +1,5 @@
 import { apiRequest } from '../http'
-import { getToken } from './identity'
+import { getToken } from '../auth'
 
 export type AuditExportParams = {
   tenant_id: string

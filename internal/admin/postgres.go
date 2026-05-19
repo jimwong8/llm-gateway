@@ -473,6 +473,44 @@ LIMIT $6 OFFSET $7`,
 	return out, rows.Err()
 }
 
+func (s *Store) GetAssetByID(ctx context.Context, id int64) (*AssetRow, error) {
+	var row AssetRow
+	var tags []string
+	err := s.db.QueryRowContext(ctx, `
+SELECT
+    ka.id,
+    COALESCE(ka.tenant_id, ''),
+    COALESCE(ka.user_id, ''),
+    COALESCE(ka.session_id, ''),
+    ka.source_model,
+    COALESCE(ka.task_type, ''),
+    ka.title,
+    ka.summary,
+    ka.content_hash,
+    COALESCE(ka.source_request_id, ''),
+    ka.hit_count,
+    COALESCE(ka.last_hit_at::text, ''),
+    COALESCE(ka.last_hit_source, ''),
+    ka.current_version,
+    ka.is_deleted,
+    COALESCE(ka.deleted_at::text, ''),
+    ka.created_at::text,
+    COALESCE(array_agg(kat.tag ORDER BY kat.tag) FILTER (WHERE kat.tag IS NOT NULL), '{}')
+FROM knowledge_assets ka
+LEFT JOIN knowledge_asset_tags kat ON kat.asset_id = ka.id
+WHERE ka.id = $1
+GROUP BY ka.id`, id).Scan(
+		&row.ID, &row.TenantID, &row.UserID, &row.SessionID, &row.SourceModel,
+		&row.TaskType, &row.Title, &row.Summary, &row.ContentHash, &row.SourceRequestID,
+		&row.HitCount, &row.LastHitAt, &row.LastHitSource, &row.CurrentVersion,
+		&row.IsDeleted, &row.DeletedAt, &row.CreatedAt, pq.Array(&tags))
+	if err != nil {
+		return nil, err
+	}
+	row.Tags = tags
+	return &row, nil
+}
+
 func (s *Store) RecordReuse(ctx context.Context, tenantID string, assetID int64, requestID, routeModel, routeTask, hitSource string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -888,6 +926,32 @@ ON CONFLICT (id) DO UPDATE SET
 		return nil, err
 	}
 	return s.GetChannel(ctx, in.ID)
+}
+
+func (s *Store) UpdateChannel(ctx context.Context, id string, in ChannelInput) (*ChannelRow, error) {
+	s.ensureChannelsSchema(ctx)
+	if in.Priority == "" {
+		in.Priority = "medium"
+	}
+	if in.Weight == 0 {
+		in.Weight = 1
+	}
+	if in.Status == "" {
+		in.Status = "active"
+	}
+	_, err := s.db.ExecContext(ctx, `
+UPDATE channels SET
+	name=$2, provider=$3, base_url=$4, api_key=$5,
+	priority=$6, weight=$7, models=$8, tags=$9,
+	notes=$10, status=$11, updated_at=NOW()
+WHERE id=$1`,
+		id, in.Name, in.Provider, in.BaseURL, in.APIKey,
+		in.Priority, in.Weight, pq.Array(in.Models), pq.Array(in.Tags),
+		in.Notes, in.Status)
+	if err != nil {
+		return nil, err
+	}
+	return s.GetChannel(ctx, id)
 }
 
 func (s *Store) DeleteChannel(ctx context.Context, id string) error {

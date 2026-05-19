@@ -32,6 +32,8 @@
   "common.pending": "Saving…",
   "common.titleRequired": "Title and content are required",
   "common.confirmDelete": "Are you sure you want to delete?",
+  "common.logout": "Logout",
+  "common.user": "User",
 
   "nav.overview": "Overview",
   "nav.dashboard": "Dashboard",
@@ -171,6 +173,11 @@
   "chat.selectOrCreate": "Select or create a session to start chatting",
   "chat.newChat": "New Chat",
   "chat.streaming": "Streaming",
+  "chat.loadError": "Failed to load sessions",
+  "chat.loadSessionError": "Failed to load session details",
+  "chat.createError": "Failed to create session",
+  "chat.deleteError": "Failed to delete session",
+  "chat.confirmDelete": "Are you sure you want to delete this session?",
 
   "broadcast.title": "Broadcasts",
   "broadcast.description": "Manage system broadcast notifications with info, warning, and critical types.",

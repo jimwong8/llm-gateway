@@ -71,7 +71,7 @@ export async function deleteSession(id: number): Promise<void> {
 }
 
 export async function getSharedSession(hash: string): Promise<SessionResponse> {
-  const res = await userFetch(`/api/chat/sessions/share/${hash}`)
+  const res = await userFetch(`/api/chat/share/${hash}`)
   if (!res.ok) throw new Error('Failed to get shared session')
   return res.json()
 }

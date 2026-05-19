@@ -10,5 +10,6 @@ export * from './audit'
 export * from './tenant-keys'
 export * from './assets'
 export * from './broadcasts'
-export * from './memory'
+// Note: memory.ts does not exist as a separate module.
+// Memory-related APIs are in presets.ts (presets/masks) and admin.ts (memory admin routes).
 export * from './websocket'

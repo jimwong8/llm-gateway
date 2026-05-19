@@ -1,5 +1,7 @@
 import { useInRouterContext, useLocation, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { Button } from '../ui'
+import { clearToken } from '../../lib/auth'
 
 type SidebarProps = {
   mobile?: boolean
@@ -25,6 +27,7 @@ export const navGroups: NavGroup[] = [
     children: [
       { label: '仪表盘', path: '/dashboard' },
       { label: 'AI 聊天', path: '/chat' },
+      { label: 'WebSocket 聊天', path: '/ws-chat' },
     ],
   },
   {
@@ -62,11 +65,20 @@ export const navGroups: NavGroup[] = [
       { label: '配额管理', path: '/quota' },
       { label: '记忆治理', path: '/memory-governance' },
       { label: '推荐管理', path: '/recommendations' },
+      { label: 'Prompt & Mask', path: '/presets' },
       { label: 'API 密钥', path: '/api-keys' },
       { label: '租户密钥', path: '/tenant-keys' },
       { label: '在线测试', path: '/playground' },
       { label: '系统状态', path: '/system' },
       { label: '系统设置', path: '/system/settings' },
+      { label: '账单管理', path: '/billing' },
+      { label: '定价管理', path: '/billing-pricing' },
+    ],
+  },
+  {
+    label: '账户',
+    children: [
+      { label: '账户设置', path: '/account' },
     ],
   },
 ]
@@ -94,6 +106,13 @@ function RoutedSidebar(props: SidebarProps) {
 }
 
 function SidebarLayout({ mobile = false, open = false, onClose, currentPath = '', onNavigate = () => undefined }: SidebarProps) {
+  const { t } = useTranslation()
+
+  const handleLogout = () => {
+    clearToken()
+    window.location.href = '/login'
+  }
+
   return (
     <aside
       aria-label={mobile ? '移动端导航' : '主导航'}
@@ -136,6 +155,15 @@ function SidebarLayout({ mobile = false, open = false, onClose, currentPath = ''
           </div>
         ))}
       </nav>
+      <div className="app-sidebar__footer">
+        <button
+          type="button"
+          className="nav-item nav-item--logout"
+          onClick={handleLogout}
+        >
+          {t('common.logout')}
+        </button>
+      </div>
     </aside>
   )
 }
