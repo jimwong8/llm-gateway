@@ -21,3 +21,33 @@ export type ConfigVersionFilters = {
   scope: string       // 作用域
   projectID: string   // 项目 ID
 }
+
+/** 站点配置 */
+export type SiteConfig = {
+  site_name: string
+  logo_url: string
+  jwt_secret_configured?: boolean
+  jwt_secret_rotated_at?: string
+  smtp_host: string
+  smtp_port: number
+  smtp_user: string
+  smtp_from: string
+  allow_registration: boolean
+  default_user_role: string
+  default_user_quota: number
+  updated_at: string
+  updated_by: string
+}
+
+/** 配置快照 */
+export type ConfigSnapshot = {
+  id: number
+  version: string
+  status: 'draft' | 'published' | 'rolled_back'
+  config_snapshot?: string
+  notes: string
+  created_by: string
+  created_at: string
+  published_at?: string
+  rolled_back_at?: string
+}

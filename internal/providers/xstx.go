@@ -66,7 +66,7 @@ func (p *XSTXProvider) ChatCompletion(ctx context.Context, req ChatCompletionReq
 	}
 
 	if resp.StatusCode >= 400 {
-		return ChatCompletionResponse{}, fmt.Errorf("provider returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+		return ChatCompletionResponse{}, newUpstreamHTTPError(resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
 
 	var out ChatCompletionResponse

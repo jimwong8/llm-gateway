@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AppShell } from '../components/layout/AppShell'
 import { Badge } from '../components/ui/Badge'
@@ -9,14 +10,14 @@ import { ChannelFormModal } from './ChannelFormModal'
 import { listChannels, deleteChannel, testChannel, batchDeleteChannels, batchUpdateChannelsStatus } from '../lib/channels'
 import type { Channel, ChannelStatus } from '../types/channel'
 
-const statusBadgeVariant: Record<ChannelStatus, 'success' | 'warning' | 'danger' | 'info'> = {
+const statusBadgeVariant: Record<string, 'success' | 'warning' | 'danger' | 'info'> = {
   active: 'success',
   inactive: 'info',
   error: 'danger',
   maintenance: 'warning',
 }
 
-const statusDotMap: Record<ChannelStatus, 'healthy' | 'disabled' | 'error'> = {
+const statusDotMap: Record<string, 'healthy' | 'disabled' | 'error'> = {
   active: 'healthy',
   inactive: 'disabled',
   error: 'error',
@@ -24,6 +25,7 @@ const statusDotMap: Record<ChannelStatus, 'healthy' | 'disabled' | 'error'> = {
 }
 
 export function ChannelsPage() {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [showForm, setShowForm] = useState(false)
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null)
@@ -87,14 +89,14 @@ export function ChannelsPage() {
   }
 
   return (
-    <AppShell title="渠道管理" description="管理 LLM 供应商渠道，配置路由优先级和权重">
+    <AppShell title={t('channels.pageTitle')} description={t('channels.pageDescription')}>
       <div className="channels-page">
         {/* Toolbar */}
         <div className="channels-toolbar">
           <div className="channels-toolbar__left">
             <input
               type="text"
-              placeholder="搜索渠道名称..."
+              placeholder={t('channels.searchPlaceholder')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="channels-search"
@@ -104,17 +106,17 @@ export function ChannelsPage() {
               onChange={(e) => setStatusFilter(e.target.value as ChannelStatus | 'all')}
               className="channels-filter"
             >
-              <option value="all">全部状态</option>
-              <option value="active">启用</option>
-              <option value="inactive">停用</option>
-              <option value="error">异常</option>
-              <option value="maintenance">维护中</option>
+              <option value="all">{t('channels.statusAll')}</option>
+              <option value="active">{t('channels.statusActive')}</option>
+              <option value="inactive">{t('channels.statusInactive')}</option>
+              <option value="error">{t('channels.statusError')}</option>
+              <option value="maintenance">{t('channels.statusMaintenance')}</option>
             </select>
           </div>
           <div className="channels-toolbar__right">
             {selected.size > 0 ? (
               <>
-                <span className="channels-batch-count">已选 {selected.size} 项</span>
+                <span className="channels-batch-count">{t('channels.selectedCount', { count: selected.size })}</span>
                 <button
                   type="button"
                   className="btn btn--outline"
@@ -122,7 +124,7 @@ export function ChannelsPage() {
                     batchStatusMutation.mutate({ ids: Array.from(selected), status: 'active' })
                   }
                 >
-                  批量启用
+                  {t('channels.batchEnable')}
                 </button>
                 <button
                   type="button"
@@ -131,18 +133,18 @@ export function ChannelsPage() {
                     batchStatusMutation.mutate({ ids: Array.from(selected), status: 'inactive' })
                   }
                 >
-                  批量停用
+                  {t('channels.batchDisable')}
                 </button>
                 <button
                   type="button"
                   className="btn btn--danger"
                   onClick={() => {
-                    if (confirm(`确定删除选中的 ${selected.size} 个渠道？`)) {
+                    if (confirm(t('channels.confirmBatchDelete', { count: selected.size }))) {
                       batchDeleteMutation.mutate(Array.from(selected))
                     }
                   }}
                 >
-                  批量删除
+                  {t('channels.batchDelete')}
                 </button>
               </>
             ) : null}
@@ -154,7 +156,7 @@ export function ChannelsPage() {
                 setShowForm(true)
               }}
             >
-              + 添加渠道
+              + {t('channels.addChannel')}
             </button>
           </div>
         </div>
@@ -166,9 +168,9 @@ export function ChannelsPage() {
           </div>
         ) : filtered.length === 0 ? (
           <EmptyState
-            title="暂无渠道"
-            description="添加第一个 LLM 供应商渠道以开始使用"
-            action={{ label: '添加渠道', onClick: () => setShowForm(true) }}
+            title={t('channels.emptyTitle')}
+            description={t('channels.emptyDescription')}
+            action={{ label: t('channels.addChannel'), onClick: () => setShowForm(true) }}
           />
         ) : (
           <div className="channels-table">
@@ -182,14 +184,14 @@ export function ChannelsPage() {
                       onChange={toggleSelectAll}
                     />
                   </th>
-                  <th>名称</th>
-                  <th>供应商</th>
-                  <th>状态</th>
-                  <th>优先级</th>
-                  <th>权重</th>
-                  <th>延迟</th>
-                  <th>请求数</th>
-                  <th>操作</th>
+                  <th>{t('channels.name')}</th>
+                  <th>{t('channels.provider')}</th>
+                  <th>{t('channels.status')}</th>
+                  <th>{t('channels.priority')}</th>
+                  <th>{t('channels.weight')}</th>
+                  <th>{t('channels.latency')}</th>
+                  <th>{t('channels.requests')}</th>
+                  <th>{t('channels.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -217,8 +219,8 @@ export function ChannelsPage() {
                       </Badge>
                     </td>
                     <td>{ch.weight}</td>
-                    <td>{ch.latencyMs ? `${ch.latencyMs}ms` : '-'}</td>
-                    <td>{ch.totalRequests ?? 0}</td>
+                     <td>{ch.latency_ms ? `${ch.latency_ms}ms` : '-'}</td>
+                     <td>{ch.total_requests ?? 0}</td>
                     <td>
                       <div className="channels-actions">
                         <button
@@ -234,24 +236,24 @@ export function ChannelsPage() {
                         <button
                           type="button"
                           className="btn btn--sm btn--outline"
-                          onClick={async () => {
-                            const result = await testMutation.mutateAsync(ch.id)
-                            alert(result.success ? '测试成功' : `测试失败: ${result.error}`)
-                          }}
-                          disabled={testMutation.isPending}
-                        >
-                          测试
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn--sm btn--danger-ghost"
-                          onClick={() => {
-                            if (confirm(`确定删除渠道 "${ch.name}"？`)) {
-                              deleteMutation.mutate(ch.id)
-                            }
-                          }}
-                        >
-                          删除
+                      onClick={async () => {
+                             const result = await testMutation.mutateAsync(ch.id)
+                             alert(result.success ? t('channels.testSuccess') : `${t('channels.testFailed')}: ${result.error}`)
+                           }}
+                           disabled={testMutation.isPending}
+                         >
+                           {t('channels.test')}
+                         </button>
+                         <button
+                           type="button"
+                           className="btn btn--sm btn--danger-ghost"
+                           onClick={() => {
+                             if (confirm(t('channels.confirmDelete', { name: ch.name }))) {
+                               deleteMutation.mutate(ch.id)
+                             }
+                           }}
+                         >
+                           {t('channels.delete')}
                         </button>
                       </div>
                     </td>

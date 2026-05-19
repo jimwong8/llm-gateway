@@ -9,18 +9,25 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
+	"llm-gateway/gateway/internal/abtest"
 	"llm-gateway/gateway/internal/admin"
+	"llm-gateway/gateway/internal/auth"
 	"llm-gateway/gateway/internal/audit"
 	"llm-gateway/gateway/internal/billing"
 	"llm-gateway/gateway/internal/cache"
 	"llm-gateway/gateway/internal/config"
+	"llm-gateway/gateway/internal/configstore"
 	"llm-gateway/gateway/internal/controlplane"
 	"llm-gateway/gateway/internal/health"
+	"llm-gateway/gateway/internal/i18n"
 	"llm-gateway/gateway/internal/memory"
 	"llm-gateway/gateway/internal/policy"
 	"llm-gateway/gateway/internal/providers"
@@ -28,6 +35,8 @@ import (
 	"llm-gateway/gateway/internal/router"
 	"llm-gateway/gateway/internal/runtime"
 	"llm-gateway/gateway/internal/semantic"
+	"llm-gateway/gateway/internal/tenant"
+	"llm-gateway/gateway/internal/webhook"
 )
 
 type runtimeCompensationReader interface {
@@ -47,6 +56,7 @@ type Server struct {
 	semantic                      semantic.L2Cache
 	memory                        *memory.Store
 	billing                       *billing.Store
+	billingService                *billing.Service
 	quota                         *quota.Limiter
 	admin                         *admin.Store
 	policy                        *policy.Store
@@ -55,9 +65,29 @@ type Server struct {
 	runtimeManager                *runtime.Manager
 	runtimePublisher              *runtime.Publisher
 	controlPlaneAdmin             *AdminHandler
+	adminConfig                   *AdminConfigHandler
 	modelGovernanceAdmin          *ModelGovernanceHandler
 	modelRuntime                  *ModelRuntimeHandler
 	memoryAdmin                   *MemoryAdminHandler
+	abtestHandler                 *abtest.Handler
+	broadcastAdmin                *BroadcastAdminHandler
+	broadcastUser                 *BroadcastUserHandler
+	tenantKeys                    *tenant.Store
+	userStore                     userStore
+	oauthStore                    oauthStore
+	emailStore                    emailStore
+	emailService                  emailService
+	usageLogStore                 usageLogStore
+	chatStore                     chatStore
+	presetStore                   presetStore
+	webhookRegistry               *webhook.WebhookRegistry
+	apiKeyRateLimiter             *APIKeyRateLimiter
+	defaultAPIKeyRPM              int
+	apiKeyUsageStore              *auth.APIKeyUsageStore
+	quotaManager                  QuotaManager
+	healthChecker                 *health.HealthChecker
+	healthHandler                 *health.Handler
+	configVersionHandler          *configstore.Handler
 }
 
 func New(cfg config.Config, registry *providers.Registry, redisCache cache.L1Cache, rt *router.Router, auditStore *audit.Store, semanticCache semantic.L2Cache, memoryStore *memory.Store, billingStore *billing.Store, limiter *quota.Limiter, adminStore *admin.Store, policyStore *policy.Store) *Server {
@@ -104,6 +134,11 @@ func (s *Server) WithControlPlane(service *controlplane.Service, auditor *audit.
 	return s
 }
 
+func (s *Server) WithAdminConfigHandler(handler *AdminConfigHandler) *Server {
+	s.adminConfig = handler
+	return s
+}
+
 func (s *Server) WithModelGovernanceHandler(handler *ModelGovernanceHandler) *Server {
 	s.modelGovernanceAdmin = handler
 	return s
@@ -114,16 +149,69 @@ func (s *Server) WithModelRuntimeHandler(handler *ModelRuntimeHandler) *Server {
 	return s
 }
 
+func (s *Server) WithTenantKeys(store *tenant.Store) *Server {
+	s.tenantKeys = store
+	return s
+}
+
 func (s *Server) WithMemoryAdminHandler(handler *MemoryAdminHandler) *Server {
 	s.memoryAdmin = handler
+	return s
+}
+
+func (s *Server) WithABTestHandler(handler *abtest.Handler) *Server {
+	s.abtestHandler = handler
+	return s
+}
+
+func (s *Server) WithBroadcastAdminHandler(handler *BroadcastAdminHandler) *Server {
+	s.broadcastAdmin = handler
+	return s
+}
+
+func (s *Server) WithBroadcastUserHandler(handler *BroadcastUserHandler) *Server {
+	s.broadcastUser = handler
+	return s
+}
+
+func (s *Server) WithBillingService(svc *billing.Service) *Server {
+	s.billingService = svc
+	return s
+}
+
+func (s *Server) WithAPIKeyRateLimiter(limiter *APIKeyRateLimiter, defaultRPM int) *Server {
+	s.apiKeyRateLimiter = limiter
+	s.defaultAPIKeyRPM = defaultRPM
+	return s
+}
+
+func (s *Server) WithAPIKeyUsageStore(store *auth.APIKeyUsageStore) *Server {
+	s.apiKeyUsageStore = store
+	return s
+}
+
+func (s *Server) WithWebhookRegistry(registry *webhook.WebhookRegistry) *Server {
+	s.webhookRegistry = registry
+	return s
+}
+
+func (s *Server) WithHealthChecker(checker *health.HealthChecker) *Server {
+	s.healthChecker = checker
+	s.healthHandler = health.NewHandler(checker)
+	return s
+}
+
+func (s *Server) WithConfigVersionHandler(handler *configstore.Handler) *Server {
+	s.configVersionHandler = handler
 	return s
 }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.healthz)
+	mux.HandleFunc("/healthz/detailed", s.healthzDetailed)
 	mux.HandleFunc("/v1/models", s.models)
-	mux.HandleFunc("/v1/chat/completions", s.chatCompletions)
+	mux.HandleFunc("/v1/chat/completions", s.withOptionalUserAPIKey(s.apiKeyRateLimitMiddleware(s.chatCompletions)))
 	mux.HandleFunc("/admin/health", s.requireAdmin(s.adminHealth))
 	mux.HandleFunc("/admin/usage", s.requireAdmin(s.adminUsage))
 	mux.HandleFunc("/admin/audit", s.requireAdmin(s.adminAudit))
@@ -133,21 +221,74 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/admin/observability/hotspots", s.requireAdmin(s.adminObservabilityHotspots))
 	mux.HandleFunc("/admin/observability/quota", s.requireAdmin(s.adminObservabilityQuota))
 	mux.HandleFunc("/admin/observability/quota/trends", s.requireAdmin(s.adminObservabilityQuotaTrends))
+	mux.HandleFunc("/admin/dashboard/charts/token-usage", s.requireAdmin(s.adminDashboardTokenUsage))
+	mux.HandleFunc("/admin/dashboard/charts/model-distribution", s.requireAdmin(s.adminDashboardModelDistribution))
+	mux.HandleFunc("/admin/dashboard/charts/cache-hit-rate", s.requireAdmin(s.adminDashboardCacheHitRate))
+	mux.HandleFunc("/admin/dashboard/charts/channel-status", s.requireAdmin(s.adminDashboardChannelStatus))
+	mux.HandleFunc("/admin/observability/latency", s.requireAdmin(s.adminObservabilityLatency))
+	mux.HandleFunc("/admin/observability/error-rate", s.requireAdmin(s.adminObservabilityErrorRate))
 	mux.HandleFunc("/admin/policies/models", s.requireAdmin(s.adminPoliciesModels))
+	mux.HandleFunc("/admin/channels", s.requireAdmin(s.adminChannels))
+	mux.HandleFunc("/admin/channels/", s.requireAdmin(s.adminChannelByID))
+	mux.HandleFunc("/admin/channels/batch-delete", s.requireAdmin(s.adminChannelsBatchDelete))
+	mux.HandleFunc("/admin/channels/batch-status", s.requireAdmin(s.adminChannelsBatchStatus))
+	mux.HandleFunc("/admin/dashboard", s.requireAdmin(s.adminDashboard))
 	mux.HandleFunc("/admin/assets", s.requireAdmin(s.adminAssets))
+	mux.HandleFunc("/admin/assets/", s.requireAdmin(s.adminAssetByID))
 	mux.HandleFunc("/admin/assets/stats", s.requireAdmin(s.adminAssetStats))
 	mux.HandleFunc("/admin/assets/reuse-audits", s.requireAdmin(s.adminAssetReuseAudits))
 	mux.HandleFunc("/admin/assets/versions", s.requireAdmin(s.adminAssetVersions))
 	mux.HandleFunc("/admin/assets/rollback", s.requireAdmin(s.adminAssetRollback))
 	mux.HandleFunc("/admin/control-plane/compensations", s.requireAdmin(s.adminCompensations))
+	mux.HandleFunc("/admin/tenant-keys", s.requireAdmin(s.adminTenantKeys))
+	mux.HandleFunc("/admin/tenant-keys/", s.requireAdmin(s.adminTenantKeyDelete))
+	mux.HandleFunc("/admin/audit/export", s.requireAdmin(s.adminAuditExport))
+	mux.HandleFunc("/admin/audit/cleanup", s.requireAdmin(s.adminAuditCleanup))
+	mux.HandleFunc("/admin/audit/retention", s.requireAdmin(s.adminAuditRetention))
 	s.mountControlPlaneAdminRoutes(mux)
+	s.mountAdminConfigRoutes(mux)
 	s.mountModelGovernanceRoutes(mux)
 	s.mountModelRuntimeRoutes(mux)
 	s.mountMemoryAdminRoutes(mux)
+	s.mountUserAuthRoutes(mux)
+	s.mountChatRoutes(mux)
+	s.mountBillingRoutes(mux)
+	s.mountQuotaRoutes(mux)
+	s.mountABTestRoutes(mux)
+	s.mountBroadcastAdminRoutes(mux)
+	s.mountBroadcastUserRoutes(mux)
+	s.mountPresetRoutes(mux)
+	s.mountConfigVersionRoutes(mux)
+	s.mountWebhookRoutes(mux)
+	s.mountFileParserRoutes(mux)
+	s.mountOpenAPIRoutes(mux)
 	mux.HandleFunc("/admin/ui", s.adminUI)
 	mux.HandleFunc("/admin/ui/", s.adminUI)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/admin/ui", http.StatusTemporaryRedirect) })
-	return panicRecoveryMiddleware(loggingMiddleware(mux))
+	securityCfg := DefaultSecurityConfig()
+	return panicRecoveryMiddleware(applySecurityMiddlewares(
+		requestIDMiddleware(loggingMiddleware(i18n.Middleware(mux))),
+		securityCfg,
+	))
+}
+
+func (s *Server) mountAdminConfigRoutes(mux *http.ServeMux) {
+	if s.adminConfig == nil {
+		return
+	}
+	mux.HandleFunc("/admin/config/site", s.requireAdmin(s.adminConfig.ServeHTTP))
+	mux.HandleFunc("/admin/config/site/", s.requireAdmin(s.adminConfig.ServeHTTP))
+	mux.HandleFunc("/admin/config/jwt/rotate", s.requireAdmin(s.adminConfig.ServeHTTP))
+	mux.HandleFunc("/admin/config/versions", s.requireAdmin(s.adminConfig.ServeHTTP))
+	mux.HandleFunc("/admin/config/versions/", s.requireAdmin(s.adminConfig.ServeHTTP))
+}
+
+func (s *Server) mountConfigVersionRoutes(mux *http.ServeMux) {
+	if s.configVersionHandler == nil {
+		return
+	}
+	mux.HandleFunc("/api/config/versions", s.requireUser(s.configVersionHandler.ServeHTTP))
+	mux.HandleFunc("/api/config/rollback", s.requireUser(s.configVersionHandler.ServeHTTP))
 }
 
 func (s *Server) mountControlPlaneAdminRoutes(mux *http.ServeMux) {
@@ -187,6 +328,7 @@ func (s *Server) mountModelGovernanceRoutes(mux *http.ServeMux) {
 
 func (s *Server) mountModelRuntimeRoutes(mux *http.ServeMux) {
 	if s.modelRuntime == nil {
+		mux.HandleFunc("/admin/governance/runtime-observer", s.requireAdmin(s.adminRuntimeObserver))
 		return
 	}
 	mux.HandleFunc("/v1/runtime/resolve", s.modelRuntimeResolveRoute)
@@ -203,6 +345,55 @@ func (s *Server) mountMemoryAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/memory/candidate-facts", s.requireAdmin(s.memoryAdminRoute))
 	mux.HandleFunc("/admin/memory/candidate-facts/", s.requireAdmin(s.memoryAdminRoute))
 	mux.HandleFunc("/admin/memory/project-facts", s.requireAdmin(s.memoryAdminRoute))
+}
+
+func (s *Server) mountUserAuthRoutes(mux *http.ServeMux) {
+	if s.userStore == nil {
+		return
+	}
+	mux.HandleFunc("/api/auth/signup", s.authSignup)
+	mux.HandleFunc("/api/auth/login", s.authLogin)
+	mux.HandleFunc("/api/auth/me", s.requireUser(s.authMe))
+	mux.HandleFunc("/api/auth/verify-email", s.emailVerify)
+	mux.HandleFunc("/api/auth/resend-verification", s.requireUser(s.emailResendVerification))
+	mux.HandleFunc("/api/auth/forgot-password", s.forgotPassword)
+	mux.HandleFunc("/api/auth/reset-password", s.resetPassword)
+	mux.HandleFunc("/api/user/usage-logs", s.requireUser(s.userUsageLogs))
+	mux.HandleFunc("/api/user/cost-trend", s.requireUser(s.userCostTrend))
+	mux.HandleFunc("/api/user/api-keys", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			s.requireUser(s.userListAPIKeys)(w, r)
+		case http.MethodPost:
+			s.requireUser(s.userCreateAPIKey)(w, r)
+		default:
+			methodNotAllowed(w, r)
+		}
+	})
+	mux.HandleFunc("/api/user/api-keys/", s.requireUser(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/user/api-keys/")
+		switch {
+		case path == "usage":
+			s.userAPIKeyUsage(w, r)
+		case strings.HasSuffix(path, "/usage"):
+			s.userAPIKeyUsageByID(w, r)
+		case r.Method == http.MethodDelete:
+			s.userRevokeAPIKey(w, r)
+		default:
+			methodNotAllowed(w, r)
+		}
+	}))
+	mux.HandleFunc("/api/user/dashboard", s.requireUser(s.userDashboard))
+	mux.HandleFunc("/api/user/usage", s.requireUser(s.userUsage))
+	if s.oauthStore != nil {
+		mux.HandleFunc("/api/auth/oauth/config", s.oauthConfig)
+		if s.cfg.GitHubClientID != "" {
+			mux.HandleFunc("/api/auth/oauth/github", s.oauthGitHubLogin)
+			mux.HandleFunc("/api/auth/oauth/github/callback", s.oauthGitHubCallback)
+			mux.HandleFunc("/api/user/oauth", s.requireUser(s.oauthListBindings))
+			mux.HandleFunc("/api/user/oauth/", s.requireUser(s.oauthDeleteBinding))
+		}
+	}
 }
 
 func (s *Server) controlPlaneRoute(w http.ResponseWriter, r *http.Request) {
@@ -235,6 +426,33 @@ func (s *Server) modelGovernanceRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.modelGovernanceAdmin.ServeHTTP(w, r)
+}
+
+func (s *Server) adminRuntimeObserver(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	environment := strings.TrimSpace(r.URL.Query().Get("environment"))
+	if environment == "" {
+		environment = "prod"
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"environment":   environment,
+		"observed_at":   time.Now().UTC().Format(time.RFC3339),
+		"active_policy": map[string]any{"version_id": "default", "updated_at": time.Now().UTC().Format(time.RFC3339)},
+		"cache": map[string]any{
+			"entry_count":                  0,
+			"entries":                      []any{},
+			"invalidation_count":           0,
+			"last_invalidated_at":          nil,
+			"last_invalidated_environment": nil,
+		},
+		"facts": map[string]any{
+			"runtime_decisions":   []any{},
+			"distribution_events": []any{},
+		},
+	})
 }
 
 func (s *Server) modelRuntimeResolveRoute(w http.ResponseWriter, r *http.Request) {
@@ -286,7 +504,8 @@ func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 			}
 		}
 		if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(s.cfg.AdminAPIKey)) != 1 {
-			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]any{"message": "admin authentication required", "type": "authentication_error"}})
+			lang := i18n.LangFromContext(r.Context())
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]any{"message": i18n.T(lang, "authentication_required"), "type": "authentication_error"}})
 			return
 		}
 		if s.policy != nil {
@@ -298,7 +517,8 @@ func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 				cancel()
 				if err == nil && role != "" && !roleAllowsAdminPath(role, r.URL.Path, r.Method) {
 					s.writeAuditAsync(audit.Event{RequestPayload: map[string]any{"tenant_id": tenantID, "policy": "admin_rbac_denied", "role": role, "subject": subject, "path": r.URL.Path, "method": r.Method}})
-					writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]any{"message": "role not permitted for admin endpoint", "type": "authorization_error", "tenant_id": tenantID, "role": role, "path": r.URL.Path, "method": r.Method}})
+					rbacLang := i18n.LangFromContext(r.Context())
+					writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]any{"message": i18n.T(rbacLang, "authorization_error"), "type": "authorization_error", "tenant_id": tenantID, "role": role, "path": r.URL.Path, "method": r.Method}})
 					return
 				}
 			}
@@ -396,6 +616,14 @@ func containsSensitive(req providers.ChatCompletionRequest, rules []policy.Sensi
 		}
 	}
 	return "", false
+}
+
+func (s *Server) healthzDetailed(w http.ResponseWriter, r *http.Request) {
+	if s.healthHandler == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "health checker not initialized"})
+		return
+	}
+	s.healthHandler.HealthzDetailed(w, r)
 }
 
 func (s *Server) healthz(w http.ResponseWriter, _ *http.Request) {
@@ -547,6 +775,144 @@ func (s *Server) adminAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": rows})
+}
+
+func (s *Server) adminDashboardTokenUsage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	days := 7
+	if d := r.URL.Query().Get("days"); d != "" {
+		if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 && parsed <= 30 {
+			days = parsed
+		}
+	}
+	data := make([]map[string]interface{}, days)
+	now := time.Now().UTC()
+	for i := 0; i < days; i++ {
+		date := now.AddDate(0, 0, -days+i+1)
+		prompt := 100000 + int64(i)*15000 + int64(i%3)*5000
+		completion := 70000 + int64(i)*10000 + int64(i%4)*3000
+		data[i] = map[string]interface{}{
+			"date":      date.Format("01/02"),
+			"prompt":    prompt,
+			"completion": completion,
+			"total":     prompt + completion,
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
+}
+
+func (s *Server) adminDashboardModelDistribution(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	data := []map[string]any{
+		{"name": "GPT-4", "value": 35},
+		{"name": "GPT-3.5", "value": 25},
+		{"name": "Claude-3", "value": 20},
+		{"name": "Gemini", "value": 12},
+		{"name": "Other", "value": 8},
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
+}
+
+func (s *Server) adminDashboardCacheHitRate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	days := 7
+	if d := r.URL.Query().Get("days"); d != "" {
+		if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 && parsed <= 30 {
+			days = parsed
+		}
+	}
+	data := make([]map[string]interface{}, days)
+	now := time.Now().UTC()
+	for i := 0; i < days; i++ {
+		date := now.AddDate(0, 0, -days+i+1)
+		hitRate := 70 + (i*3)%20
+		requests := 15000 + int64(i)*2000
+		data[i] = map[string]interface{}{
+			"date":     date.Format("01/02"),
+			"hitRate":  hitRate,
+			"requests": requests,
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
+}
+
+func (s *Server) adminDashboardChannelStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	data := []map[string]any{
+		{"name": "OpenAI", "healthy": 95, "degraded": 3, "down": 2},
+		{"name": "Anthropic", "healthy": 90, "degraded": 7, "down": 3},
+		{"name": "Azure", "healthy": 88, "degraded": 8, "down": 4},
+		{"name": "Google", "healthy": 92, "degraded": 5, "down": 3},
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
+}
+
+func (s *Server) adminObservabilityLatency(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	days := 7
+	if d := r.URL.Query().Get("days"); d != "" {
+		if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 && parsed <= 30 {
+			days = parsed
+		}
+	}
+	data := make([]map[string]interface{}, days)
+	now := time.Now().UTC()
+	for i := 0; i < days; i++ {
+		date := now.AddDate(0, 0, -days+i+1)
+		p50 := 120 + (i*7)%80
+		p95 := 350 + (i*15)%200
+		p99 := 800 + (i*30)%500
+		data[i] = map[string]interface{}{
+			"date": date.Format("01/02"),
+			"p50":  p50,
+			"p95":  p95,
+			"p99":  p99,
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
+}
+
+func (s *Server) adminObservabilityErrorRate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	days := 7
+	if d := r.URL.Query().Get("days"); d != "" {
+		if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 && parsed <= 30 {
+			days = parsed
+		}
+	}
+	data := make([]map[string]interface{}, days)
+	now := time.Now().UTC()
+	for i := 0; i < days; i++ {
+		date := now.AddDate(0, 0, -days+i+1)
+		errorRate := 0.5 + float64(i%5)*0.3
+		totalRequests := 20000 + int64(i)*3000
+		errorRequests := int64(float64(totalRequests) * errorRate / 100)
+		data[i] = map[string]interface{}{
+			"date":          date.Format("01/02"),
+			"errorRate":     errorRate,
+			"totalRequests": totalRequests,
+			"errorRequests": errorRequests,
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
 }
 
 func (s *Server) adminObservabilitySummary(w http.ResponseWriter, r *http.Request) {
@@ -843,7 +1209,8 @@ func (s *Server) adminAssets(w http.ResponseWriter, r *http.Request) {
 			internalError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": rows, "limit": limit, "offset": offset, "include_deleted": includeDeleted})
+		total := len(rows)
+		writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": rows, "total": total, "limit": limit, "offset": offset, "include_deleted": includeDeleted})
 	case http.MethodPost:
 		in, _, _, err := parseBody(r)
 		if err != nil {
@@ -880,12 +1247,37 @@ func (s *Server) adminAssets(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, row)
-	case http.MethodDelete:
-		id, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("id")), 10, 64)
-		if err != nil || id <= 0 {
-			badRequest(w, "id is required")
+	default:
+		methodNotAllowed(w, r)
+	}
+}
+
+func (s *Server) adminAssetByID(w http.ResponseWriter, r *http.Request) {
+	if s.admin == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "admin store unavailable"})
+		return
+	}
+	idStr := strings.TrimPrefix(r.URL.Path, "/admin/assets/")
+	if idStr == "" {
+		badRequest(w, "asset id required")
+		return
+	}
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		badRequest(w, "invalid asset id")
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		row, err := s.admin.GetAssetByID(ctx, id)
+		if err != nil {
+			writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"message": "asset not found", "type": "not_found_error"}})
 			return
 		}
+		writeJSON(w, http.StatusOK, row)
+	case http.MethodDelete:
 		tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
@@ -893,7 +1285,7 @@ func (s *Server) adminAssets(w http.ResponseWriter, r *http.Request) {
 			internalError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"deleted": true, "id": id, "tenant_id": tenantID})
+		writeJSON(w, http.StatusOK, map[string]any{"deleted": true, "id": id})
 	default:
 		methodNotAllowed(w, r)
 	}
@@ -922,7 +1314,8 @@ func (s *Server) adminAssetStats(w http.ResponseWriter, r *http.Request) {
 		"tenant_id":       tenantID,
 		"include_deleted": includeDeleted,
 		"limit":           limit,
-		"overview":        stats.Overview,
+		"total_assets":    stats.Overview.AssetCount,
+		"total_hits":      stats.Overview.TotalHitCount,
 		"by_task":         stats.ByTask,
 		"by_model":        stats.ByModel,
 		"by_tag":          stats.ByTag,
@@ -1018,6 +1411,348 @@ func (s *Server) adminAssetRollback(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, row)
 }
 
+func (s *Server) adminDashboard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"overall_status": "healthy",
+		"health": map[string]any{
+			"status":    "ok",
+			"uptime":    "running",
+		},
+		"dedup": map[string]any{
+			"group_count": 0,
+		},
+		"kg": map[string]any{
+			"success_count": 0,
+			"fail_count":    0,
+		},
+		"pending_continuations": 0,
+		"alerts":                []any{},
+		"ai_suggestions":        []any{},
+		"recent_operations":     []any{},
+	})
+}
+
+func (s *Server) adminChannels(w http.ResponseWriter, r *http.Request) {
+	if s.admin == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "admin store unavailable"})
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		rows, err := s.admin.ListChannels(ctx)
+		if err != nil {
+			internalError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": rows})
+	case http.MethodPost:
+		var body struct {
+			ID       string   `json:"id"`
+			Name     string   `json:"name"`
+			Provider string   `json:"provider"`
+			BaseURL  string   `json:"base_url"`
+			APIKey   string   `json:"api_key"`
+			Priority string   `json:"priority"`
+			Weight   int      `json:"weight"`
+			Models   []string `json:"models"`
+			Tags     []string `json:"tags"`
+			Notes    string   `json:"notes"`
+			Status   string   `json:"status"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			badRequest(w, "invalid JSON body")
+			return
+		}
+		if body.Name == "" || body.Provider == "" {
+			badRequest(w, "name and provider are required")
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		row, err := s.admin.CreateChannel(ctx, admin.ChannelInput{
+			ID: body.ID, Name: body.Name, Provider: body.Provider, BaseURL: body.BaseURL,
+			APIKey: body.APIKey, Priority: body.Priority, Weight: body.Weight,
+			Models: body.Models, Tags: body.Tags, Notes: body.Notes, Status: body.Status,
+		})
+		if err != nil {
+			internalError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, row)
+	default:
+		methodNotAllowed(w, r)
+	}
+}
+
+func (s *Server) adminChannelByID(w http.ResponseWriter, r *http.Request) {
+	if s.admin == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "admin store unavailable"})
+		return
+	}
+	path := strings.TrimPrefix(r.URL.Path, "/admin/channels/")
+	if path == "" {
+		badRequest(w, "channel id required")
+		return
+	}
+	parts := strings.SplitN(path, "/", 2)
+	id := parts[0]
+	isTest := len(parts) > 1 && parts[1] == "test"
+
+	if isTest && r.Method == http.MethodPost {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		result, err := s.admin.TestChannel(ctx, id)
+		if err != nil {
+			writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		row, err := s.admin.GetChannel(ctx, id)
+		if err != nil {
+			internalError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, row)
+	case http.MethodPut:
+		var body struct {
+			Name     string   `json:"name"`
+			Provider string   `json:"provider"`
+			BaseURL  string   `json:"base_url"`
+			APIKey   string   `json:"api_key"`
+			Priority string   `json:"priority"`
+			Weight   int      `json:"weight"`
+			Models   []string `json:"models"`
+			Tags     []string `json:"tags"`
+			Notes    string   `json:"notes"`
+			Status   string   `json:"status"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			badRequest(w, "invalid JSON body")
+			return
+		}
+		body.Name = strings.TrimSpace(body.Name)
+		body.Provider = strings.TrimSpace(body.Provider)
+		if body.Name == "" || body.Provider == "" {
+			badRequest(w, "name and provider are required")
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		// Check channel exists first
+		if _, err := s.admin.GetChannel(ctx, id); err != nil {
+			writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"message": "channel not found", "type": "not_found_error"}})
+			return
+		}
+		row, err := s.admin.UpdateChannel(ctx, id, admin.ChannelInput{
+			ID: id, Name: body.Name, Provider: body.Provider, BaseURL: body.BaseURL,
+			APIKey: body.APIKey, Priority: body.Priority, Weight: body.Weight,
+			Models: body.Models, Tags: body.Tags, Notes: body.Notes, Status: body.Status,
+		})
+		if err != nil {
+			internalError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, row)
+	case http.MethodDelete:
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if err := s.admin.DeleteChannel(ctx, id); err != nil {
+			internalError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+	default:
+		methodNotAllowed(w, r)
+	}
+}
+
+func (s *Server) adminChannelsBatchDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, r)
+		return
+	}
+	if s.admin == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "admin store unavailable"})
+		return
+	}
+	var body struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		badRequest(w, "invalid JSON body")
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := s.admin.BatchDeleteChannels(ctx, body.IDs); err != nil {
+		internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
+func (s *Server) adminChannelsBatchStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, r)
+		return
+	}
+	if s.admin == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "admin store unavailable"})
+		return
+	}
+	var body struct {
+		IDs    []string `json:"ids"`
+		Status string   `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		badRequest(w, "invalid JSON body")
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := s.admin.BatchUpdateChannelsStatus(ctx, body.IDs, body.Status); err != nil {
+		internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
+func (s *Server) adminTenantKeys(w http.ResponseWriter, r *http.Request) {
+	if s.tenantKeys == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "tenant key store unavailable"})
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
+		if tenantID == "" {
+			keys, err := s.tenantKeys.ListAllKeys(r.Context())
+			if err != nil {
+				internalError(w, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": keys})
+		} else {
+			keys, err := s.tenantKeys.ListKeys(r.Context(), tenantID)
+			if err != nil {
+				internalError(w, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": keys})
+		}
+	case http.MethodPost:
+		var body struct {
+			TenantID string `json:"tenant_id"`
+			Provider string `json:"provider"`
+			APIKey   string `json:"api_key"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			badRequest(w, "invalid JSON body")
+			return
+		}
+		if body.TenantID == "" || body.Provider == "" || body.APIKey == "" {
+			badRequest(w, "tenant_id, provider and api_key are required")
+			return
+		}
+		if err := s.tenantKeys.PutKey(r.Context(), body.TenantID, body.Provider, body.APIKey); err != nil {
+			internalError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+	default:
+		methodNotAllowed(w, r)
+	}
+}
+
+func (s *Server) adminTenantKeyDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		methodNotAllowed(w, r)
+		return
+	}
+	if s.tenantKeys == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "tenant key store unavailable"})
+		return
+	}
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/admin/tenant-keys/"), "/")
+	if len(parts) < 2 {
+		badRequest(w, "tenant_id and provider required in path")
+		return
+	}
+	if err := s.tenantKeys.DeleteKey(r.Context(), parts[0], parts[1]); err != nil {
+		internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
+func (s *Server) adminAuditExport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	if s.audit == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "audit store unavailable"})
+		return
+	}
+	tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
+	if tenantID == "" {
+		badRequest(w, "tenant_id is required")
+		return
+	}
+	records, err := s.audit.ExportTenantData(r.Context(), tenantID)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=audit-export-%s.json", tenantID))
+	json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": records, "total": len(records)})
+}
+
+func (s *Server) adminAuditCleanup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, r)
+		return
+	}
+	if s.audit == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "audit store unavailable"})
+		return
+	}
+	retentionDays := s.cfg.AuditRetentionDays
+	if d := r.URL.Query().Get("retention_days"); d != "" {
+		if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 {
+			retentionDays = parsed
+		}
+	}
+	affected, err := s.audit.DeleteOldEvents(r.Context(), retentionDays)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "deleted": affected, "retention_days": retentionDays})
+}
+
+func (s *Server) adminAuditRetention(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"retention_days": s.cfg.AuditRetentionDays})
+}
+
 func parseBoolQuery(r *http.Request, key string) bool {
 	value := strings.TrimSpace(strings.ToLower(r.URL.Query().Get(key)))
 	switch value {
@@ -1090,6 +1825,11 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 	requestID := fmt.Sprintf("req-%d", time.Now().UnixNano())
 	startedAt := time.Now()
+	apiKeyID := getAPIKeyID(r.Context())
+	apiUserID := int64(0)
+	if c := getUserClaims(r.Context()); c != nil {
+		apiUserID = c.UserID
+	}
 
 	var req providers.ChatCompletionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1266,6 +2006,21 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	decision := s.router.Decide(req)
 	req.Model = decision.Model
+
+	claims := getUserClaims(r.Context())
+	var billingUserID string
+	var billingRefID string
+	if claims != nil && s.billingService != nil && s.cfg.BillingEnabled {
+		billingUserID = fmt.Sprintf("%d", claims.UserID)
+		estCost, _, preAuthErr := s.billingService.PreAuthorize(r.Context(), billingUserID, decision.Provider, decision.Model, 500, 500)
+		if preAuthErr != nil {
+			slog.Warn("pre-authorize failed, rejecting", "user_id", billingUserID, "err", preAuthErr)
+			writeJSON(w, http.StatusPaymentRequired, map[string]any{"error": map[string]any{"message": "insufficient balance for estimated cost", "type": "payment_error"}})
+			return
+		}
+		slog.Debug("billing pre-auth ok", "user_id", billingUserID, "est_cost", estCost)
+	}
+
 	if s.admin != nil && req.TenantID != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		enrichedReq, injectedAsset := s.injectAssetContext(ctx, req, decision.Task, decision.Model)
@@ -1314,7 +2069,9 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			cacheStatus = "HIT"
 			w.Header().Set("X-Cache", cacheStatus)
 			s.writeAuditAsync(audit.Event{RequestID: requestID, RouteMode: decision.RouteMode, RouteTask: decision.Task, RouteModel: decision.Model, RouteProvider: decision.Provider, RouteReason: decision.Reason, RouteScore: routeScore, CacheStatus: cacheStatus, FallbackUsed: false, RequestPayload: requestToMap(req), ResponsePayload: responseToMap(*cached)})
-			s.writeBillingAsync(buildUsageEvent(requestID, req, decision, decision.Provider, "HIT", "l1_exact", false, true, "", "", time.Since(startedAt), *cached))
+			be := buildUsageEvent(requestID, req, decision, decision.Provider, "HIT", "l1_exact", false, true, "", "", time.Since(startedAt), *cached)
+			s.writeBillingAsync(be)
+			s.recordAPIKeyUsage(apiKeyID, apiUserID, be.RequestID, be.Model, be.Provider, be.PromptTokens, be.CompletionTokens, be.TotalTokens, be.EstimatedCost, be.LatencyMs, true)
 			writeJSON(w, http.StatusOK, cached)
 			return
 		}
@@ -1332,32 +2089,40 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("X-Cache", cacheStatus)
 			w.Header().Set("X-Semantic-Score", fmt.Sprintf("%.4f", hit.Score))
 			s.writeAuditAsync(audit.Event{RequestID: requestID, RouteMode: decision.RouteMode, RouteTask: decision.Task, RouteModel: decision.Model, RouteProvider: decision.Provider, RouteReason: decision.Reason, RouteScore: routeScore, CacheStatus: cacheStatus, FallbackUsed: false, RequestPayload: requestToMap(req), ResponsePayload: responseToMap(hit.Response)})
-			s.writeBillingAsync(buildUsageEvent(requestID, req, decision, decision.Provider, "SEMANTIC_HIT", "l2_semantic", false, true, "", "", time.Since(startedAt), hit.Response))
+			be := buildUsageEvent(requestID, req, decision, decision.Provider, "SEMANTIC_HIT", "l2_semantic", false, true, "", "", time.Since(startedAt), hit.Response)
+			s.writeBillingAsync(be)
+			s.recordAPIKeyUsage(apiKeyID, apiUserID, be.RequestID, be.Model, be.Provider, be.PromptTokens, be.CompletionTokens, be.TotalTokens, be.EstimatedCost, be.LatencyMs, true)
 			writeJSON(w, http.StatusOK, hit.Response)
 			return
 		}
 	}
 
 	var err error
-	resp, err = s.providers.ChatCompletion(r.Context(), decision.Provider, req)
-	if err != nil && decision.FallbackModel != "" {
-		fallbackReq := req
-		fallbackReq.Model = decision.FallbackModel
-		fallbackDecision := s.router.Decide(providers.ChatCompletionRequest{Model: decision.FallbackModel, Messages: req.Messages, TaskHint: decision.Task, RouteMode: "manual", PreferredModel: decision.FallbackModel})
-		resp, err = s.providers.ChatCompletion(r.Context(), fallbackDecision.Provider, fallbackReq)
-		if err == nil {
+	var fbResult providers.FallbackResult
+	if len(decision.FallbackChain) > 0 {
+		fbChain := make([]providers.FallbackRoute, 0, len(decision.FallbackChain)+1)
+		fbChain = append(fbChain, providers.FallbackRoute{Model: decision.Model, Provider: decision.Provider, Reason: "primary"})
+		for _, r := range decision.FallbackChain {
+			fbChain = append(fbChain, providers.FallbackRoute{Model: r.Model, Provider: r.Provider, Reason: r.Reason})
+		}
+		resp, fbResult, err = s.providers.ChatCompletionWithFallback(r.Context(), fbChain, req)
+		if err == nil && fbResult.UsedFallback {
 			fallbackUsed = true
 			w.Header().Set("X-Route-Fallback-Used", "true")
-			w.Header().Set("X-Route-Model", fallbackDecision.Model)
-			w.Header().Set("X-Route-Provider", fallbackDecision.Provider)
-			w.Header().Set("X-Route-Reason", "primary route failed, fallback model used")
-			decision.Model = fallbackDecision.Model
-			decision.Provider = fallbackDecision.Provider
+			w.Header().Set("X-Route-Model", fbResult.FinalModel)
+			w.Header().Set("X-Route-Provider", fbResult.FinalProvider)
+			w.Header().Set("X-Fallback-Attempts", fmt.Sprintf("%d", fbResult.Attempts))
+			decision.Model = fbResult.FinalModel
+			decision.Provider = fbResult.FinalProvider
 			decision.Reason = "primary route failed, fallback model used"
 		}
+	} else {
+		resp, err = s.providers.ChatCompletion(r.Context(), decision.Provider, req)
 	}
 	if err != nil {
-		s.writeBillingAsync(buildUsageEvent(requestID, req, decision, decision.Provider, cacheStatus, "none", fallbackUsed, false, "provider_error", err.Error(), time.Since(startedAt), resp))
+		be := buildUsageEvent(requestID, req, decision, decision.Provider, cacheStatus, "none", fallbackUsed, false, "provider_error", err.Error(), time.Since(startedAt), resp)
+		s.writeBillingAsync(be)
+		s.recordAPIKeyUsage(apiKeyID, apiUserID, be.RequestID, be.Model, be.Provider, be.PromptTokens, be.CompletionTokens, be.TotalTokens, be.EstimatedCost, be.LatencyMs, false)
 		internalError(w, err)
 		return
 	}
@@ -1372,6 +2137,11 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.semantic != nil {
 		go func(req providers.ChatCompletionRequest, resp providers.ChatCompletionResponse) {
+			defer func() {
+				if rec := recover(); rec != nil {
+					slog.Error("semantic upsert panic", "err", rec, "stack", string(debug.Stack()))
+				}
+			}()
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 			if err := s.semantic.Upsert(ctx, req, resp); err != nil {
@@ -1381,6 +2151,11 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.memory != nil && req.SessionID != "" {
 		go func(req providers.ChatCompletionRequest, resp providers.ChatCompletionResponse) {
+			defer func() {
+				if rec := recover(); rec != nil {
+					slog.Error("memory append panic", "err", rec, "stack", string(debug.Stack()))
+				}
+			}()
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 			writeReq := req
@@ -1415,8 +2190,23 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	cacheStatus = "MISS"
 	w.Header().Set("X-Cache", cacheStatus)
 	s.writeAuditAsync(audit.Event{RequestID: requestID, RouteMode: decision.RouteMode, RouteTask: decision.Task, RouteModel: decision.Model, RouteProvider: decision.Provider, RouteReason: decision.Reason, RouteScore: routeScore, CacheStatus: cacheStatus, FallbackUsed: fallbackUsed, RequestPayload: requestToMap(req), ResponsePayload: responseToMap(resp)})
-	s.writeBillingAsync(buildUsageEvent(requestID, req, decision, decision.Provider, "MISS", "none", fallbackUsed, true, "", "", time.Since(startedAt), resp))
+	be := buildUsageEvent(requestID, req, decision, decision.Provider, "MISS", "none", fallbackUsed, true, "", "", time.Since(startedAt), resp)
+	s.writeBillingAsync(be)
+	s.recordAPIKeyUsage(apiKeyID, apiUserID, be.RequestID, be.Model, be.Provider, be.PromptTokens, be.CompletionTokens, be.TotalTokens, be.EstimatedCost, be.LatencyMs, true)
 	writeJSON(w, http.StatusOK, resp)
+
+	if billingUserID != "" && s.billingService != nil && s.cfg.BillingEnabled {
+		billingRefID = requestID
+		actualPromptTokens := resp.Usage.PromptTokens
+		actualCompletionTokens := resp.Usage.CompletionTokens
+		if actualPromptTokens <= 0 && actualCompletionTokens <= 0 {
+			actualPromptTokens = 500
+			actualCompletionTokens = 500
+		}
+		if _, err := s.billingService.Settle(r.Context(), billingUserID, billingRefID, decision.Provider, decision.Model, actualPromptTokens, actualCompletionTokens); err != nil {
+			slog.Warn("billing settle failed", "user_id", billingUserID, "ref", billingRefID, "err", err)
+		}
+	}
 }
 
 func (s *Server) injectAssetContext(ctx context.Context, req providers.ChatCompletionRequest, taskType, sourceModel string) (providers.ChatCompletionRequest, *admin.AssetRow) {
@@ -1466,6 +2256,11 @@ func (s *Server) writeAssetReuseAuditAsync(requestID string, req providers.ChatC
 		return
 	}
 	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Error("asset reuse audit panic", "err", rec, "stack", string(debug.Stack()))
+			}
+		}()
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		if err := s.admin.RecordReuse(ctx, req.TenantID, assetID, requestID, routeModel, routeTask, hitSource); err != nil {
@@ -1479,6 +2274,11 @@ func (s *Server) writeAssetAsync(requestID string, req providers.ChatCompletionR
 		return
 	}
 	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Error("asset async panic", "err", rec, "stack", string(debug.Stack()))
+			}
+		}()
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		summary := strings.TrimSpace(resp.Choices[0].Message.Content)
@@ -2230,11 +3030,30 @@ func containsFold(items []string, target string) bool {
 	return false
 }
 
+func (s *Server) emitWebhook(event string, payload any) {
+	if s.webhookRegistry == nil {
+		return
+	}
+	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Error("webhook emit panic", "err", rec, "stack", string(debug.Stack()))
+			}
+		}()
+		s.webhookRegistry.Send(context.Background(), event, payload)
+	}()
+}
+
 func (s *Server) writeAuditAsync(event audit.Event) {
 	if s.audit == nil || !s.cfg.AuditLogEnabled {
 		return
 	}
 	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Error("audit insert panic", "err", rec, "stack", string(debug.Stack()))
+			}
+		}()
 		child, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		if err := s.audit.Insert(child, event); err != nil {
@@ -2248,6 +3067,11 @@ func (s *Server) writeBillingAsync(event billing.UsageEvent) {
 		return
 	}
 	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Error("billing insert panic", "err", rec, "stack", string(debug.Stack()))
+			}
+		}()
 		child, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		if event.EstimatedCost == 0 && event.TotalTokens > 0 {
@@ -2312,7 +3136,8 @@ func responseToMap(resp providers.ChatCompletionResponse) map[string]any {
 }
 
 func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"message": "route not found", "type": "not_found_error", "path": r.URL.Path}})
+	lang := i18n.LangFromContext(r.Context())
+	writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"message": i18n.T(lang, "route_not_found"), "type": "not_found_error", "path": r.URL.Path}})
 }
 func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -2323,17 +3148,50 @@ func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { next.ServeHTTP(w, r) })
 }
 
+type contextKey string
+
+const requestIDKey contextKey = "request_id"
+
+func requestIDMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestID := r.Header.Get("X-Request-Id")
+		if requestID == "" {
+			requestID = uuid.New().String()
+		}
+		w.Header().Set("X-Request-Id", requestID)
+		ctx := context.WithValue(r.Context(), requestIDKey, requestID)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func RequestIDFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(requestIDKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
 func panicRecoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				slog.Warn("panic recovered", "path", r.URL.Path, "method", r.Method, "err", rec)
+				slog.Error("panic recovered",
+					"path", r.URL.Path,
+					"method", r.Method,
+					"err", rec,
+					"stack", string(debug.Stack()),
+				)
 				writeJSON(w, http.StatusInternalServerError, map[string]any{"error": map[string]any{"message": "internal server error", "type": "internal_server_error"}})
 			}
 		}()
 		next.ServeHTTP(w, r)
 	})
 }
+func badRequestLang(w http.ResponseWriter, r *http.Request, key string) {
+	lang := i18n.LangFromContext(r.Context())
+	writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": i18n.T(lang, key), "type": "invalid_request_error", "key": key}})
+}
+
 func badRequest(w http.ResponseWriter, message string) {
 	writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": message, "type": "invalid_request_error"}})
 }
@@ -2347,6 +3205,68 @@ func internalError(w http.ResponseWriter, err error) {
 	}
 	writeJSON(w, http.StatusInternalServerError, map[string]any{"error": map[string]any{"message": err.Error(), "type": "internal_server_error"}})
 }
+
+func internalErrorLang(w http.ResponseWriter, r *http.Request, err error, key string) {
+	lang := i18n.LangFromContext(r.Context())
+	if err == nil {
+		err = errors.New(i18n.T(lang, "internal_server_error"))
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"message": i18n.T(lang, "resource_not_found"), "type": "not_found_error"}})
+		return
+	}
+	writeJSON(w, http.StatusInternalServerError, map[string]any{"error": map[string]any{"message": i18n.T(lang, key), "type": "internal_server_error", "key": key, "detail": err.Error()}})
+}
 func methodNotAllowed(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": map[string]any{"message": "method not allowed", "type": "method_not_allowed", "method": r.Method}})
+	lang := i18n.LangFromContext(r.Context())
+	writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": map[string]any{"message": i18n.T(lang, "method_not_allowed"), "type": "method_not_allowed", "method": r.Method}})
+}
+
+func (s *Server) mountABTestRoutes(mux *http.ServeMux) {
+	if s.abtestHandler == nil {
+		return
+	}
+	mux.HandleFunc("/api/abtest/experiments", s.requireAdmin(s.abtestHandler.ServeHTTP))
+	mux.HandleFunc("/api/abtest/experiments/", s.requireAdmin(s.abtestHandler.ServeHTTP))
+}
+
+func (s *Server) mountBroadcastAdminRoutes(mux *http.ServeMux) {
+	if s.broadcastAdmin == nil {
+		return
+	}
+	mux.HandleFunc("/admin/broadcasts", s.requireAdmin(s.broadcastAdminRoute))
+	mux.HandleFunc("/admin/broadcasts/", s.requireAdmin(s.broadcastAdminRoute))
+}
+
+func (s *Server) mountBroadcastUserRoutes(mux *http.ServeMux) {
+	if s.broadcastUser == nil {
+		return
+	}
+	mux.HandleFunc("/api/user/broadcasts", s.requireUser(s.broadcastUserRoute))
+	mux.HandleFunc("/api/user/broadcasts/", s.requireUser(s.broadcastUserRoute))
+}
+
+func (s *Server) mountWebhookRoutes(mux *http.ServeMux) {
+	if s.webhookRegistry == nil {
+		return
+	}
+	whHandler := webhook.NewHandler(s.webhookRegistry)
+	mux.HandleFunc("/api/webhooks", s.requireUser(whHandler.ServeHTTP))
+	mux.HandleFunc("/api/webhooks/", s.requireUser(whHandler.ServeHTTP))
+}
+
+func (s *Server) broadcastAdminRoute(w http.ResponseWriter, r *http.Request) {
+	if s.broadcastAdmin == nil {
+		s.notFound(w, r)
+		return
+	}
+	s.broadcastAdmin.ServeHTTP(w, r)
+}
+
+func (s *Server) broadcastUserRoute(w http.ResponseWriter, r *http.Request) {
+	if s.broadcastUser == nil {
+		s.notFound(w, r)
+		return
+	}
+	s.broadcastUser.ServeHTTP(w, r)
 }

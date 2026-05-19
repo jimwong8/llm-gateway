@@ -1,4 +1,5 @@
 import { FormEvent, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { AppShell } from '../components/layout/AppShell'
 import { AuditTable } from '../components/events/AuditTable'
 import { RuntimeTable } from '../components/events/RuntimeTable'
@@ -21,6 +22,7 @@ const initialFilters: FilterState = {
 }
 
 export function AuditRuntimePage() {
+  const { t } = useTranslation()
   const [activeTab, setActiveTab] = useState<Tab>('audit')
   const [draftFilters, setDraftFilters] = useState<FilterState>(initialFilters)
   const [filters, setFilters] = useState<FilterState>(initialFilters)
@@ -37,42 +39,42 @@ export function AuditRuntimePage() {
 
   return (
     <AppShell
-      title="审计与运行时"
-      description="在一个页面中查看控制面审计记录与运行时发布事件，支持摘要视图和基础筛选。"
+      title={t('auditRuntime.title')}
+      description={t('auditRuntime.description')}
     >
       <div className="events-page">
-        <form className="config-filters" aria-label="事件筛选" onSubmit={handleSubmit}>
+        <form className="config-filters" aria-label={t('auditRuntime.filtersLabel')} onSubmit={handleSubmit}>
           <label>
-            租户 ID
-            <input value={draftFilters.tenantID} onChange={(event) => setDraftFilters((prev) => ({ ...prev, tenantID: event.target.value }))} placeholder="租户-a" />
+            {t('auditRuntime.tenantId')}
+            <input value={draftFilters.tenantID} onChange={(event) => setDraftFilters((prev) => ({ ...prev, tenantID: event.target.value }))} placeholder={t('auditRuntime.tenantIdPlaceholder')} />
           </label>
           <label>
-            环境
-            <input value={draftFilters.environment} onChange={(event) => setDraftFilters((prev) => ({ ...prev, environment: event.target.value }))} placeholder="生产环境" />
+            {t('auditRuntime.environment')}
+            <input value={draftFilters.environment} onChange={(event) => setDraftFilters((prev) => ({ ...prev, environment: event.target.value }))} placeholder={t('auditRuntime.environmentPlaceholder')} />
           </label>
           <label>
-            条数限制
-            <input value={draftFilters.limit} onChange={(event) => setDraftFilters((prev) => ({ ...prev, limit: event.target.value }))} placeholder="20条" />
+            {t('auditRuntime.limit')}
+            <input value={draftFilters.limit} onChange={(event) => setDraftFilters((prev) => ({ ...prev, limit: event.target.value }))} placeholder={t('auditRuntime.limitPlaceholder')} />
           </label>
           <label className="toggle-field">
-            <span>摘要视图</span>
+            <span>{t('auditRuntime.summaryView')}</span>
             <input type="checkbox" checked={draftFilters.summary} onChange={(event) => setDraftFilters((prev) => ({ ...prev, summary: event.target.checked }))} />
           </label>
           <div className="config-filters__actions">
-            <button type="submit">筛选</button>
+            <button type="submit">{t('common.filter')}</button>
           </div>
         </form>
 
-        <div className="tab-strip" role="tablist" aria-label="审计与运行时标签">
+        <div className="tab-strip" role="tablist" aria-label={t('auditRuntime.tabLabel')}>
           <button type="button" role="tab" aria-selected={activeTab === 'audit'} className={activeTab === 'audit' ? 'tab active' : 'tab'} onClick={() => setActiveTab('audit')}>
-            审计事件
+            {t('auditRuntime.auditEvents')}
           </button>
           <button type="button" role="tab" aria-selected={activeTab === 'runtime'} className={activeTab === 'runtime' ? 'tab active' : 'tab'} onClick={() => setActiveTab('runtime')}>
-            运行时事件
+            {t('auditRuntime.runtimeEvents')}
           </button>
         </div>
 
-        {currentQuery.error ? <div className="config-error">事件查询失败，请检查 Admin Token 与接口状态。</div> : null}
+        {currentQuery.error ? <div className="config-error">{t('auditRuntime.queryError')}</div> : null}
 
         {activeTab === 'audit' ? (
           <AuditTable data={auditQuery.data} loading={auditQuery.isLoading} />

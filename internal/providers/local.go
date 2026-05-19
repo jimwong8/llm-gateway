@@ -67,7 +67,7 @@ func (p *LocalProvider) ChatCompletion(ctx context.Context, req ChatCompletionRe
 	}
 
 	if resp.StatusCode >= 400 {
-		return ChatCompletionResponse{}, fmt.Errorf("local provider returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+		return ChatCompletionResponse{}, newUpstreamHTTPError(resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
 
 	var out ChatCompletionResponse

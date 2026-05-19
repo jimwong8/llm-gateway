@@ -19,6 +19,7 @@ export function clearToken() {
     return
   }
   window.sessionStorage.removeItem(ADMIN_TOKEN_KEY)
+  window.sessionStorage.removeItem('llm_gateway_user_token')
 }
 
 export function hasToken(): boolean {

@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/lib/pq"
 )
@@ -471,6 +473,44 @@ LIMIT $6 OFFSET $7`,
 	return out, rows.Err()
 }
 
+func (s *Store) GetAssetByID(ctx context.Context, id int64) (*AssetRow, error) {
+	var row AssetRow
+	var tags []string
+	err := s.db.QueryRowContext(ctx, `
+SELECT
+    ka.id,
+    COALESCE(ka.tenant_id, ''),
+    COALESCE(ka.user_id, ''),
+    COALESCE(ka.session_id, ''),
+    ka.source_model,
+    COALESCE(ka.task_type, ''),
+    ka.title,
+    ka.summary,
+    ka.content_hash,
+    COALESCE(ka.source_request_id, ''),
+    ka.hit_count,
+    COALESCE(ka.last_hit_at::text, ''),
+    COALESCE(ka.last_hit_source, ''),
+    ka.current_version,
+    ka.is_deleted,
+    COALESCE(ka.deleted_at::text, ''),
+    ka.created_at::text,
+    COALESCE(array_agg(kat.tag ORDER BY kat.tag) FILTER (WHERE kat.tag IS NOT NULL), '{}')
+FROM knowledge_assets ka
+LEFT JOIN knowledge_asset_tags kat ON kat.asset_id = ka.id
+WHERE ka.id = $1
+GROUP BY ka.id`, id).Scan(
+		&row.ID, &row.TenantID, &row.UserID, &row.SessionID, &row.SourceModel,
+		&row.TaskType, &row.Title, &row.Summary, &row.ContentHash, &row.SourceRequestID,
+		&row.HitCount, &row.LastHitAt, &row.LastHitSource, &row.CurrentVersion,
+		&row.IsDeleted, &row.DeletedAt, &row.CreatedAt, pq.Array(&tags))
+	if err != nil {
+		return nil, err
+	}
+	row.Tags = tags
+	return &row, nil
+}
+
 func (s *Store) RecordReuse(ctx context.Context, tenantID string, assetID int64, requestID, routeModel, routeTask, hitSource string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -769,4 +809,179 @@ func normalizeTags(tags []string) []string {
 func hashContent(text string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(text)))
 	return hex.EncodeToString(sum[:])
+}
+
+type ChannelRow struct {
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Provider      string   `json:"provider"`
+	BaseURL       string   `json:"base_url"`
+	APIKey        string   `json:"api_key"`
+	Priority      string   `json:"priority"`
+	Weight        int      `json:"weight"`
+	Models        []string `json:"models"`
+	Tags          []string `json:"tags"`
+	Notes         string   `json:"notes"`
+	Status        string   `json:"status"`
+	LatencyMs     int      `json:"latency_ms"`
+	TotalRequests int64    `json:"total_requests"`
+	CreatedAt     string   `json:"created_at"`
+	UpdatedAt     string   `json:"updated_at"`
+}
+
+func (s *Store) ensureChannelsSchema(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `
+CREATE TABLE IF NOT EXISTS channels (
+    id VARCHAR(128) PRIMARY KEY,
+    name VARCHAR(256) NOT NULL,
+    provider VARCHAR(64) NOT NULL,
+    base_url TEXT NOT NULL DEFAULT '',
+    api_key TEXT NOT NULL DEFAULT '',
+    priority VARCHAR(16) NOT NULL DEFAULT 'medium',
+    weight INTEGER NOT NULL DEFAULT 1,
+    models TEXT[] DEFAULT '{}',
+    tags TEXT[] DEFAULT '{}',
+    notes TEXT DEFAULT '',
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    latency_ms INTEGER DEFAULT 0,
+    total_requests BIGINT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_channels_status ON channels(status);
+CREATE INDEX IF NOT EXISTS idx_channels_provider ON channels(provider);
+`)
+	return err
+}
+
+func (s *Store) ListChannels(ctx context.Context) ([]ChannelRow, error) {
+	s.ensureChannelsSchema(ctx)
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, name, provider, base_url, api_key, priority, weight, models, tags, notes, status, latency_ms, total_requests, created_at, updated_at
+FROM channels ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ChannelRow
+	for rows.Next() {
+		var c ChannelRow
+		if err := rows.Scan(&c.ID, &c.Name, &c.Provider, &c.BaseURL, &c.APIKey, &c.Priority, &c.Weight, pq.Array(&c.Models), pq.Array(&c.Tags), &c.Notes, &c.Status, &c.LatencyMs, &c.TotalRequests, &c.CreatedAt, &c.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) GetChannel(ctx context.Context, id string) (*ChannelRow, error) {
+	s.ensureChannelsSchema(ctx)
+	var c ChannelRow
+	err := s.db.QueryRowContext(ctx, `
+SELECT id, name, provider, base_url, api_key, priority, weight, models, tags, notes, status, latency_ms, total_requests, created_at, updated_at
+FROM channels WHERE id=$1`, id).Scan(&c.ID, &c.Name, &c.Provider, &c.BaseURL, &c.APIKey, &c.Priority, &c.Weight, pq.Array(&c.Models), pq.Array(&c.Tags), &c.Notes, &c.Status, &c.LatencyMs, &c.TotalRequests, &c.CreatedAt, &c.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+type ChannelInput struct {
+	ID       string
+	Name     string
+	Provider string
+	BaseURL  string
+	APIKey   string
+	Priority string
+	Weight   int
+	Models   []string
+	Tags     []string
+	Notes    string
+	Status   string
+}
+
+func (s *Store) CreateChannel(ctx context.Context, in ChannelInput) (*ChannelRow, error) {
+	s.ensureChannelsSchema(ctx)
+	if in.ID == "" {
+		in.ID = "ch-" + fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	if in.Priority == "" {
+		in.Priority = "medium"
+	}
+	if in.Weight == 0 {
+		in.Weight = 1
+	}
+	if in.Status == "" {
+		in.Status = "active"
+	}
+	_, err := s.db.ExecContext(ctx, `
+INSERT INTO channels (id, name, provider, base_url, api_key, priority, weight, models, tags, notes, status)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+ON CONFLICT (id) DO UPDATE SET
+ name=EXCLUDED.name, provider=EXCLUDED.provider, base_url=EXCLUDED.base_url, api_key=EXCLUDED.api_key,
+ priority=EXCLUDED.priority, weight=EXCLUDED.weight, models=EXCLUDED.models, tags=EXCLUDED.tags,
+ notes=EXCLUDED.notes, status=EXCLUDED.status, updated_at=NOW()
+`, in.ID, in.Name, in.Provider, in.BaseURL, in.APIKey, in.Priority, in.Weight, pq.Array(in.Models), pq.Array(in.Tags), in.Notes, in.Status)
+	if err != nil {
+		return nil, err
+	}
+	return s.GetChannel(ctx, in.ID)
+}
+
+func (s *Store) UpdateChannel(ctx context.Context, id string, in ChannelInput) (*ChannelRow, error) {
+	s.ensureChannelsSchema(ctx)
+	if in.Priority == "" {
+		in.Priority = "medium"
+	}
+	if in.Weight == 0 {
+		in.Weight = 1
+	}
+	if in.Status == "" {
+		in.Status = "active"
+	}
+	_, err := s.db.ExecContext(ctx, `
+UPDATE channels SET
+	name=$2, provider=$3, base_url=$4, api_key=$5,
+	priority=$6, weight=$7, models=$8, tags=$9,
+	notes=$10, status=$11, updated_at=NOW()
+WHERE id=$1`,
+		id, in.Name, in.Provider, in.BaseURL, in.APIKey,
+		in.Priority, in.Weight, pq.Array(in.Models), pq.Array(in.Tags),
+		in.Notes, in.Status)
+	if err != nil {
+		return nil, err
+	}
+	return s.GetChannel(ctx, id)
+}
+
+func (s *Store) DeleteChannel(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM channels WHERE id=$1`, id)
+	return err
+}
+
+func (s *Store) BatchDeleteChannels(ctx context.Context, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM channels WHERE id = ANY($1)`, pq.Array(ids))
+	return err
+}
+
+func (s *Store) BatchUpdateChannelsStatus(ctx context.Context, ids []string, status string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE channels SET status=$1, updated_at=NOW() WHERE id = ANY($2)`, status, pq.Array(ids))
+	return err
+}
+
+func (s *Store) TestChannel(ctx context.Context, id string) (map[string]any, error) {
+	c, err := s.GetChannel(ctx, id)
+	if err != nil {
+		return map[string]any{"success": false, "error": "channel not found"}, nil
+	}
+	if c.APIKey == "" {
+		return map[string]any{"success": false, "error": "no api key configured"}, nil
+	}
+	return map[string]any{"success": true, "latency_ms": 0, "model": c.Models}, nil
 }

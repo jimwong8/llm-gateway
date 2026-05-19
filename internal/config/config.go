@@ -40,6 +40,7 @@ type Config struct {
 	BillingEnabled           bool
 	TenantRPM                int
 	AdminAPIKey              string
+	JWTSecret                string
 	ProviderMaxRetries       int
 	ProviderFailureThreshold int
 	ProviderOpenSeconds      int
@@ -50,6 +51,17 @@ type Config struct {
 	ModelGovernanceRolloutMaxP95MS int
 	ModelGovernanceRolloutMaxFallbackRate float64
 	ModelGovernanceMinSampleCount int
+	FallbackMaxDepth         int
+	FallbackMinScoreRatio    float64
+	AuditRetentionDays       int
+	DefaultAPIKeyRPM         int
+	GitHubClientID           string
+	GitHubClientSecret       string
+	SMTPHost                 string
+	SMTPPort                 int
+	SMTPUser                 string
+	SMTPPassword             string
+	SMTPFrom                 string
 }
 
 func Load() Config {
@@ -87,6 +99,7 @@ func Load() Config {
 		BillingEnabled:           getenvBool("BILLING_ENABLED", true),
 		TenantRPM:                getenvInt("TENANT_RPM", 60),
 		AdminAPIKey:              getenv("ADMIN_API_KEY", "ok0115ok"),
+		JWTSecret:                getenv("JWT_SECRET", "change-me-jwt-secret-at-least-32-characters"),
 		ProviderMaxRetries:       getenvInt("PROVIDER_MAX_RETRIES", 1),
 		ProviderFailureThreshold: getenvInt("PROVIDER_FAILURE_THRESHOLD", 2),
 		ProviderOpenSeconds:      getenvInt("PROVIDER_OPEN_SECONDS", 30),
@@ -97,6 +110,17 @@ func Load() Config {
 		ModelGovernanceRolloutMaxP95MS: getenvInt("MODEL_GOVERNANCE_ROLLOUT_MAX_P95_MS", 1200),
 		ModelGovernanceRolloutMaxFallbackRate: getenvFloat("MODEL_GOVERNANCE_ROLLOUT_MAX_FALLBACK_RATE", 0.15),
 		ModelGovernanceMinSampleCount: getenvInt("MODEL_GOVERNANCE_MIN_SAMPLE_COUNT", 200),
+		FallbackMaxDepth:             getenvInt("FALLBACK_MAX_DEPTH", 3),
+		FallbackMinScoreRatio:        getenvFloat("FALLBACK_MIN_SCORE_RATIO", 0.5),
+		AuditRetentionDays:           getenvInt("AUDIT_RETENTION_DAYS", 90),
+		DefaultAPIKeyRPM:             getenvInt("DEFAULT_API_KEY_RPM", 60),
+		GitHubClientID:               getenv("GITHUB_CLIENT_ID", ""),
+		GitHubClientSecret:           getenv("GITHUB_CLIENT_SECRET", ""),
+		SMTPHost:                     getenv("SMTP_HOST", ""),
+		SMTPPort:                     getenvInt("SMTP_PORT", 587),
+		SMTPUser:                     getenv("SMTP_USER", ""),
+		SMTPPassword:                 getenv("SMTP_PASSWORD", ""),
+		SMTPFrom:                     getenv("SMTP_FROM", ""),
 	}
 	return cfg
 }

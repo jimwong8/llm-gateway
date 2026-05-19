@@ -13,6 +13,7 @@ import (
 
 	"llm-gateway/gateway/internal/admin"
 	"llm-gateway/gateway/internal/audit"
+	"llm-gateway/gateway/internal/auth"
 	"llm-gateway/gateway/internal/billing"
 	"llm-gateway/gateway/internal/cache"
 	"llm-gateway/gateway/internal/config"
@@ -26,6 +27,7 @@ import (
 	"llm-gateway/gateway/internal/router"
 	"llm-gateway/gateway/internal/runtime"
 	"llm-gateway/gateway/internal/semantic"
+	"llm-gateway/gateway/internal/tenant"
 )
 
 func main() {
@@ -62,11 +64,31 @@ func main() {
 		}
 	}
 	var billingStore *billing.Store
+	var billingService *billing.Service
 	if cfg.BillingEnabled {
 		if store, err := billing.NewStore(cfg.PostgresDSN); err != nil {
 			slog.Warn("billing init failed", "err", err)
 		} else {
 			billingStore = store
+			pricer := billing.NewPricer()
+			pricer.SetDefaultProviderPrice("openai", 0.01, 0.03)
+			pricer.SetDefaultProviderPrice("anthropic", 0.015, 0.075)
+			pricer.SetDefaultProviderPrice("google", 0.0025, 0.0075)
+			pricer.SetDefaultProviderPrice("mock", 0.001, 0.002)
+			pricer.SetDefaultProviderPrice("mock-code", 0.001, 0.002)
+			pricer.SetDefaultProviderPrice("mock-analysis", 0.001, 0.002)
+			pricer.SetDefaultProviderPrice("mock-fail", 0.001, 0.002)
+			pricer.SetModelPrice("openai", "gpt-4o", 0.01, 0.03)
+			pricer.SetModelPrice("openai", "gpt-4o-mini", 0.0015, 0.006)
+			pricer.SetModelPrice("openai", "gpt-3.5-turbo", 0.0015, 0.002)
+			pricer.SetModelPrice("anthropic", "claude-3-opus", 0.015, 0.075)
+			pricer.SetModelPrice("anthropic", "claude-3-sonnet", 0.003, 0.015)
+			pricer.SetModelPrice("anthropic", "claude-3-haiku", 0.00025, 0.00125)
+			pricer.SetModelPrice("google", "gemini-pro", 0.0025, 0.0075)
+			billingService = billing.NewService(store, pricer)
+			if err := billingService.LoadPricingFromDB(context.Background()); err != nil {
+				slog.Warn("billing load pricing from db failed", "err", err)
+			}
 		}
 	}
 	adminStore, err := admin.NewStore(cfg.PostgresDSN)
@@ -100,6 +122,13 @@ func main() {
 		} else {
 			memoryStore = store
 		}
+	}
+
+	var tenantKeyStore *tenant.Store
+	if store, err := tenant.NewStore(cfg.PostgresDSN, cfg.AdminAPIKey); err != nil {
+		slog.Warn("tenant key store init failed", "err", err)
+	} else {
+		tenantKeyStore = store
 	}
 
 	controlPlaneAudit := audit.NewRecorder()
@@ -163,10 +192,37 @@ func main() {
 		}
 	}
 
+	var akRateLimiter *httpserver.APIKeyRateLimiter
+	var akUsageStore *auth.APIKeyUsageStore
+	var authStore *auth.Store
+	if db, err := sql.Open("postgres", cfg.PostgresDSN); err != nil {
+		slog.Warn("auth db init failed", "err", err)
+	} else {
+		authStore = auth.NewStore(db)
+		akUsageStore = auth.NewAPIKeyUsageStore(db)
+		akRateLimiter = httpserver.NewAPIKeyRateLimiter(cfg.RedisAddr, cfg.DefaultAPIKeyRPM)
+	}
+
 	srv := httpserver.New(cfg, registry, redisCache, modelRouter, auditStore, semanticCache, memoryStore, billingStore, limiter, adminStore, policyStore).
-		WithControlPlane(controlPlaneService, controlPlaneAudit, runtimePublisher, runtimeManager)
+		WithControlPlane(controlPlaneService, controlPlaneAudit, runtimePublisher, runtimeManager).
+		WithTenantKeys(tenantKeyStore)
+	if billingService != nil {
+		srv = srv.WithBillingService(billingService)
+	}
+	if authStore != nil && akUsageStore != nil {
+		srv = srv.WithUserStore(authStore).WithAPIKeyUsageStore(akUsageStore)
+	}
+	if akRateLimiter != nil {
+		srv = srv.WithAPIKeyRateLimiter(akRateLimiter, cfg.DefaultAPIKeyRPM)
+	}
 	if memoryStore != nil {
 		srv = srv.WithMemoryAdminHandler(httpserver.NewMemoryAdminHandler(memoryStore))
+		if db, err := sql.Open("postgres", cfg.PostgresDSN); err != nil {
+			slog.Warn("preset store init failed", "err", err)
+		} else {
+			srv = srv.WithPresetStore(memory.NewPresetStore(db))
+			srv = srv.WithUsageLogStore(httpserver.NewSQLUsageLogStore(db))
+		}
 	}
 	if cfg.ModelGovernanceEnabled && governanceStore != nil {
 		modelGovernanceHandler := httpserver.NewModelGovernanceHandler().
@@ -190,6 +246,23 @@ func main() {
 	slog.Info("starting", "app", cfg.AppName, "addr", cfg.Addr(), "mock", cfg.MockMode, "redis", cfg.RedisAddr,
 		"audit", auditStore != nil, "semantic", semanticCache != nil, "memory", memoryStore != nil,
 		"billing", billingStore != nil, "governance", governanceStore != nil)
+
+	if auditStore != nil && cfg.AuditRetentionDays > 0 {
+		go func() {
+			ticker := time.NewTicker(24 * time.Hour)
+			defer ticker.Stop()
+			for range ticker.C {
+				ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+				affected, err := auditStore.DeleteOldEvents(ctx, cfg.AuditRetentionDays)
+				cancel()
+				if err != nil {
+					slog.Warn("audit cleanup failed", "err", err)
+				} else if affected > 0 {
+					slog.Info("audit cleanup completed", "deleted", affected, "retention_days", cfg.AuditRetentionDays)
+				}
+			}
+		}()
+	}
 
 	httpServer := &http.Server{
 		Addr:    cfg.Addr(),

@@ -18,84 +18,62 @@ describe('ApprovalsPage', () => {
 
   it('submits approve, override, reject actions', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            object: 'list',
-            data: [
-              {
-                id: 'rec-1',
-                agent_id: 'agent-a',
-                task_type: 'chat',
-                environment: 'prod',
-                recommended_model: 'gpt-4o-mini',
-                status: 'pending',
-                updated_at: '2026-04-19T10:00:00Z',
-              },
-            ],
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({ id: 'ap-1', recommendation_id: 'rec-1', decision: 'approved' }),
-          {
-            status: 201,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({ object: 'list', data: [] }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({ id: 'ap-2', recommendation_id: 'rec-1', decision: 'overridden' }),
-          {
-            status: 201,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({ object: 'list', data: [] }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({ id: 'ap-3', recommendation_id: 'rec-1', decision: 'rejected' }),
-          {
-            status: 201,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({ object: 'list', data: [] }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
+    const responses = [
+      new Response(
+        JSON.stringify({
+          object: 'list',
+          data: [
+            {
+              id: 'rec-1',
+              agent_id: 'agent-a',
+              task_type: 'chat',
+              environment: 'prod',
+              recommended_model: 'gpt-4o-mini',
+              status: 'pending',
+              updated_at: '2026-04-19T10:00:00Z',
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+      new Response(
+        JSON.stringify({ id: 'ap-1', recommendation_id: 'rec-1', decision: 'approved' }),
+        { status: 201, headers: { 'Content-Type': 'application/json' } },
+      ),
+      new Response(
+        JSON.stringify({ object: 'list', data: [] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+      new Response(
+        JSON.stringify({ id: 'ap-2', recommendation_id: 'rec-1', decision: 'overridden' }),
+        { status: 201, headers: { 'Content-Type': 'application/json' } },
+      ),
+      new Response(
+        JSON.stringify({ object: 'list', data: [] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+      new Response(
+        JSON.stringify({ id: 'ap-3', recommendation_id: 'rec-1', decision: 'rejected' }),
+        { status: 201, headers: { 'Content-Type': 'application/json' } },
+      ),
+      new Response(
+        JSON.stringify({ object: 'list', data: [] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    ]
+    let callIndex = 0
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      const response = responses[callIndex]
+      callIndex++
+      return response
+    })
 
     vi.stubGlobal('fetch', fetchMock)
 
@@ -109,8 +87,19 @@ describe('ApprovalsPage', () => {
     await user.click(within(form).getByRole('button', { name: '提交审批' }))
     await screen.findByText('审批成功：ap-1（approved）')
 
-    const [, approveInit] = fetchMock.mock.calls[1]
-    const approveBody = approveInit?.body ? JSON.parse(String(approveInit.body)) : {}
+    await user.selectOptions(within(form).getByLabelText('决策'), 'overridden')
+    await user.type(within(form).getByLabelText('最终模型'), 'gpt-4.1-mini')
+    await user.click(within(form).getByRole('button', { name: '提交审批' }))
+    await screen.findByText('审批成功：ap-2（overridden）')
+
+    await user.selectOptions(within(form).getByLabelText('决策'), 'rejected')
+    await user.clear(within(form).getByLabelText('审批原因'))
+    await user.type(within(form).getByLabelText('审批原因'), 'manual reject')
+    await user.click(within(form).getByRole('button', { name: '提交审批' }))
+    await screen.findByText('审批成功：ap-3（rejected）')
+
+    const approvalCalls = fetchMock.mock.calls.filter((call) => String(call[0]).includes('/admin/governance/approvals'))
+    const approveBody = approvalCalls[0]?.[1]?.body ? JSON.parse(String(approvalCalls[0][1].body)) : {}
     expect(approveBody).toMatchObject({
       recommendation_id: 'rec-1',
       decision: 'approved',
@@ -120,28 +109,13 @@ describe('ApprovalsPage', () => {
         environment: 'prod',
       },
     })
-
-    await user.selectOptions(within(form).getByLabelText('决策'), 'overridden')
-    await user.type(within(form).getByLabelText('最终模型'), 'gpt-4.1-mini')
-    await user.click(within(form).getByRole('button', { name: '提交审批' }))
-    await screen.findByText('审批成功：ap-2（overridden）')
-
-    const [, overrideInit] = fetchMock.mock.calls[3]
-    const overrideBody = overrideInit?.body ? JSON.parse(String(overrideInit.body)) : {}
+    const overrideBody = approvalCalls[1]?.[1]?.body ? JSON.parse(String(approvalCalls[1][1].body)) : {}
     expect(overrideBody).toMatchObject({
       recommendation_id: 'rec-1',
       decision: 'overridden',
       final_model: 'gpt-4.1-mini',
     })
-
-    await user.selectOptions(within(form).getByLabelText('决策'), 'rejected')
-    await user.clear(within(form).getByLabelText('审批原因'))
-    await user.type(within(form).getByLabelText('审批原因'), 'manual reject')
-    await user.click(within(form).getByRole('button', { name: '提交审批' }))
-    await screen.findByText('审批成功：ap-3（rejected）')
-
-    const [, rejectInit] = fetchMock.mock.calls[5]
-    const rejectBody = rejectInit?.body ? JSON.parse(String(rejectInit.body)) : {}
+    const rejectBody = approvalCalls[2]?.[1]?.body ? JSON.parse(String(approvalCalls[2][1].body)) : {}
     expect(rejectBody).toMatchObject({
       recommendation_id: 'rec-1',
       decision: 'rejected',
@@ -151,36 +125,39 @@ describe('ApprovalsPage', () => {
 
   it('shows validation and backend error messages', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            object: 'list',
-            data: [
-              {
-                id: 'rec-1',
-                agent_id: 'agent-a',
-                task_type: 'chat',
-                environment: 'prod',
-              },
-            ],
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({ error: { message: 'decision invalid' } }),
-          {
-            status: 400,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
+    const responses = [
+      new Response(
+        JSON.stringify({
+          object: 'list',
+          data: [
+            {
+              id: 'rec-1',
+              agent_id: 'agent-a',
+              task_type: 'chat',
+              environment: 'prod',
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+      new Response(
+        JSON.stringify({ error: { message: 'decision invalid' } }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
+      ),
+    ]
+    let callIndex = 0
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      const response = responses[callIndex]
+      callIndex++
+      return response
+    })
 
     vi.stubGlobal('fetch', fetchMock)
 
@@ -199,14 +176,21 @@ describe('ApprovalsPage', () => {
     await user.click(within(form).getByRole('button', { name: '提交审批' }))
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(3)
     })
 
     expect(await screen.findByText('审批失败：decision invalid')).toBeInTheDocument()
   })
   it('prefills recommendation context from query params', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(
         JSON.stringify({
           object: 'list',
           data: [
@@ -218,12 +202,9 @@ describe('ApprovalsPage', () => {
             },
           ],
         }),
-        {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        },
-      ),
-    )
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      )
+    })
 
     vi.stubGlobal('fetch', fetchMock)
 

@@ -16,8 +16,15 @@ describe('DriftDashboardPage', () => {
   })
 
   it('renders drift rows and summary metrics', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(
         JSON.stringify({
           object: 'list',
           data: [
@@ -41,18 +48,15 @@ describe('DriftDashboardPage', () => {
             },
           ],
         }),
-        {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        },
-      ),
-    )
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      )
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     renderPage()
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(1)
     })
 
     expect(await screen.findByRole('heading', { name: '漂移仪表盘', level: 1 })).toBeInTheDocument()
@@ -64,18 +68,19 @@ describe('DriftDashboardPage', () => {
   })
 
   it('shows empty state when no drift rows', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          object: 'list',
-          data: [],
-        }),
-        {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
-        },
-      ),
-    )
+        })
+      }
+      return new Response(
+        JSON.stringify({ object: 'list', data: [] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      )
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     renderPage()

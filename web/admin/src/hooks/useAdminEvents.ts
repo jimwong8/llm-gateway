@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { apiRequest } from '../lib/http'
+import { buildQuery } from '../lib/format'
 import type { AuditEvent, RuntimeEvent, SummaryResponse } from '../types/runtime'
 
 type EventFilters = {
@@ -10,13 +11,12 @@ type EventFilters = {
 }
 
 function buildEventQuery(path: string, filters: EventFilters) {
-  const params = new URLSearchParams()
-  if (filters.tenantID.trim()) params.set('tenant_id', filters.tenantID.trim())
-  if (filters.environment.trim()) params.set('environment', filters.environment.trim())
-  if (filters.limit.trim()) params.set('limit', filters.limit.trim())
-  if (filters.summary) params.set('summary', 'true')
-  const query = params.toString()
-  return query ? `${path}?${query}` : path
+  const params: Record<string, string> = {}
+  if (filters.tenantID.trim()) params.tenant_id = filters.tenantID.trim()
+  if (filters.environment.trim()) params.environment = filters.environment.trim()
+  if (filters.limit.trim()) params.limit = filters.limit.trim()
+  if (filters.summary) params.summary = 'true'
+  return buildQuery(path, params)
 }
 
 export function useAuditEvents(filters: EventFilters) {

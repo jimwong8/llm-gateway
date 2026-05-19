@@ -156,3 +156,28 @@ export type MemoryListResponse<T> = {
   status: string
   data: T[]
 }
+
+/** Hybrid Search 请求 */
+export type MemorySearchRequest = {
+  query: string
+  tenant_id?: string
+  user_id?: string
+  limit?: number
+}
+
+/** Hybrid Search 单条结果 */
+export type MemorySearchResult = {
+  content: string
+  score: number
+  source: string
+  rank: number
+  fact_key?: string
+  tenant_id?: string
+  user_id?: string
+}
+
+/** Hybrid Search 响应 */
+export type MemorySearchResponse = {
+  query: string
+  results: MemorySearchResult[]
+}

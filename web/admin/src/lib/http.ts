@@ -80,9 +80,11 @@ export async function apiRequest<T>(
     })
 
     if (response.status === 401 || response.status === 403) {
-      clearToken()
-      window.dispatchEvent(new CustomEvent('auth:expired'))
-      window.location.href = '/admin/ui/login'
+      if (options.auth !== 'none') {
+        clearToken()
+        window.dispatchEvent(new CustomEvent('auth:expired'))
+        window.location.href = '/admin/ui/login'
+      }
     }
 
     if (!response.ok) {

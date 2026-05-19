@@ -1,4 +1,9 @@
+import React from 'react'
 import { useInRouterContext, useLocation, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
+import { Button } from '../ui'
+import { clearToken } from '../../lib/auth'
+import { clearUserToken } from '../../lib/api/identity'
 
 type SidebarProps = {
   mobile?: boolean
@@ -23,12 +28,16 @@ export const navGroups: NavGroup[] = [
     label: '概览',
     children: [
       { label: '仪表盘', path: '/dashboard' },
+      { label: 'AI 聊天', path: '/chat' },
+      { label: 'WebSocket 聊天', path: '/ws-chat' },
     ],
   },
   {
     label: '管理',
     children: [
       { label: '渠道管理', path: '/channels' },
+      { label: '资产管理', path: '/assets' },
+      { label: '广播管理', path: '/broadcasts' },
       { label: '配置中心', path: '/config-center' },
       { label: '发布管理', path: '/releases' },
     ],
@@ -37,6 +46,7 @@ export const navGroups: NavGroup[] = [
     label: '监控',
     children: [
       { label: '审计与运行时', path: '/audit-runtime' },
+      { label: '审计导出', path: '/audit-export' },
       { label: '可观测性', path: '/observability' },
       { label: '漂移仪表盘', path: '/drifts' },
       { label: '运行时观测', path: '/runtime-observer' },
@@ -57,8 +67,20 @@ export const navGroups: NavGroup[] = [
       { label: '配额管理', path: '/quota' },
       { label: '记忆治理', path: '/memory-governance' },
       { label: '推荐管理', path: '/recommendations' },
+      { label: 'Prompt & Mask', path: '/presets' },
+      { label: 'API 密钥', path: '/api-keys' },
+      { label: '租户密钥', path: '/tenant-keys' },
       { label: '在线测试', path: '/playground' },
       { label: '系统状态', path: '/system' },
+      { label: '系统设置', path: '/system/settings' },
+      { label: '账单管理', path: '/billing' },
+      { label: '定价管理', path: '/billing-pricing' },
+    ],
+  },
+  {
+    label: '账户',
+    children: [
+      { label: '账户设置', path: '/account' },
     ],
   },
 ]
@@ -85,7 +107,16 @@ function RoutedSidebar(props: SidebarProps) {
   )
 }
 
-function SidebarLayout({ mobile = false, open = false, onClose, currentPath = '', onNavigate = () => undefined }: SidebarProps) {
+export const SidebarLayout = React.memo(function SidebarLayout({ mobile = false, open = false, onClose, currentPath = '', onNavigate = () => undefined }: SidebarProps) {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+
+  const handleLogout = () => {
+    clearToken()
+    clearUserToken()
+    navigate('/login')
+  }
+
   return (
     <aside
       aria-label={mobile ? '移动端导航' : '主导航'}
@@ -99,9 +130,9 @@ function SidebarLayout({ mobile = false, open = false, onClose, currentPath = ''
           <p>管理控制台</p>
         </div>
         {mobile ? (
-          <button type="button" onClick={onClose} aria-label="关闭导航">
+          <Button variant="ghost" size="sm" onClick={onClose} aria-label="关闭导航">
             关闭
-          </button>
+          </Button>
         ) : null}
       </div>
       <nav className="app-sidebar__nav">
@@ -128,6 +159,15 @@ function SidebarLayout({ mobile = false, open = false, onClose, currentPath = ''
           </div>
         ))}
       </nav>
+      <div className="app-sidebar__footer">
+        <button
+          type="button"
+          className="nav-item nav-item--logout"
+          onClick={handleLogout}
+        >
+          {t('common.logout')}
+        </button>
+      </div>
     </aside>
   )
-}
+})
