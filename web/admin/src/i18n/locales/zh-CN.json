@@ -222,6 +222,8 @@
   "presets.newPreset": "新建 Preset",
   "presets.name": "名称",
   "presets.namePlaceholder": "My Preset",
+  "presets.description": "描述",
+  "presets.descriptionPlaceholder": "可选描述",
   "presets.model": "模型",
   "presets.modelPlaceholder": "gpt-4o",
   "presets.temperature": "Temperature",

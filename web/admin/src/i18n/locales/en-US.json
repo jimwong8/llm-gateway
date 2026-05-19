@@ -222,6 +222,8 @@
   "presets.newPreset": "New Preset",
   "presets.name": "Name",
   "presets.namePlaceholder": "My Preset",
+  "presets.description": "Description",
+  "presets.descriptionPlaceholder": "Optional description",
   "presets.model": "Model",
   "presets.modelPlaceholder": "gpt-4o",
   "presets.temperature": "Temperature",
