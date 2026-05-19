@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { AppShell } from '../components/layout/AppShell'
 import { ApiError } from '../lib/http'
@@ -82,6 +83,7 @@ function getRolloutHealth(row: RolloutRow): RolloutHealth {
 }
 
 export function RolloutsPage() {
+  const { t } = useTranslation()
   const [searchParams] = useSearchParams()
   const highlightedPolicyVersionID = searchParams.get('policyVersionId') ?? ''
   const [dialogState, setDialogState] = useState<RollbackDialogState>({
@@ -161,7 +163,7 @@ export function RolloutsPage() {
     event.preventDefault()
 
     if (!dialogState.rolloutID || !rollbackForm.actor.trim()) {
-      setRollbackError('请至少填写 actor。')
+      setRollbackError(t('rollouts.actorRequired'))
       return
     }
 
@@ -176,14 +178,14 @@ export function RolloutsPage() {
         reason: rollbackForm.reason.trim() || undefined,
       })
 
-      setRollbackSuccess(`已触发回滚：${response.id}`)
+      setRollbackSuccess(t('rollouts.rollbackTriggered', { id: response.id }))
       setDialogState((previous) => ({ ...previous, open: false }))
       void rolloutsQuery.refetch()
     } catch (unknownError) {
       if (unknownError instanceof ApiError) {
-        setRollbackError(`回滚失败：${unknownError.message}`)
+        setRollbackError(t('rollouts.rollbackFailed', { message: unknownError.message }))
       } else {
-        setRollbackError(unknownError instanceof Error ? unknownError.message : '回滚失败')
+        setRollbackError(unknownError instanceof Error ? unknownError.message : t('rollouts.rollbackFailedGeneric'))
       }
     } finally {
       setRollbackSubmitting(false)
@@ -192,12 +194,12 @@ export function RolloutsPage() {
 
   return (
     <AppShell
-      title="灰度发布"
-      description="查看模型治理推广进度、质量信号与状态分层，并在需要时通过回滚入口恢复到已知稳定版本。"
+      title={t('rollouts.title')}
+      description={t('rollouts.description')}
     >
       <div className="events-page">
-        {rolloutsQuery.isLoading ? <div className="event-state">正在加载 rollout 列表…</div> : null}
-        {rolloutsQuery.error ? <div className="config-error">发布列表加载失败，请检查治理 接口状态。</div> : null}
+        {rolloutsQuery.isLoading ? <div className="event-state">{t('rollouts.loading')}</div> : null}
+        {rolloutsQuery.error ? <div className="config-error">{t('rollouts.loadError')}</div> : null}
         {rollbackError ? <div className="config-error">{rollbackError}</div> : null}
         {rollbackSuccess ? <div className="event-state">{rollbackSuccess}</div> : null}
 
@@ -205,84 +207,84 @@ export function RolloutsPage() {
           <>
             <div className="summary-card-grid">
               <section className="summary-card">
-                <span>发布总数</span>
+                <span>{t('rollouts.totalRollouts')}</span>
                 <strong>{metrics.total}</strong>
               </section>
               <section className="summary-card">
-                <span>运行中</span>
+                <span>{t('rollouts.running')}</span>
                 <strong>{metrics.running}</strong>
                 <small>{formatRate(metrics.runningRate)}</small>
               </section>
               <section className="summary-card">
-                <span>已完成</span>
+                <span>{t('rollouts.completed')}</span>
                 <strong>{metrics.promoted}</strong>
                 <small>{formatRate(metrics.promotedRate)}</small>
               </section>
               <section className="summary-card">
-                <span>平均百分比</span>
+                <span>{t('rollouts.averagePercent')}</span>
                 <strong>{formatPercent(Number(metrics.averagePercent.toFixed(1)))}</strong>
               </section>
             </div>
 
             <div className="summary-card-grid">
               <section className="summary-card">
-                <span>平均错误率</span>
+                <span>{t('rollouts.avgErrorRate')}</span>
                 <strong>{formatRate(metrics.averageErrorRate)}</strong>
               </section>
               <section className="summary-card">
-                <span>平均 P95 延迟</span>
+                <span>{t('rollouts.avgP95Latency')}</span>
                 <strong>{formatLatency(metrics.averageP95Latency)}</strong>
               </section>
               <section className="summary-card">
-                <span>平均回退率</span>
+                <span>{t('rollouts.avgFallbackRate')}</span>
                 <strong>{formatRate(metrics.averageFallbackRate)}</strong>
               </section>
               <section className="summary-card">
-                <span>样本总数</span>
+                <span>{t('rollouts.totalSamples')}</span>
                 <strong>{formatSampleCount(metrics.totalSamples)}</strong>
               </section>
             </div>
 
             <div className="summary-card-grid">
               <section className="summary-card summary-card--status healthy">
-                <span>健康</span>
+                <span>{t('rollouts.healthy')}</span>
                 <strong>{metrics.healthy}</strong>
                 <small>error &lt; 2% · fallback &lt; 1% · p95 &lt; 900ms</small>
               </section>
               <section className="summary-card summary-card--status watch">
-                <span>关注</span>
+                <span>{t('rollouts.watch')}</span>
                 <strong>{metrics.watch}</strong>
                 <small>error ≥ 2% 或 fallback ≥ 1% 或 p95 ≥ 900ms</small>
               </section>
               <section className="summary-card summary-card--status critical">
-                <span>严重</span>
+                <span>{t('rollouts.critical')}</span>
                 <strong>{metrics.critical}</strong>
                 <small>error ≥ 5% 或 fallback ≥ 3% 或 p95 ≥ 1500ms</small>
               </section>
               <section className="summary-card">
-                <span>回滚就绪</span>
-                <strong>{metrics.total > 0 ? '已启用' : '空闲'}</strong>
-                <small>可直接在行级操作触发回滚</small>
+                <span>{t('rollouts.rollbackReady')}</span>
+                <strong>{metrics.total > 0 ? t('rollouts.enabled') : t('rollouts.idle')}</strong>
+                <small>{t('rollouts.rollbackHint')}</small>
               </section>
             </div>
 
             <div className="event-table">
               <table>
                 <thead>
-                  <tr>
-                    <th>发布 ID</th>
-                    <th>策略版本</th>
-                    <th>环境</th>
-                    <th>状态</th>
-                    <th>推广比例</th>
-                    <th>错误率</th>
-                    <th>P95 延迟</th>
-                    <th>回退率</th>
-                    <th>样本数</th>
-                    <th>触发人</th>
-                    <th>更新时间</th>
-                    <th>操作</th>
-                  </tr>
+                   <tr>
+                     <th>{t('rollouts.colRolloutId')}</th>
+                     <th>{t('rollouts.colPolicyVersion')}</th>
+                     <th>{t('rollouts.colEnvironment')}</th>
+                     <th>{t('rollouts.colStatus')}</th>
+                     <th>{t('rollouts.colRolloutPercent')}</th>
+                     <th>{t('rollouts.colErrorRate')}</th>
+                     <th>{t('rollouts.colP95Latency')}</th>
+                     <th>{t('rollouts.colFallbackRate')}</th>
+                     <th>{t('rollouts.colSampleCount')}</th>
+                     <th>{t('rollouts.colTriggeredBy')}</th>
+                     <th>{t('rollouts.colUpdatedAt')}</th>
+                     <th>{t('rollouts.colActions')}</th>
+                   </tr>
                 </thead>
                 <tbody>
                   {rollouts.map((row) => {
@@ -306,9 +308,9 @@ export function RolloutsPage() {
                         <td>{row.triggered_by || '—'}</td>
                         <td>{formatDate(row.updated_at)}</td>
                         <td>
-                          <button type="button" className="rollouts-action" onClick={() => openRollbackDialog(row)}>
-                            回滚
-                          </button>
+                           <button type="button" className="rollouts-action" onClick={() => openRollbackDialog(row)}>
+                             {t('rollouts.rollback')}
+                           </button>
                         </td>
                       </tr>
                     )
@@ -330,26 +332,26 @@ export function RolloutsPage() {
           >
             <div className="dialog-card__header">
               <div>
-                <h2 id="rollback-dialog-title">回滚 Rollout</h2>
+                <h2 id="rollback-dialog-title">{t('rollouts.rollbackTitle')}</h2>
                 <p>Rollout ID: {dialogState.rolloutID} · Environment: {dialogState.environment}</p>
               </div>
               <button type="button" onClick={closeRollbackDialog}>
-                关闭
+                {t('common.close')}
               </button>
             </div>
 
-            <form className="release-panel__grid" aria-label="Rollback Release Form" onSubmit={handleRollbackSubmit}>
+            <form className="release-panel__grid" aria-label={t('rollouts.rollbackFormLabel')} onSubmit={handleRollbackSubmit}>
               <label>
-                Actor
+                {t('rollouts.actor')}
                 <input value={rollbackForm.actor} onChange={(event) => setRollbackForm((previous) => ({ ...previous, actor: event.target.value }))} />
               </label>
               <label>
-                Reason
+                {t('rollouts.reason')}
                 <input value={rollbackForm.reason} onChange={(event) => setRollbackForm((previous) => ({ ...previous, reason: event.target.value }))} />
               </label>
               <div className="dialog-card__actions">
-                <button type="button" onClick={closeRollbackDialog}>取消</button>
-                <button type="submit" disabled={rollbackSubmitting}>{rollbackSubmitting ? '回滚中…' : '确认回滚'}</button>
+                <button type="button" onClick={closeRollbackDialog}>{t('common.cancel')}</button>
+                <button type="submit" disabled={rollbackSubmitting}>{rollbackSubmitting ? t('rollouts.rollingBack') : t('rollouts.confirmRollback')}</button>
               </div>
             </form>
           </section>

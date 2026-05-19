@@ -1,8 +1,10 @@
 import { FormEvent, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
 import { signup, setUserToken } from '../lib/api/identity'
 
 export function SignupPage() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [username, setUsername] = useState('')
@@ -15,11 +17,11 @@ export function SignupPage() {
     setError('')
 
     if (!email.trim() || !username.trim() || !password) {
-      setError('请填写所有字段')
+      setError(t('signup.allFieldsRequired'))
       return
     }
     if (password.length < 8) {
-      setError('密码至少 8 个字符')
+      setError(t('signup.passwordMinLength'))
       return
     }
 
@@ -29,7 +31,7 @@ export function SignupPage() {
       setUserToken(res.token)
       navigate('/dashboard', { replace: true })
     } catch (err: any) {
-      setError(err?.message ?? '注册失败')
+      setError(err?.message ?? t('signup.signupFailed'))
     } finally {
       setLoading(false)
     }
@@ -39,27 +41,27 @@ export function SignupPage() {
     <main className="login-page">
       <section className="login-card">
         <div className="login-card__header">
-          <span className="login-badge">LLM Gateway</span>
-          <h1>创建账号</h1>
-          <p>注册后可使用 API Key 管理功能。</p>
+          <span className="login-badge">{t('app.brand')}</span>
+          <h1>{t('signup.title')}</h1>
+          <p>{t('signup.subtitle')}</p>
         </div>
 
         <form className="login-form" onSubmit={handleSubmit}>
-          <label htmlFor="email">邮箱</label>
-          <input id="email" type="email" placeholder="user@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <label htmlFor="email">{t('signup.email')}</label>
+          <input id="email" type="email" placeholder={t('signup.emailPlaceholder')} value={email} onChange={(e) => setEmail(e.target.value)} />
 
-          <label htmlFor="username">用户名</label>
-          <input id="username" type="text" placeholder="my-username" value={username} onChange={(e) => setUsername(e.target.value)} />
+          <label htmlFor="username">{t('signup.username')}</label>
+          <input id="username" type="text" placeholder={t('signup.usernamePlaceholder')} value={username} onChange={(e) => setUsername(e.target.value)} />
 
-          <label htmlFor="password">密码</label>
-          <input id="password" type="password" placeholder="至少 8 个字符" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <label htmlFor="password">{t('signup.password')}</label>
+          <input id="password" type="password" placeholder={t('signup.passwordPlaceholder')} value={password} onChange={(e) => setPassword(e.target.value)} />
 
           {error ? <div className="login-error" role="alert">{error}</div> : null}
-          <button type="submit" disabled={loading}>{loading ? '注册中...' : '注册'}</button>
+          <button type="submit" disabled={loading}>{loading ? t('signup.signingUp') : t('signup.signup')}</button>
         </form>
 
         <p style={{ textAlign: 'center', marginTop: '1rem', color: '#94a3b8', fontSize: '0.85rem' }}>
-          已有账号？<Link to="/login">登录</Link>
+          {t('signup.hasAccount')}<Link to="/login">{t('auth.login')}</Link>
         </p>
       </section>
     </main>

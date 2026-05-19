@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AppShell } from '../components/layout/AppShell'
 import { Badge } from '../components/ui/Badge'
@@ -10,6 +11,7 @@ import type { TenantKey } from '../lib/api/tenant-keys'
 const PROVIDERS = ['openai', 'anthropic', 'google', 'azure', 'xstx', 'custom']
 
 export function TenantKeysPage() {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [showForm, setShowForm] = useState(false)
   const [tenantID, setTenantID] = useState('')
@@ -42,19 +44,19 @@ export function TenantKeysPage() {
   const keys = data?.data ?? []
 
   return (
-    <AppShell title="租户密钥管理" description="管理各租户的 API 密钥（BYOK），租户密钥优先于全局密钥使用。">
+    <AppShell title={t('tenantKeys.pageTitle')} description={t('tenantKeys.pageDescription')}>
       <div className="channels-page">
         <div className="channels-toolbar" style={{ marginBottom: '1rem' }}>
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
             <input
               type="text"
-              placeholder="搜索租户 ID..."
+              placeholder={t('tenantKeys.searchPlaceholder')}
               value={searchTenant}
               onChange={(e) => setSearchTenant(e.target.value)}
               style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid #e2e8f0', minWidth: '200px' }}
             />
             <button type="button" className="btn btn--primary" onClick={() => setShowForm(!showForm)}>
-              {showForm ? '取消' : '添加密钥'}
+              {showForm ? t('common.cancel') : t('tenantKeys.addKey')}
             </button>
           </div>
         </div>
@@ -63,17 +65,17 @@ export function TenantKeysPage() {
           <div className="page-surface" style={{ marginBottom: '1rem', padding: '1rem' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '1rem', alignItems: 'end' }}>
               <div>
-                <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', color: '#64748b' }}>租户 ID</label>
+                <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', color: '#64748b' }}>{t('tenantKeys.tenantId')}</label>
                 <input
                   type="text"
                   value={tenantID}
                   onChange={(e) => setTenantID(e.target.value)}
-                  placeholder="tenant-xxx"
+                  placeholder={t('tenantKeys.tenantIdPlaceholder')}
                   style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #e2e8f0' }}
                 />
               </div>
               <div>
-                <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', color: '#64748b' }}>Provider</label>
+                <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', color: '#64748b' }}>{t('tenantKeys.provider')}</label>
                 <select
                   value={provider}
                   onChange={(e) => setProvider(e.target.value)}
@@ -85,12 +87,12 @@ export function TenantKeysPage() {
                 </select>
               </div>
               <div>
-                <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', color: '#64748b' }}>API Key</label>
+                <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', color: '#64748b' }}>{t('tenantKeys.apiKey')}</label>
                 <input
                   type="password"
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="sk-..."
+                  placeholder={t('tenantKeys.apiKeyPlaceholder')}
                   style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #e2e8f0' }}
                 />
               </div>
@@ -100,7 +102,7 @@ export function TenantKeysPage() {
                 disabled={putMutation.isPending || !tenantID || !apiKey}
                 onClick={() => putMutation.mutate({ tenant_id: tenantID, provider, api_key: apiKey })}
               >
-                {putMutation.isPending ? '保存中...' : '保存'}
+                {putMutation.isPending ? t('tenantKeys.saving') : t('common.save')}
               </button>
             </div>
           </div>
@@ -109,17 +111,17 @@ export function TenantKeysPage() {
         {isLoading ? (
           <TableSkeleton rows={5} />
         ) : keys.length === 0 ? (
-          <EmptyState title="暂无租户密钥" description="点击「添加密钥」为租户配置 BYOK API 密钥。" />
+          <EmptyState title={t('tenantKeys.emptyTitle')} description={t('tenantKeys.emptyDescription')} />
         ) : (
           <table className="channels-table">
             <thead>
-              <tr>
-                <th>租户 ID</th>
-                <th>Provider</th>
-                <th>状态</th>
-                <th>创建时间</th>
-                <th>操作</th>
-              </tr>
+            <tr>
+                 <th>{t('tenantKeys.tenantId')}</th>
+                 <th>{t('tenantKeys.provider')}</th>
+                 <th>{t('tenantKeys.status')}</th>
+                 <th>{t('tenantKeys.createdAt')}</th>
+                 <th>{t('tenantKeys.actions')}</th>
+               </tr>
             </thead>
             <tbody>
               {keys.map((key: TenantKey) => (
@@ -127,9 +129,9 @@ export function TenantKeysPage() {
                   <td>{key.tenant_id}</td>
                   <td><Badge variant="info">{key.provider}</Badge></td>
                   <td>
-                    <Badge variant={key.is_active ? 'success' : 'danger'}>
-                      {key.is_active ? '活跃' : '已禁用'}
-                    </Badge>
+                     <Badge variant={key.is_active ? 'success' : 'danger'}>
+                       {key.is_active ? t('tenantKeys.active') : t('tenantKeys.disabled')}
+                     </Badge>
                   </td>
                   <td style={{ color: '#94a3b8', fontSize: '0.85rem' }}>
                     {new Date(key.created_at).toLocaleDateString('zh-CN')}
@@ -140,12 +142,12 @@ export function TenantKeysPage() {
                       className="btn btn--sm btn--danger-ghost"
                       disabled={deleteMutation.isPending}
                       onClick={() => {
-                        if (confirm(`确认删除 ${key.tenant_id} 的 ${key.provider} 密钥？`)) {
+                        if (confirm(t('tenantKeys.confirmDelete', { tenant: key.tenant_id, provider: key.provider }))) {
                           deleteMutation.mutate({ tenantID: key.tenant_id, provider: key.provider })
                         }
                       }}
                     >
-                      删除
+                      {t('tenantKeys.delete')}
                     </button>
                   </td>
                 </tr>

@@ -1,9 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { AppShell } from '../components/layout/AppShell'
 import { SummaryMetricCard } from '../components/dashboard/SummaryMetricCard'
 import { getBalance, getLedger } from '../lib/api/billing'
 
 export function BillingPage() {
+  const { t } = useTranslation()
   const balanceQuery = useQuery({
     queryKey: ['billing-balance'],
     queryFn: getBalance,
@@ -17,30 +19,30 @@ export function BillingPage() {
   })
 
   return (
-    <AppShell>
+    <AppShell title={t('billing.title')} description={t('billing.description')}>
       <div className="page-header">
-        <h2>计费面板</h2>
+        <h2>{t('billing.title')}</h2>
       </div>
 
       <div className="summary-card-grid">
         <SummaryMetricCard
-          label="钱包余额"
+          label={t('billing.balance')}
           value={balanceQuery.data ? `$${balanceQuery.data.balance.toFixed(4)}` : '—'}
         />
       </div>
 
       <div className="page-surface" style={{ marginTop: '1rem' }}>
-        <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem', fontWeight: 600 }}>交易流水</h3>
-        {ledgerQuery.isLoading && <div className="event-state">加载中…</div>}
-        {ledgerQuery.error && <div className="config-error" role="alert">加载失败</div>}
+        <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem', fontWeight: 600 }}>{t('billing.ledger')}</h3>
+        {ledgerQuery.isLoading && <div className="event-state">{t('common.loading')}</div>}
+        {ledgerQuery.error && <div className="config-error" role="alert">{t('billing.loadError')}</div>}
         {ledgerQuery.data && (
           <table className="data-table">
             <thead>
               <tr>
-                <th>时间</th>
-                <th>类型</th>
-                <th>金额</th>
-                <th>描述</th>
+                 <th>{t('billing.colTime')}</th>
+                 <th>{t('billing.colType')}</th>
+                 <th>{t('billing.colAmount')}</th>
+                 <th>{t('billing.colDescription')}</th>
               </tr>
             </thead>
             <tbody>

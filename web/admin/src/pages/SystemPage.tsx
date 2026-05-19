@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AppShell } from '../components/layout/AppShell'
 import { apiRequest, jsonRequest } from '../lib/http'
@@ -31,6 +32,7 @@ const emptyForm: SiteConfigForm = {
 }
 
 export function SystemPage() {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [form, setForm] = useState<SiteConfigForm>(emptyForm)
   const [jwtResult, setJwtResult] = useState('')
@@ -74,7 +76,7 @@ export function SystemPage() {
         updated_by: 'admin',
       }, { method: 'PUT' } as RequestInit),
     onSuccess: () => {
-      setSaveSuccess('站点配置已保存')
+      setSaveSuccess(t('system.saveSuccess'))
       queryClient.invalidateQueries({ queryKey: ['site-config'] })
     },
   })
@@ -85,7 +87,7 @@ export function SystemPage() {
         '/admin/config/jwt/rotate', { updated_by: 'admin' },
       ),
     onSuccess: (data) => {
-      setJwtResult(`新 Secret: ${data.jwt_secret}\n${data.message}`)
+      setJwtResult(t('system.jwtRotated', { secret: data.jwt_secret, message: data.message }))
       queryClient.invalidateQueries({ queryKey: ['site-config'] })
     },
   })
@@ -104,76 +106,76 @@ export function SystemPage() {
   const cfg = configQuery.data
 
   return (
-    <AppShell title="系统设置" description="管理系统站点配置、JWT Secret、SMTP 邮件、注册开关等。">
+    <AppShell title={t('system.title')} description={t('system.description')}>
       <div className="system-page">
         {configQuery.error ? (
-          <div className="config-error">加载配置失败: {(configQuery.error as Error).message}</div>
+          <div className="config-error">{t('system.loadError', { message: (configQuery.error as Error).message })}</div>
         ) : null}
 
         <form className="page-surface" onSubmit={handleSubmit}>
-          <h2 style={{ margin: '0 0 1rem', fontSize: '1.1rem' }}>站点信息</h2>
+          <h2 style={{ margin: '0 0 1rem', fontSize: '1.1rem' }}>{t('system.siteInfo')}</h2>
           <div className="system-config-grid">
             <label>
-              站点名称
+              {t('system.siteName')}
               <input value={form.site_name} onChange={(e) => updateField('site_name', e.target.value)} placeholder="LLM Gateway" />
             </label>
             <label>
-              Logo URL
+              {t('system.logoUrl')}
               <input value={form.logo_url} onChange={(e) => updateField('logo_url', e.target.value)} placeholder="https://example.com/logo.png" />
             </label>
           </div>
 
-          <h2 style={{ margin: '1.5rem 0 1rem', fontSize: '1.1rem' }}>JWT 安全</h2>
+          <h2 style={{ margin: '1.5rem 0 1rem', fontSize: '1.1rem' }}>{t('system.jwtSecurity')}</h2>
           <div className="system-config-grid">
             <div className="toggle-field">
-              <span>JWT Secret 状态</span>
+              <span>{t('system.jwtStatus')}</span>
               <span className={cfg?.jwt_secret_configured ? 'badge badge--success' : 'badge badge--warning'}>
-                {cfg?.jwt_secret_configured ? '已配置' : '未配置'}
+                {cfg?.jwt_secret_configured ? t('system.jwtConfigured') : t('system.jwtNotConfigured')}
               </span>
             </div>
             {cfg?.jwt_secret_rotated_at ? (
               <label>
-                上次轮换时间
+                {t('system.lastRotatedAt')}
                 <input value={cfg.jwt_secret_rotated_at} readOnly />
               </label>
             ) : null}
           </div>
           <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.75rem' }}>
             <button type="button" className="btn btn--primary" onClick={() => rotateMutation.mutate()} disabled={rotateMutation.isPending}>
-              {rotateMutation.isPending ? '轮换中…' : '重新生成 JWT Secret'}
+              {rotateMutation.isPending ? t('system.rotating') : t('system.rotateJwt')}
             </button>
           </div>
           {jwtResult ? <pre className="system-jwt-result">{jwtResult}</pre> : null}
           {rotateMutation.error ? <div className="config-error">{(rotateMutation.error as Error).message}</div> : null}
 
-          <h2 style={{ margin: '1.5rem 0 1rem', fontSize: '1.1rem' }}>SMTP 邮件配置</h2>
+          <h2 style={{ margin: '1.5rem 0 1rem', fontSize: '1.1rem' }}>{t('system.smtpConfig')}</h2>
           <div className="system-config-grid">
             <label>
-              SMTP 主机
+              {t('system.smtpHost')}
               <input value={form.smtp_host} onChange={(e) => updateField('smtp_host', e.target.value)} placeholder="smtp.example.com" />
             </label>
             <label>
-              端口
+              {t('system.smtpPort')}
               <input type="number" value={form.smtp_port} onChange={(e) => updateField('smtp_port', parseInt(e.target.value) || 587)} placeholder="587" />
             </label>
             <label>
-              用户名
+              {t('system.smtpUser')}
               <input value={form.smtp_user} onChange={(e) => updateField('smtp_user', e.target.value)} placeholder="user@example.com" />
             </label>
             <label>
-              密码
-              <input type="password" value={form.smtp_pass} onChange={(e) => updateField('smtp_pass', e.target.value)} placeholder="留空则不变" />
+              {t('system.smtpPass')}
+              <input type="password" value={form.smtp_pass} onChange={(e) => updateField('smtp_pass', e.target.value)} placeholder={t('system.smtpPassPlaceholder')} />
             </label>
             <label>
-              发件人地址
+              {t('system.smtpFrom')}
               <input value={form.smtp_from} onChange={(e) => updateField('smtp_from', e.target.value)} placeholder="noreply@example.com" />
             </label>
           </div>
 
-          <h2 style={{ margin: '1.5rem 0 1rem', fontSize: '1.1rem' }}>注册与配额</h2>
+          <h2 style={{ margin: '1.5rem 0 1rem', fontSize: '1.1rem' }}>{t('system.registrationQuota')}</h2>
           <div className="system-config-grid">
             <label className="toggle-field">
-              <span>允许新用户注册</span>
+              <span>{t('system.allowRegistration')}</span>
               <input
                 type="checkbox"
                 checked={form.allow_registration}
@@ -181,7 +183,7 @@ export function SystemPage() {
               />
             </label>
             <label>
-              默认用户角色
+              {t('system.defaultUserRole')}
               <select value={form.default_user_role} onChange={(e) => updateField('default_user_role', e.target.value)}>
                 <option value="user">user</option>
                 <option value="admin">admin</option>
@@ -189,14 +191,14 @@ export function SystemPage() {
               </select>
             </label>
             <label>
-              默认用户配额（token/月）
+              {t('system.defaultUserQuota')}
               <input type="number" value={form.default_user_quota} onChange={(e) => updateField('default_user_quota', parseInt(e.target.value) || 0)} placeholder="1000000" />
             </label>
           </div>
 
           <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
             <button type="submit" className="btn btn--primary" disabled={saveMutation.isPending}>
-              {saveMutation.isPending ? '保存中…' : '保存配置'}
+              {saveMutation.isPending ? t('common.pending') : t('system.saveConfig')}
             </button>
           </div>
           {saveSuccess ? <div className="config-success" style={{ marginTop: '0.75rem' }}>{saveSuccess}</div> : null}

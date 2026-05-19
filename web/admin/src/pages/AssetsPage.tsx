@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AppShell } from '../components/layout/AppShell'
 import { Badge } from '../components/ui/Badge'
@@ -14,6 +15,7 @@ const TASK_VARIANT: Record<string, 'success' | 'warning' | 'danger' | 'info'> = 
 }
 
 export function AssetsPage() {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [keyword, setKeyword] = useState('')
   const [taskFilter, setTaskFilter] = useState<string>('all')
@@ -64,15 +66,15 @@ export function AssetsPage() {
 
   return (
     <AppShell
-      title="资产管理"
-      description="浏览和管理知识资产，包括标准化摘要、结构化抽取和复用审计。"
+      title={t('assets.pageTitle')}
+      description={t('assets.pageDescription')}
     >
       <div className="channels-page">
         <div className="channels-toolbar" style={{ marginBottom: '1rem' }}>
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
             <input
               type="text"
-              placeholder="搜索资产标题或内容..."
+              placeholder={t('assets.searchPlaceholder')}
               value={keyword}
               onChange={(e) => { setKeyword(e.target.value); setPage(0) }}
               style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid #e2e8f0', minWidth: '200px' }}
@@ -82,7 +84,7 @@ export function AssetsPage() {
               onChange={(e) => { setTaskFilter(e.target.value); setPage(0) }}
               style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid #e2e8f0' }}
             >
-              <option value="all">全部类型</option>
+              <option value="all">{t('assets.typeAll')}</option>
               {taskTypes.map((t) => (
                 <option key={t} value={t}>{t}</option>
               ))}
@@ -93,11 +95,11 @@ export function AssetsPage() {
         {statsLoading ? null : stats ? (
           <div className="summary-card-grid" style={{ marginBottom: '1rem' }}>
             <div className="summary-card">
-              <span>总资产数</span>
+              <span>{t('assets.totalAssets')}</span>
               <strong>{stats.total_assets}</strong>
             </div>
             <div className="summary-card">
-              <span>总命中次数</span>
+              <span>{t('assets.totalHits')}</span>
               <strong>{stats.total_hits}</strong>
             </div>
             {stats.by_task.slice(0, 3).map((t) => (
@@ -112,20 +114,20 @@ export function AssetsPage() {
         {isLoading ? (
           <TableSkeleton rows={5} />
         ) : filteredAssets.length === 0 ? (
-          <EmptyState title="暂无资产" description="还没有创建任何知识资产。资产会在请求处理过程中自动生成。" />
+          <EmptyState title={t('assets.emptyTitle')} description={t('assets.emptyDescription')} />
         ) : (
           <>
             <table className="channels-table">
               <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>标题</th>
-                  <th>类型</th>
-                  <th>来源模型</th>
-                  <th>命中次数</th>
-                  <th>创建时间</th>
-                  <th>操作</th>
-                </tr>
+            <tr>
+                   <th>{t('assets.id')}</th>
+                   <th>{t('assets.title')}</th>
+                   <th>{t('assets.type')}</th>
+                   <th>{t('assets.sourceModel')}</th>
+                   <th>{t('assets.hitCount')}</th>
+                   <th>{t('assets.createdAt')}</th>
+                   <th>{t('assets.actions')}</th>
+                 </tr>
               </thead>
               <tbody>
                 {filteredAssets.map((asset) => (
@@ -150,12 +152,12 @@ export function AssetsPage() {
                         className="btn btn--sm btn--danger-ghost"
                         disabled={deleteMutation.isPending}
                         onClick={() => {
-                          if (confirm(`确认删除资产 #${asset.id} "${asset.title}"？`)) {
+                          if (confirm(t('assets.confirmDelete', { id: asset.id, title: asset.title }))) {
                             deleteMutation.mutate(asset.id)
                           }
                         }}
                       >
-                        删除
+                        {t('assets.delete')}
                       </button>
                     </td>
                   </tr>
@@ -171,10 +173,10 @@ export function AssetsPage() {
                   disabled={page === 0}
                   onClick={() => setPage((p) => Math.max(0, p - 1))}
                 >
-                  上一页
+                  {t('common.prev')}
                 </button>
                 <span style={{ padding: '0.5rem 1rem', color: '#94a3b8' }}>
-                  第 {page + 1} 页 / 共 {Math.ceil(total / pageSize)} 页
+                  {t('assets.pageInfo', { page: page + 1, total: Math.ceil(total / pageSize) })}
                 </span>
                 <button
                   type="button"
@@ -182,7 +184,7 @@ export function AssetsPage() {
                   disabled={(page + 1) * pageSize >= total}
                   onClick={() => setPage((p) => p + 1)}
                 >
-                  下一页
+                  {t('common.next')}
                 </button>
               </div>
             )}

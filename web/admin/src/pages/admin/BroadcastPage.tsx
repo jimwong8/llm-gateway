@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { AppShell } from '../../components/layout/AppShell'
 import { listBroadcasts, createBroadcast, updateBroadcast, deleteBroadcast } from '../../lib/api/broadcasts'
 import type { Broadcast, BroadcastType } from '../../types/broadcast'
@@ -12,12 +13,13 @@ function formatDT(iso: string): string {
   return d.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
 }
 
-const TYPE_LABELS: Record<BroadcastType, string> = { info: '信息', warning: '警告', critical: '严重' }
+const TYPE_LABELS: Record<BroadcastType, string> = { info: 'info', warning: 'warning', critical: 'critical' }
 const TYPE_CLASSES: Record<BroadcastType, string> = { info: 'badge-info', warning: 'badge-warning', critical: 'badge-critical' }
 
 type FormMode = 'create' | 'edit'
 
 export function BroadcastPage() {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [mode, setMode] = useState<FormMode>('create')
   const [editId, setEditId] = useState<number | null>(null)
@@ -83,7 +85,7 @@ export function BroadcastPage() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!title.trim() || !content.trim()) {
-      setFormError('标题和内容不能为空')
+      setFormError(t('common.titleRequired'))
       return
     }
     const input = { title: title.trim(), content: content.trim(), type: bType, start_at: startAt, end_at: endAt }
@@ -97,69 +99,69 @@ export function BroadcastPage() {
   const pending = createMut.isPending || updateMut.isPending
 
   return (
-    <AppShell title="广播管理" description="管理系统广播通知，可创建信息、警告、紧急类型的广播消息。">
+    <AppShell title={t('broadcast.title')} description={t('broadcast.description')}>
       <div className="page-header">
-        <h2>广播管理</h2>
+        <h2>{t('broadcast.title')}</h2>
       </div>
 
       <div className="page-surface" style={{ marginBottom: '1rem' }}>
         <h3 style={{ marginBottom: '0.75rem', fontWeight: 600 }}>
-          {mode === 'create' ? '创建广播' : '编辑广播'}
+          {mode === 'create' ? t('broadcast.create') : t('broadcast.edit')}
         </h3>
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxWidth: 500 }}>
           <div>
-            <label>标题 *</label>
-            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="广播标题" />
+            <label>{t('broadcast.formTitle')}</label>
+            <input value={title} onChange={e => setTitle(e.target.value)} placeholder={t('broadcast.formTitlePlaceholder')} />
           </div>
           <div>
-            <label>内容 *</label>
-            <textarea value={content} onChange={e => setContent(e.target.value)} placeholder="广播内容" rows={3} />
+            <label>{t('broadcast.formContent')}</label>
+            <textarea value={content} onChange={e => setContent(e.target.value)} placeholder={t('broadcast.formContentPlaceholder')} rows={3} />
           </div>
           <div>
-            <label>类型</label>
+            <label>{t('broadcast.formType')}</label>
             <select value={bType} onChange={e => setBType(e.target.value as BroadcastType)}>
-              <option value="info">信息</option>
-              <option value="warning">警告</option>
-              <option value="critical">严重</option>
+              <option value="info">{t('broadcast.typeInfo')}</option>
+              <option value="warning">{t('broadcast.typeWarning')}</option>
+              <option value="critical">{t('broadcast.typeCritical')}</option>
             </select>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             <div style={{ flex: 1 }}>
-              <label>开始时间</label>
+              <label>{t('broadcast.formStartAt')}</label>
               <input type="datetime-local" value={toLocalDT(startAt)} onChange={e => setStartAt(toISO(e.target.value))} />
             </div>
             <div style={{ flex: 1 }}>
-              <label>结束时间</label>
+              <label>{t('broadcast.formEndAt')}</label>
               <input type="datetime-local" value={toLocalDT(endAt)} onChange={e => setEndAt(toISO(e.target.value))} />
             </div>
           </div>
           {formError && <div className="config-error" role="alert">{formError}</div>}
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             <button type="submit" className="button-primary" disabled={pending}>
-              {pending ? '保存中…' : mode === 'create' ? '创建' : '保存'}
+              {pending ? t('common.pending') : mode === 'create' ? t('common.create') : t('common.save')}
             </button>
             {mode === 'edit' && (
-              <button type="button" onClick={resetForm}>取消</button>
+              <button type="button" onClick={resetForm}>{t('common.cancel')}</button>
             )}
           </div>
         </form>
       </div>
 
       <div className="page-surface">
-        <h3 style={{ marginBottom: '0.75rem', fontWeight: 600 }}>广播列表</h3>
-        {listQuery.isLoading && <div className="event-state">加载中…</div>}
-        {listQuery.error && <div className="config-error" role="alert">加载失败</div>}
+        <h3 style={{ marginBottom: '0.75rem', fontWeight: 600 }}>{t('broadcast.list')}</h3>
+        {listQuery.isLoading && <div className="event-state">{t('common.loading')}</div>}
+        {listQuery.error && <div className="config-error" role="alert">{t('common.error')}</div>}
         {Array.isArray(listQuery.data?.data) && (
           <table className="data-table">
             <thead>
               <tr>
-                <th>ID</th>
-                <th>标题</th>
-                <th>类型</th>
-                <th>开始时间</th>
-                <th>结束时间</th>
-                <th>创建者</th>
-                <th>操作</th>
+                 <th>{t('broadcast.colId')}</th>
+                 <th>{t('broadcast.colTitle')}</th>
+                 <th>{t('broadcast.colType')}</th>
+                 <th>{t('broadcast.colStartAt')}</th>
+                 <th>{t('broadcast.colEndAt')}</th>
+                 <th>{t('broadcast.colCreatedBy')}</th>
+                 <th>{t('broadcast.colActions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -167,18 +169,18 @@ export function BroadcastPage() {
                 <tr key={b.id}>
                   <td>{b.id}</td>
                   <td>{b.title}</td>
-                  <td><span className={`badge ${TYPE_CLASSES[b.type] || 'badge-info'}`}>{TYPE_LABELS[b.type] || b.type}</span></td>
+                  <td><span className={`badge ${TYPE_CLASSES[b.type] || 'badge-info'}`}>{t(`broadcast.${TYPE_LABELS[b.type]}`) || b.type}</span></td>
                   <td>{formatDT(b.start_at)}</td>
                   <td>{formatDT(b.end_at)}</td>
                   <td>{b.created_by}</td>
                   <td>
-                    <button type="button" onClick={() => startEdit(b)} style={{ marginRight: '0.5rem' }}>编辑</button>
-                    <button type="button" onClick={() => { if (confirm('确认删除？')) deleteMut.mutate(b.id) }}>删除</button>
+                    <button type="button" onClick={() => startEdit(b)} style={{ marginRight: '0.5rem' }}>{t('common.edit')}</button>
+                    <button type="button" onClick={() => { if (confirm(t('common.confirmDelete'))) deleteMut.mutate(b.id) }}>{t('common.delete')}</button>
                   </td>
                 </tr>
               ))}
               {listQuery.data.data.length === 0 && (
-                <tr><td colSpan={7} style={{ textAlign: 'center', padding: '1rem' }}>暂无广播</td></tr>
+                <tr><td colSpan={7} style={{ textAlign: 'center', padding: '1rem' }}>{t('broadcast.noBroadcasts')}</td></tr>
               )}
             </tbody>
           </table>

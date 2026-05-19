@@ -1,4 +1,5 @@
 import { FormEvent, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AppShell } from '../components/layout/AppShell'
 import { CreateDraftForm } from '../components/config/CreateDraftForm'
@@ -17,6 +18,7 @@ const emptyFilters: ConfigVersionFilters = {
 }
 
 export function ConfigCenterPage() {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [draftFilters, setDraftFilters] = useState<ConfigVersionFilters>(emptyFilters)
   const [appliedFilters, setAppliedFilters] = useState<ConfigVersionFilters>(emptyFilters)
@@ -76,10 +78,10 @@ export function ConfigCenterPage() {
       const parsed = JSON.parse(text)
       const data = parsed.data ?? parsed
       const result = await jsonRequest<{ imported: number }>('/admin/config/versions/import', { data })
-      setImportResult(`已导入 ${result.imported} 条配置快照`)
+      setImportResult(t('configCenter.importSuccess', { count: result.imported }))
       queryClient.invalidateQueries({ queryKey: ['config-snapshots'] })
     } catch (err) {
-      setImportResult(`导入失败: ${(err as Error).message}`)
+      setImportResult(t('configCenter.importFailed', { message: (err as Error).message }))
     }
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
@@ -95,8 +97,8 @@ export function ConfigCenterPage() {
 
   return (
     <AppShell
-      title="配置中心"
-      description="查看配置版本列表、管理配置快照、导入/导出配置。"
+      title={t('configCenter.title')}
+      description={t('configCenter.description')}
     >
       <div className="config-center">
         <CreateDraftForm
@@ -106,54 +108,54 @@ export function ConfigCenterPage() {
           }}
         />
 
-        <form className="config-filters" aria-label="配置筛选" onSubmit={handleSubmit}>
+        <form className="config-filters" aria-label={t('configCenter.filtersLabel')} onSubmit={handleSubmit}>
           <label>
-            模块
+            {t('configCenter.module')}
             <input
               value={draftFilters.module}
               onChange={(event) => setDraftFilters((prev) => ({ ...prev, module: event.target.value }))}
-              placeholder="路由模块"
+              placeholder={t('configCenter.modulePlaceholder')}
             />
           </label>
           <label>
-            租户 ID
+            {t('configCenter.tenantId')}
             <input
               value={draftFilters.tenantID}
               onChange={(event) => setDraftFilters((prev) => ({ ...prev, tenantID: event.target.value }))}
-              placeholder="租户-a"
+              placeholder={t('configCenter.tenantIdPlaceholder')}
             />
           </label>
           <label>
-            环境
+            {t('configCenter.environment')}
             <input
               value={draftFilters.environment}
               onChange={(event) => setDraftFilters((prev) => ({ ...prev, environment: event.target.value }))}
-              placeholder="生产环境"
+              placeholder={t('configCenter.environmentPlaceholder')}
             />
           </label>
           <label>
-            作用域
+            {t('configCenter.scope')}
             <input
               value={draftFilters.scope}
               onChange={(event) => setDraftFilters((prev) => ({ ...prev, scope: event.target.value }))}
-              placeholder="租户"
+              placeholder={t('configCenter.scopePlaceholder')}
             />
           </label>
           <label>
-            项目 ID
+            {t('configCenter.projectId')}
             <input
               value={draftFilters.projectID}
               onChange={(event) => setDraftFilters((prev) => ({ ...prev, projectID: event.target.value }))}
-              placeholder="项目-x"
+              placeholder={t('configCenter.projectIdPlaceholder')}
             />
           </label>
           <div className="config-filters__actions">
-            <button type="submit">筛选</button>
+            <button type="submit">{t('common.filter')}</button>
           </div>
         </form>
 
         {query.error ? (
-          <div className="config-error">加载配置版本失败，请检查 Admin Token 或接口状态。</div>
+          <div className="config-error">{t('configCenter.loadError')}</div>
         ) : null}
 
         <div className="config-center__content">
@@ -168,21 +170,21 @@ export function ConfigCenterPage() {
         <section className="page-surface" style={{ marginTop: '1rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', marginBottom: '1rem' }}>
             <div>
-              <h2 style={{ margin: 0, fontSize: '1.1rem' }}>配置版本快照管理</h2>
-              <p style={{ margin: '0.35rem 0 0', color: '#64748b' }}>创建草稿、发布、回滚、导入/导出</p>
+              <h2 style={{ margin: 0, fontSize: '1.1rem' }}>{t('configCenter.snapshotManagement')}</h2>
+              <p style={{ margin: '0.35rem 0 0', color: '#64748b' }}>{t('configCenter.snapshotDescription')}</p>
             </div>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               {!snapshotForm.show ? (
-                <button type="button" className="btn btn--primary" onClick={() => setSnapshotForm((p) => ({ ...p, show: true }))}>
-                  创建草稿
-                </button>
-              ) : null}
-              <button type="button" className="btn" onClick={handleExport} disabled={snapshots.length === 0}>
-                导出
-              </button>
-              <button type="button" className="btn" onClick={() => fileInputRef.current?.click()}>
-                导入
-              </button>
+                 <button type="button" className="btn btn--primary" onClick={() => setSnapshotForm((p) => ({ ...p, show: true }))}>
+                   {t('configCenter.createDraft')}
+                 </button>
+               ) : null}
+               <button type="button" className="btn" onClick={handleExport} disabled={snapshots.length === 0}>
+                 {t('common.export')}
+               </button>
+               <button type="button" className="btn" onClick={() => fileInputRef.current?.click()}>
+                 {t('common.import')}
+               </button>
               <input ref={fileInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImport} />
             </div>
           </div>
@@ -197,16 +199,16 @@ export function ConfigCenterPage() {
             <div className="draft-form" style={{ marginBottom: '1rem' }}>
               <div className="draft-form__header">
                 <div>
-                  <h2>创建配置版本草稿</h2>
-                  <p>输入完整 JSON 配置快照</p>
+                  <h2>{t('configCenter.createDraftTitle')}</h2>
+                  <p>{t('configCenter.createDraftDescription')}</p>
                 </div>
-                <button type="button" className="btn" onClick={() => setSnapshotForm((p) => ({ ...p, show: false }))}>
-                  取消
-                </button>
+                 <button type="button" className="btn" onClick={() => setSnapshotForm((p) => ({ ...p, show: false }))}>
+                   {t('common.cancel')}
+                 </button>
               </div>
               <div className="draft-form__grid">
                 <label>
-                  版本标识
+                  {t('configCenter.versionLabel')}
                   <input
                     value={snapshotForm.version}
                     onChange={(e) => setSnapshotForm((p) => ({ ...p, version: e.target.value }))}
@@ -214,7 +216,7 @@ export function ConfigCenterPage() {
                   />
                 </label>
                 <label style={{ gridColumn: '1 / -1' }}>
-                  配置快照 (JSON)
+                  {t('configCenter.configSnapshot')}
                   <textarea
                     rows={6}
                     value={snapshotForm.config_snapshot}
@@ -224,16 +226,16 @@ export function ConfigCenterPage() {
                   />
                 </label>
                 <label style={{ gridColumn: '1 / -1' }}>
-                  备注
+                  {t('configCenter.notes')}
                   <input
                     value={snapshotForm.notes}
                     onChange={(e) => setSnapshotForm((p) => ({ ...p, notes: e.target.value }))}
-                    placeholder="初始配置"
+                    placeholder={t('configCenter.notesPlaceholder')}
                   />
                 </label>
               </div>
               <button type="button" className="btn btn--primary" onClick={handleCreateSnapshot} disabled={createSnapshotMutation.isPending}>
-                {createSnapshotMutation.isPending ? '创建中…' : '创建草稿'}
+                 {createSnapshotMutation.isPending ? t('configCenter.creating') : t('configCenter.createDraft')}
               </button>
               {createSnapshotMutation.error ? (
                 <div className="config-error" style={{ marginTop: '0.5rem' }}>{(createSnapshotMutation.error as Error).message}</div>
@@ -242,22 +244,22 @@ export function ConfigCenterPage() {
           ) : null}
 
           {snapshotsQuery.isLoading ? (
-            <div className="config-table__state">加载中…</div>
+            <div className="config-table__state">{t('common.loading')}</div>
           ) : snapshots.length === 0 ? (
-            <div className="config-table__state">暂无快照</div>
+            <div className="config-table__state">{t('configCenter.noSnapshots')}</div>
           ) : (
             <div className="config-table">
               <table>
                 <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>版本</th>
-                    <th>状态</th>
-                    <th>备注</th>
-                    <th>创建人</th>
-                    <th>创建时间</th>
-                    <th>操作</th>
-                  </tr>
+                     <tr>
+                     <th>{t('configCenter.colId')}</th>
+                     <th>{t('configCenter.colVersion')}</th>
+                     <th>{t('configCenter.colStatus')}</th>
+                     <th>{t('configCenter.colNotes')}</th>
+                     <th>{t('configCenter.colCreatedBy')}</th>
+                     <th>{t('configCenter.colCreatedAt')}</th>
+                     <th>{t('configCenter.colActions')}</th>
+                   </tr>
                 </thead>
                 <tbody>
                   {[...snapshots].reverse().map((snap) => (
@@ -266,7 +268,7 @@ export function ConfigCenterPage() {
                       <td style={{ fontWeight: 600 }}>{snap.version}</td>
                       <td>
                         <span className={`status-pill ${snap.status}`}>
-                          {snap.status === 'draft' ? '草稿' : snap.status === 'published' ? '已发布' : '已回滚'}
+                           {snap.status === 'draft' ? t('configCenter.statusDraft') : snap.status === 'published' ? t('configCenter.statusPublished') : t('configCenter.statusRolledBack')}
                         </span>
                       </td>
                       <td style={{ color: '#64748b', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{snap.notes}</td>
@@ -275,14 +277,14 @@ export function ConfigCenterPage() {
                       <td>
                         <div style={{ display: 'flex', gap: '0.35rem' }}>
                           {snap.status === 'draft' ? (
-                            <button type="button" className="btn btn--sm btn--primary" onClick={() => publishMutation.mutate(snap.id)} disabled={publishMutation.isPending}>
-                              发布
-                            </button>
-                          ) : null}
-                          {snap.status === 'published' ? (
-                            <button type="button" className="btn btn--sm btn--danger-ghost" onClick={() => rollbackMutation.mutate(snap.id)} disabled={rollbackMutation.isPending}>
-                              回滚
-                            </button>
+                             <button type="button" className="btn btn--sm btn--primary" onClick={() => publishMutation.mutate(snap.id)} disabled={publishMutation.isPending}>
+                               {t('configCenter.publish')}
+                             </button>
+                           ) : null}
+                           {snap.status === 'published' ? (
+                             <button type="button" className="btn btn--sm btn--danger-ghost" onClick={() => rollbackMutation.mutate(snap.id)} disabled={rollbackMutation.isPending}>
+                               {t('configCenter.rollback')}
+                             </button>
                           ) : null}
                         </div>
                       </td>

@@ -1,5 +1,6 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { AppShell } from '../components/layout/AppShell'
 import { ApiError } from '../lib/http'
 import type { ApprovalRequest } from '../types/recommendation'
@@ -40,6 +41,7 @@ function formatDate(value?: string) {
 }
 
 export function ApprovalsPage() {
+  const { t } = useTranslation()
   const [searchParams] = useSearchParams()
   const initialRecommendationID = searchParams.get('recommendationId') ?? ''
   const initialEnvironment = searchParams.get('environment') ?? initialForm.environment
@@ -63,19 +65,19 @@ export function ApprovalsPage() {
     event.preventDefault()
 
     if (!form.recommendationID.trim() || !form.approvedBy.trim() || !form.scope.trim() || !form.environment.trim()) {
-      setError('请填写推荐、审批人和生效范围信息。')
+      setError(t('approvals.formRequired'))
       setSuccessMessage('')
       return
     }
 
     if (form.decision === 'overridden' && !form.finalModel.trim()) {
-      setError('覆盖决策必须填写最终模型。')
+      setError(t('approvals.overriddenRequiresModel'))
       setSuccessMessage('')
       return
     }
 
     if (form.decision === 'rejected' && !form.approvalReason.trim()) {
-      setError('拒绝决策必须填写审批原因。')
+      setError(t('approvals.rejectedRequiresReason'))
       setSuccessMessage('')
       return
     }
@@ -98,7 +100,7 @@ export function ApprovalsPage() {
         },
       })
 
-      setSuccessMessage(`审批成功：${approval.id}（${form.decision}）`)
+      setSuccessMessage(t('approvals.submitSuccess', { id: approval.id, decision: form.decision }))
       if (form.decision !== 'overridden') {
         setForm((previous) => ({ ...previous, finalModel: '' }))
       }
@@ -108,9 +110,9 @@ export function ApprovalsPage() {
       void recommendationsQuery.refetch()
     } catch (unknownError) {
       if (unknownError instanceof ApiError) {
-        setError(`审批失败：${unknownError.message}`)
+        setError(t('approvals.submitFailed', { message: unknownError.message }))
       } else {
-        setError(unknownError instanceof Error ? unknownError.message : '审批失败')
+        setError(unknownError instanceof Error ? unknownError.message : t('approvals.submitFailedGeneric'))
       }
     } finally {
       setSubmitting(false)
@@ -119,25 +121,25 @@ export function ApprovalsPage() {
 
   return (
     <AppShell
-      title="审批管理"
-      description="对推荐模型执行批准/覆盖/拒绝，产出可追踪的审批记录并刷新推荐队列。"
+      title={t('approvals.title')}
+      description={t('approvals.description')}
     >
       <div className="events-page">
-        {recommendationsQuery.isLoading ? <div className="event-state">正在加载 recommendations…</div> : null}
-        {recommendationsQuery.error ? <div className="config-error">recommendation 列表加载失败，请检查 governance 接口状态。</div> : null}
+        {recommendationsQuery.isLoading ? <div className="event-state">{t('approvals.loading')}</div> : null}
+        {recommendationsQuery.error ? <div className="config-error">{t('approvals.loadError')}</div> : null}
 
         <div className="event-table">
           <table>
             <thead>
               <tr>
-                <th>推荐 ID</th>
-                <th>智能体</th>
-                <th>任务</th>
-                <th>环境</th>
-                <th>推荐模型</th>
-                <th>状态</th>
-                <th>更新时间</th>
-                <th>操作</th>
+                 <th>{t('approvals.colId')}</th>
+                 <th>{t('approvals.colAgent')}</th>
+                 <th>{t('approvals.colTask')}</th>
+                 <th>{t('approvals.colEnvironment')}</th>
+                 <th>{t('approvals.colRecommendedModel')}</th>
+                 <th>{t('approvals.colStatus')}</th>
+                 <th>{t('approvals.colUpdatedAt')}</th>
+                 <th>{t('approvals.colActions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -156,14 +158,14 @@ export function ApprovalsPage() {
                       className="rollouts-action"
                       onClick={() => setForm((previous) => ({ ...previous, recommendationID: item.id }))}
                     >
-                      选择
+                      {t('approvals.select')}
                     </button>
                   </td>
                 </tr>
               ))}
               {recommendations.length === 0 && !recommendationsQuery.isLoading ? (
                 <tr>
-                  <td colSpan={8}>暂无推荐数据</td>
+                  <td colSpan={8}>{t('approvals.noData')}</td>
                 </tr>
               ) : null}
             </tbody>
@@ -173,24 +175,24 @@ export function ApprovalsPage() {
         <form className="release-panel" aria-label="Governance Approval Form" onSubmit={handleSubmit}>
           <div className="release-panel__header">
             <div>
-              <h2>审批控制台</h2>
-              <p>选择推荐后提交决策；覆盖需要指定最终模型，拒绝需要审批理由。</p>
+              <h2>{t('approvals.consoleTitle')}</h2>
+              <p>{t('approvals.consoleDescription')}</p>
             </div>
             <div className="policy-actions">
               {successMessage ? (
                 <Link className="rollouts-action" to={`/policy-versions?environment=${encodeURIComponent(form.environment || 'prod')}`}>
-                  去策略版本页
+                  {t('approvals.goToPolicyVersions')}
                 </Link>
               ) : null}
               <button type="submit" disabled={submitting}>
-                {submitting ? '提交中…' : '提交审批'}
+                {submitting ? t('approvals.submitting') : t('approvals.submitApproval')}
               </button>
             </div>
           </div>
 
           <div className="release-panel__grid">
             <label>
-              推荐 ID
+              {t('approvals.labelRecommendationId')}
               <input
                 value={form.recommendationID}
                 onChange={(event) => setForm((previous) => ({ ...previous, recommendationID: event.target.value }))}
@@ -198,18 +200,18 @@ export function ApprovalsPage() {
               />
             </label>
             <label>
-              决策
+              {t('approvals.labelDecision')}
               <select
                 value={form.decision}
                 onChange={(event) => setForm((previous) => ({ ...previous, decision: event.target.value as ApprovalFormState['decision'] }))}
               >
-                <option value="approved">批准</option>
-                <option value="overridden">覆盖</option>
-                <option value="rejected">拒绝</option>
+                <option value="approved">{t('approvals.decisionApproved')}</option>
+                <option value="overridden">{t('approvals.decisionOverridden')}</option>
+                <option value="rejected">{t('approvals.decisionRejected')}</option>
               </select>
             </label>
             <label>
-              最终模型
+              {t('approvals.labelFinalModel')}
               <input
                 value={form.finalModel}
                 onChange={(event) => setForm((previous) => ({ ...previous, finalModel: event.target.value }))}
@@ -218,7 +220,7 @@ export function ApprovalsPage() {
               />
             </label>
             <label>
-              审批原因
+              {t('approvals.labelApprovalReason')}
               <input
                 value={form.approvalReason}
                 onChange={(event) => setForm((previous) => ({ ...previous, approvalReason: event.target.value }))}
@@ -226,7 +228,7 @@ export function ApprovalsPage() {
               />
             </label>
             <label>
-              审批人
+              {t('approvals.labelApprover')}
               <input
                 value={form.approvedBy}
                 onChange={(event) => setForm((previous) => ({ ...previous, approvedBy: event.target.value }))}
@@ -234,18 +236,18 @@ export function ApprovalsPage() {
               />
             </label>
             <label>
-              作用域
+              {t('approvals.labelScope')}
               <select
                 value={form.scope}
                 onChange={(event) => setForm((previous) => ({ ...previous, scope: event.target.value }))}
               >
-                <option value="agent">智能体</option>
-                <option value="project">项目</option>
-                <option value="tenant">租户</option>
+                <option value="agent">{t('approvals.scopeAgent')}</option>
+                <option value="project">{t('approvals.scopeProject')}</option>
+                <option value="tenant">{t('approvals.scopeTenant')}</option>
               </select>
             </label>
             <label>
-              环境
+              {t('approvals.labelEnvironment')}
               <input
                 value={form.environment}
                 onChange={(event) => setForm((previous) => ({ ...previous, environment: event.target.value }))}
@@ -253,7 +255,7 @@ export function ApprovalsPage() {
               />
             </label>
             <label>
-              项目 ID
+              {t('approvals.labelProjectId')}
               <input
                 value={form.projectID}
                 onChange={(event) => setForm((previous) => ({ ...previous, projectID: event.target.value }))}

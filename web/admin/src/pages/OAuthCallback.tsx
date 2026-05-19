@@ -1,8 +1,10 @@
 import { useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { setUserToken } from '../lib/api/identity'
 
 export function OAuthCallbackPage() {
+  const { t } = useTranslation()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
 
@@ -20,8 +22,8 @@ export function OAuthCallbackPage() {
     <main className="login-page">
       <section className="login-card">
         <div className="login-card__header">
-          <h1>登录中...</h1>
-          <p>正在完成 GitHub 授权，请稍候。</p>
+          <h1>{t('oauth.loggingIn')}</h1>
+          <p>{t('oauth.redirecting')}</p>
         </div>
       </section>
     </main>

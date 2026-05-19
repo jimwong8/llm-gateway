@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AppShell } from '../components/layout/AppShell'
 import { Badge } from '../components/ui/Badge'
@@ -8,6 +9,7 @@ import type { ApiKey } from '../types/identity'
 import { listApiKeys, createApiKey, revokeApiKey } from '../lib/api/identity'
 
 export function ApiKeysPage() {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [showNewKey, setShowNewKey] = useState<string | null>(null)
   const [keyName, setKeyName] = useState('default')
@@ -35,13 +37,13 @@ export function ApiKeysPage() {
   const keys = data?.data ?? []
 
   return (
-    <AppShell title="API 密钥管理" description="管理你的个人 API 密钥，用于访问 LLM Gateway 服务。">
+    <AppShell title={t('apiKeys.pageTitle')} description={t('apiKeys.pageDescription')}>
       <div className="channels-page">
         <div className="channels-toolbar" style={{ marginBottom: '1rem' }}>
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
             <input
               type="text"
-              placeholder="密钥名称"
+              placeholder={t('apiKeys.namePlaceholder')}
               value={keyName}
               onChange={(e) => setKeyName(e.target.value)}
               style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid #e2e8f0', minWidth: '200px' }}
@@ -52,7 +54,7 @@ export function ApiKeysPage() {
               disabled={createMutation.isPending}
               onClick={() => createMutation.mutate(keyName)}
             >
-              {createMutation.isPending ? '生成中...' : '创建新密钥'}
+              {createMutation.isPending ? t('apiKeys.creating') : t('apiKeys.createNew')}
             </button>
           </div>
         </div>
@@ -60,7 +62,7 @@ export function ApiKeysPage() {
         {showNewKey && (
           <div className="page-surface" style={{ marginBottom: '1rem', padding: '1rem', border: '1px solid #22c55e' }}>
             <p style={{ marginBottom: '0.5rem', fontWeight: 600, color: '#166534' }}>
-              新密钥已创建 — 请立即复制，关闭后将不再显示：
+              {t('apiKeys.newKeyCreated')}
             </p>
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
               <code style={{
@@ -74,7 +76,7 @@ export function ApiKeysPage() {
                 className="btn btn--sm btn--primary"
                 onClick={() => { navigator.clipboard.writeText(showNewKey); setShowNewKey(null) }}
               >
-                已复制
+                {t('apiKeys.copied')}
               </button>
             </div>
           </div>
@@ -83,22 +85,22 @@ export function ApiKeysPage() {
         {isLoading ? (
           <TableSkeleton rows={5} />
         ) : keys.length === 0 ? (
-          <EmptyState title="暂无 API 密钥" description="点击「创建新密钥」生成第一个密钥。" />
+          <EmptyState title={t('apiKeys.emptyTitle')} description={t('apiKeys.emptyDescription')} />
         ) : (
           <table className="channels-table">
             <thead>
-              <tr>
-                <th>名称</th>
-                <th>前缀</th>
-                <th>状态</th>
-                <th>RPM 限制</th>
-                <th>请求数</th>
-                <th>总 Token</th>
-                <th>总费用</th>
-                <th>平均延迟</th>
-                <th>最近使用</th>
-                <th>操作</th>
-              </tr>
+            <tr>
+                 <th>{t('apiKeys.name')}</th>
+                 <th>{t('apiKeys.prefix')}</th>
+                 <th>{t('apiKeys.status')}</th>
+                 <th>{t('apiKeys.rpmLimit')}</th>
+                 <th>{t('apiKeys.requests')}</th>
+                 <th>{t('apiKeys.totalTokens')}</th>
+                 <th>{t('apiKeys.totalCost')}</th>
+                 <th>{t('apiKeys.avgLatency')}</th>
+                 <th>{t('apiKeys.lastUsed')}</th>
+                 <th>{t('apiKeys.actions')}</th>
+               </tr>
             </thead>
             <tbody>
               {keys.map((key) => (
@@ -112,7 +114,7 @@ export function ApiKeysPage() {
                   <td style={{ fontSize: '0.85rem' }}>{key.usage ? `$${key.usage.total_cost.toFixed(4)}` : '-'}</td>
                   <td style={{ fontSize: '0.85rem' }}>{key.usage ? `${key.usage.avg_latency_ms.toFixed(0)}ms` : '-'}</td>
                   <td style={{ color: '#94a3b8', fontSize: '0.85rem' }}>
-                    {key.last_used_at ? new Date(key.last_used_at).toLocaleString('zh-CN') : '从未使用'}
+                    {key.last_used_at ? new Date(key.last_used_at).toLocaleString('zh-CN') : t('apiKeys.neverUsed')}
                   </td>
                   <td>
                     <button
@@ -120,12 +122,12 @@ export function ApiKeysPage() {
                       className="btn btn--sm btn--danger-ghost"
                       disabled={revokeMutation.isPending}
                       onClick={() => {
-                        if (confirm(`确认吊销密钥「${key.name}」(ID: ${key.id})？`)) {
+                        if (confirm(t('apiKeys.confirmRevoke', { name: key.name, id: key.id }))) {
                           revokeMutation.mutate(key.id)
                         }
                       }}
                     >
-                      吊销
+                      {t('apiKeys.revoke')}
                     </button>
                   </td>
                 </tr>

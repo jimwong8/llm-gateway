@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { ChatMessage } from '../types/chat'
 import { listSessions, getSession, createSession, deleteSession, streamChat } from '../lib/api/chat'
 import { ChatSidebar } from '../components/chat/ChatSidebar'
@@ -7,6 +8,7 @@ import { ChatInput } from '../components/chat/ChatInput'
 import type { ChatSession } from '../types/chat'
 
 export function ChatPage() {
+  const { t } = useTranslation()
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [activeId, setActiveId] = useState<number | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -44,7 +46,7 @@ export function ChatPage() {
 
   const handleNew = useCallback(async () => {
     try {
-      const session = await createSession({ title: '新对话', model: 'gpt-4o-mini' })
+      const session = await createSession({ title: t('chat.newChat'), model: 'gpt-4o-mini' })
       setSessions((prev) => [session, ...prev])
       loadSession(session.id)
     } catch {
@@ -122,7 +124,7 @@ export function ChatPage() {
       />
       <div className="chat-main">
         {!activeId ? (
-          <div className="chat-empty">选择或创建一个会话开始对话</div>
+          <div className="chat-empty">{t('chat.selectOrCreate')}</div>
         ) : (
           <>
             <div className="chat-messages">
@@ -133,7 +135,7 @@ export function ChatPage() {
                 <div className="chat-message chat-message--assistant">
                   <div className="chat-message-header">
                     <strong>AI</strong>
-                    <span className="chat-message-model">流式输出</span>
+                    <span className="chat-message-model">{t('chat.streaming')}</span>
                   </div>
                   <div className="chat-message-content">{streamingContent}</div>
                 </div>
