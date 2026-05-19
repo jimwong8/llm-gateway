@@ -1,1 +1,0 @@
-import{j as s}from"./vendor-query-CFCvUePQ.js";const g={default:"badge badge--default",success:"badge badge--success",warning:"badge badge--warning",danger:"badge badge--danger",info:"badge badge--info"};function t({children:a,variant:e="default",className:d=""}){return s.jsx("span",{className:`${g[e]} ${d}`.trim(),children:a})}export{t as B};

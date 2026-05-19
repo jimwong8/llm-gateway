@@ -139,7 +139,7 @@ RETURNING id, user_id, name, pattern, replace_with, is_active, created_at`,
 func (s *sqlPresetStore) ListMaskRules(ctx context.Context, userID int64, tenantID string) ([]MaskRule, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id, user_id, name, pattern, replace_with, is_active, created_at
-FROM mask_rules WHERE user_id=$1 AND is_active=TRUE ORDER BY created_at DESC`, userID)
+FROM mask_rules WHERE user_id=$1 ORDER BY created_at DESC`, userID)
 	if err != nil {
 		return nil, err
 	}

@@ -95,6 +95,15 @@ func (s *Server) userCostTrend(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": trend, "days": days})
 }
 
+func (s *Server) WithUsageLogStore(store usageLogStore) *Server {
+	s.usageLogStore = store
+	return s
+}
+
+func NewSQLUsageLogStore(db *sql.DB) usageLogStore {
+	return &sqlUsageLogStore{db: db}
+}
+
 type sqlUsageLogStore struct {
 	db *sql.DB
 }

@@ -117,6 +117,14 @@ export function Topbar({ onToggleNavigation }: { onToggleNavigation: () => void 
       </div>
       <div className="topbar__right">
         <span className="env-badge">环境: Local</span>
+        <button
+          type="button"
+          onClick={handleLogout}
+          style={{ background: 'transparent', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '4px 10px', cursor: 'pointer', fontSize: '13px', color: 'var(--text-primary)', marginLeft: '12px' }}
+          aria-label="退出登录"
+        >
+          退出
+        </button>
         <div className="topbar__user" style={{ position: 'relative', marginLeft: '12px' }}>
           <button
             type="button"

@@ -217,6 +217,12 @@ func main() {
 	}
 	if memoryStore != nil {
 		srv = srv.WithMemoryAdminHandler(httpserver.NewMemoryAdminHandler(memoryStore))
+		if db, err := sql.Open("postgres", cfg.PostgresDSN); err != nil {
+			slog.Warn("preset store init failed", "err", err)
+		} else {
+			srv = srv.WithPresetStore(memory.NewPresetStore(db))
+			srv = srv.WithUsageLogStore(httpserver.NewSQLUsageLogStore(db))
+		}
 	}
 	if cfg.ModelGovernanceEnabled && governanceStore != nil {
 		modelGovernanceHandler := httpserver.NewModelGovernanceHandler().
