@@ -288,12 +288,12 @@ describe('MemoryGovernancePage', () => {
     await user.click(screen.getByRole('checkbox', { name: '选择候选事实 repo' }))
     await user.click(screen.getByRole('button', { name: '批量确认' }))
 
-    expect(screen.getByRole('dialog', { name: 'Batch Action Confirmation' })).toBeTruthy()
+    expect(screen.getByRole('dialog', { name: '确认批量确认' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: '确认批量确认' })).toBeTruthy()
     expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2)
 
     await user.click(screen.getByRole('button', { name: '取消' }))
-    expect(screen.queryByRole('dialog', { name: 'Batch Action Confirmation' })).toBeNull()
+    expect(screen.queryByRole('dialog', { name: '确认批量确认' })).toBeNull()
     expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2)
 
     await user.click(screen.getByRole('button', { name: '批量确认' }))

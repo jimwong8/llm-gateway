@@ -1,5 +1,6 @@
 import type { FormEvent } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { AppShell } from '../components/layout/AppShell'
 import { ApiError } from '../lib/http'
@@ -57,6 +58,7 @@ function formatDate(value?: string) {
   if (!value) {
     return '—'
   }
+
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) {
     return value
@@ -71,14 +73,14 @@ function buildActionPayload(filters: MemoryFactFilters, row: MemoryCandidateFact
   }
 }
 
-function actionLabel(action: MemoryFactAction) {
+function actionLabel(action: MemoryFactAction, t?: (key: string) => string) {
   switch (action) {
     case 'confirm':
-      return '确认'
+      return t ? t('memory.actionConfirm') : '确认'
     case 'reject':
-      return '拒绝'
+      return t ? t('memory.actionReject') : '拒绝'
     case 'promote':
-      return '提升'
+      return t ? t('memory.actionPromote') : '提升'
     default:
       return action
   }
@@ -221,8 +223,8 @@ function buildBatchActionSummary(result: MemoryCandidateFactBatchActionResult) {
   return `${result.fact_key}→${status}`
 }
 
-function buildBatchActionFailure(result: MemoryCandidateFactBatchActionResult) {
-  const message = result.error?.message?.trim() || '操作失败'
+function buildBatchActionFailure(result: MemoryCandidateFactBatchActionResult, t: (key: string) => string) {
+  const message = result.error?.message?.trim() || t('memory.actionFailed')
   return `${result.fact_key}：${message}`
 }
 
@@ -233,16 +235,17 @@ function openBatchConfirmation(
   setActionSuccess: (value: string) => void,
   setPendingBatchAction: (value: MemoryFactAction | null) => void,
   setPendingBatchFacts: (value: MemoryCandidateFact[]) => void,
+  t: (key: string) => string,
 ) {
   if (facts.length === 0) {
-    setActionError('请先在当前可见候选事实中选择至少一条记录。')
+    setActionError(t('memory.batchSelectRequired'))
     setActionSuccess('')
     return
   }
 
   const actionableRows = facts.filter((row) => isActionAllowed(row.status, action))
   if (actionableRows.length === 0) {
-    setActionError(`当前可见选中条目中没有可${actionLabel(action)}的候选事实。`)
+    setActionError(t('memory.batchNoActionable', { action: actionLabel(action, t) }))
     setActionSuccess('')
     return
   }
@@ -273,6 +276,7 @@ function buildPaginationSummary(total: number, page: number, pageSize: number): 
 }
 
 export function MemoryGovernancePage() {
+  const { t } = useTranslation()
   const [activeTab, setActiveTab] = useState<'governance' | 'search'>('governance')
   const [draftFilters, setDraftFilters] = useState<MemoryFactFilters>(initialFilters)
   const [draftCandidateStatus, setDraftCandidateStatus] = useState('')
@@ -396,7 +400,7 @@ export function MemoryGovernancePage() {
   const someVisibleSelected = pagedCandidateFacts.some((row) => selectedCandidateKeySet.has(candidateRowKey(row)))
 
   const pendingBatchCount = pendingBatchFacts.length
-  const pendingBatchLabel = pendingBatchAction ? actionLabel(pendingBatchAction) : ''
+  const pendingBatchLabel = pendingBatchAction ? actionLabel(pendingBatchAction, t) : ''
 
   const metrics = useMemo(() => {
     const totalCandidates = candidateFacts.length
@@ -499,7 +503,7 @@ export function MemoryGovernancePage() {
   async function handleSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!searchQuery.trim()) {
-      setSearchError('请输入检索内容')
+      setSearchError(t('memory.searchRequired'))
       return
     }
     setSearchLoading(true)
@@ -517,7 +521,7 @@ export function MemoryGovernancePage() {
       if (unknownError instanceof ApiError) {
         setSearchError(unknownError.message)
       } else {
-        setSearchError(unknownError instanceof Error ? unknownError.message : '检索失败')
+        setSearchError(unknownError instanceof Error ? unknownError.message : t('memory.searchFailed'))
       }
       setSearchResults([])
     } finally {
@@ -552,14 +556,14 @@ export function MemoryGovernancePage() {
 
     try {
       const response = await submitMemoryCandidateFactAction(row.fact_key, action, buildActionPayload(candidateFilters, row))
-      setActionSuccess(`已${actionLabel(action)}事实：${response.fact_key}（当前状态：${response.status}）`)
+      setActionSuccess(t('memory.actionSuccess', { action: actionLabel(action, t), factKey: response.fact_key, status: response.status }))
       setSelectedFact({ kind: 'candidate', fact: response })
       await Promise.all([candidateFactsQuery.refetch(), projectFactsQuery.refetch()])
     } catch (unknownError) {
       if (unknownError instanceof ApiError) {
-        setActionError(`操作失败：${unknownError.message}`)
+        setActionError(t('memory.actionFailedDetail', { message: unknownError.message }))
       } else {
-        setActionError(unknownError instanceof Error ? unknownError.message : '操作失败')
+        setActionError(unknownError instanceof Error ? unknownError.message : t('memory.actionFailed'))
       }
     } finally {
       setActionSubmitting((previous) => ({ ...previous, [actionKey]: false }))
@@ -575,13 +579,13 @@ export function MemoryGovernancePage() {
     }
 
     if (selectedVisibleCandidateFacts.length === 0) {
-      setActionError('请先在当前可见候选事实中选择至少一条记录。')
+      setActionError(t('memory.batchSelectRequired'))
       setActionSuccess('')
       return
     }
 
     if (actionableRows.length === 0) {
-      setActionError(`当前可见选中条目中没有可${actionLabel(action)}的候选事实。`)
+      setActionError(t('memory.batchNoActionable', { action: actionLabel(action, t) }))
       setActionSuccess('')
       return
     }
@@ -615,15 +619,29 @@ export function MemoryGovernancePage() {
 
       if (successResults.length > 0) {
         const successPreview = successResults.slice(0, 3).map(buildBatchActionSummary).join('；')
+        const hasMoreSuccess = successResults.length > 3 ? ' 等' : ''
+        const failurePart = failureResults.length > 0 ? `，失败 ${failureResults.length} 条` : ''
         setActionSuccess(
-          `批量${actionLabel(action)}完成：成功 ${successResults.length} 条${failureResults.length > 0 ? `，失败 ${failureResults.length} 条` : ''}。${successPreview}${successResults.length > 3 ? ' 等' : ''}`,
+          t('memory.batchSuccess', {
+            action: actionLabel(action, t),
+            successCount: successResults.length,
+            failureCount: failureResults.length,
+            preview: successPreview,
+            failurePart,
+            hasMore: hasMoreSuccess,
+          }),
         )
         latestSelectedFact = successResults[successResults.length - 1]?.fact ?? null
       }
 
       if (failureResults.length > 0) {
-        const failurePreview = failureResults.slice(0, 3).map(buildBatchActionFailure).join('；')
-        setActionError(`批量${actionLabel(action)}存在失败：${failurePreview}${failureResults.length > 3 ? ' 等' : ''}`)
+        const failurePreview = failureResults.slice(0, 3).map((r) => buildBatchActionFailure(r, t)).join('；')
+        const hasMoreFailure = failureResults.length > 3 ? ' 等' : ''
+        setActionError(t('memory.batchPartialFailure', {
+          action: actionLabel(action, t),
+          preview: failurePreview,
+          hasMore: hasMoreFailure,
+        }))
       }
 
       if (latestSelectedFact) {
@@ -634,9 +652,9 @@ export function MemoryGovernancePage() {
       await Promise.all([candidateFactsQuery.refetch(), projectFactsQuery.refetch()])
     } catch (unknownError) {
       if (unknownError instanceof ApiError) {
-        setActionError(`批量操作失败：${unknownError.message}`)
+        setActionError(t('memory.batchFailedDetail', { message: unknownError.message }))
       } else {
-        setActionError(unknownError instanceof Error ? unknownError.message : '批量操作失败')
+        setActionError(unknownError instanceof Error ? unknownError.message : t('memory.batchFailed'))
       }
     } finally {
       setBatchActionSubmitting(null)
@@ -645,29 +663,29 @@ export function MemoryGovernancePage() {
 
   return (
     <AppShell
-      title="记忆治理"
-      description="查看候选事实与项目事实，按租户/用户/状态过滤，并直接确认、拒绝或提升候选事实。"
+      title={t('memory.pageTitle')}
+      description={t('memory.pageDescription')}
     >
       <div className="events-page">
-        <form className="config-filters" aria-label="记忆治理筛选" onSubmit={handleSubmit}>
+        <form className="config-filters" aria-label={t('memory.filterLabel')} onSubmit={handleSubmit}>
           <label>
-            租户 ID
+            {t('memory.tenantId')}
             <input
               value={draftFilters.tenant_id}
               onChange={(event) => setDraftFilters((previous) => ({ ...previous, tenant_id: event.target.value }))}
-              placeholder="租户-a"
+              placeholder={t('memory.tenantPlaceholder')}
             />
           </label>
           <label>
-            用户 ID
+            {t('memory.userId')}
             <input
               value={draftFilters.user_id}
               onChange={(event) => setDraftFilters((previous) => ({ ...previous, user_id: event.target.value }))}
-              placeholder="用户-1"
+              placeholder={t('memory.userPlaceholder')}
             />
           </label>
           <label>
-            候选状态
+            {t('memory.candidateStatus')}
             <select value={draftCandidateStatus} onChange={(event) => setDraftCandidateStatus(event.target.value)}>
               {candidateStatuses.map((status) => (
                 <option key={status || 'all'} value={status}>
@@ -677,7 +695,7 @@ export function MemoryGovernancePage() {
             </select>
           </label>
           <label>
-            项目状态
+            {t('memory.projectStatus')}
             <select value={draftProjectStatus} onChange={(event) => setDraftProjectStatus(event.target.value)}>
               {projectStatuses.map((status) => (
                 <option key={status || 'all'} value={status}>
@@ -687,14 +705,14 @@ export function MemoryGovernancePage() {
             </select>
           </label>
           <div className="config-filters__actions">
-            <button type="submit">刷新记忆事实</button>
+            <button type="submit">{t('memory.refreshFacts')}</button>
             <button type="button" className="rollouts-action" onClick={handleResetFilters}>
-              重置筛选
+              {t('memory.resetFilters')}
             </button>
           </div>
         </form>
 
-        <div className="memory-governance__tabs" role="tablist" aria-label="记忆治理功能切换">
+        <div className="memory-governance__tabs" role="tablist" aria-label={t('memory.tabSwitchLabel')}>
           <button
             type="button"
             role="tab"
@@ -702,7 +720,7 @@ export function MemoryGovernancePage() {
             className={`memory-governance__tab ${activeTab === 'governance' ? 'memory-governance__tab--active' : ''}`}
             onClick={() => setActiveTab('governance')}
           >
-            治理面板
+            {t('memory.tabGovernance')}
           </button>
           <button
             type="button"
@@ -711,21 +729,21 @@ export function MemoryGovernancePage() {
             className={`memory-governance__tab ${activeTab === 'search' ? 'memory-governance__tab--active' : ''}`}
             onClick={() => setActiveTab('search')}
           >
-            检索测试
+            {t('memory.tabSearch')}
           </button>
         </div>
 
         {activeTab === 'governance' ? (
         <>
-        {candidateFactsQuery.isLoading || projectFactsQuery.isLoading ? <div className="event-state">正在加载记忆事实…</div> : null}
-        {candidateFactsQuery.error ? <div className="config-error">候选事实加载失败，请检查记忆管理接口状态。</div> : null}
-        {projectFactsQuery.error ? <div className="config-error">项目事实加载失败，请检查记忆管理接口状态。</div> : null}
+        {candidateFactsQuery.isLoading || projectFactsQuery.isLoading ? <div className="event-state">{t('memory.loadingFacts')}</div> : null}
+        {candidateFactsQuery.error ? <div className="config-error">{t('memory.candidateLoadError')}</div> : null}
+        {projectFactsQuery.error ? <div className="config-error">{t('memory.projectLoadError')}</div> : null}
         {actionError ? <div className="config-error">{actionError}</div> : null}
         {actionSuccess ? (
           <div className="event-state memory-governance__feedback" role="status" aria-live="polite">
-            <strong>最近操作</strong>
+            <strong>{t('memory.recentAction')}</strong>
             <div>{actionSuccess}</div>
-            <div>候选事实与项目事实列表已自动刷新，可直接继续审阅下一条。</div>
+            <div>{t('memory.autoRefreshed')}</div>
           </div>
         ) : null}
         </>
@@ -733,34 +751,34 @@ export function MemoryGovernancePage() {
 
         {activeTab === 'search' ? (
         <div className="memory-governance__search-panel">
-          <form className="config-filters" aria-label="Hybrid Search 检索测试" onSubmit={handleSearch}>
+          <form className="config-filters" aria-label={t('memory.searchFormLabel')} onSubmit={handleSearch}>
             <label>
-              检索内容
+              {t('memory.searchContent')}
               <input
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="输入自然语言查询，例如：用户的技术栈偏好"
+                placeholder={t('memory.searchPlaceholder')}
               />
             </label>
             <label>
-              租户 ID
+              {t('memory.tenantId')}
               <input
                 value={searchTenantId}
                 onChange={(event) => setSearchTenantId(event.target.value)}
-                placeholder="可选，限定租户范围"
+                placeholder={t('memory.optionalTenantScope')}
               />
             </label>
             <label>
-              用户 ID
+              {t('memory.userId')}
               <input
                 value={searchUserId}
                 onChange={(event) => setSearchUserId(event.target.value)}
-                placeholder="可选，限定用户范围"
+                placeholder={t('memory.optionalUserScope')}
               />
             </label>
             <div className="config-filters__actions">
               <button type="submit" disabled={searchLoading}>
-                {searchLoading ? '检索中…' : '检索'}
+                {searchLoading ? t('memory.searching') : t('memory.searchAction')}
               </button>
               <button
                 type="button"
@@ -774,7 +792,7 @@ export function MemoryGovernancePage() {
                   setSearchSubmitted(false)
                 }}
               >
-                清空
+                {t('memory.clear')}
               </button>
             </div>
           </form>
@@ -782,28 +800,28 @@ export function MemoryGovernancePage() {
           {searchError ? <div className="config-error">{searchError}</div> : null}
 
           {searchLoading ? (
-            <div className="event-state">正在执行 Hybrid Search…</div>
+            <div className="event-state">{t('memory.hybridSearching')}</div>
           ) : null}
 
           {!searchLoading && searchSubmitted && searchResults.length === 0 && !searchError ? (
-            <div className="event-state">未找到匹配的记忆片段，请调整查询内容或放宽筛选条件。</div>
+            <div className="event-state">{t('memory.noSearchResults')}</div>
           ) : null}
 
           {!searchLoading && searchResults.length > 0 ? (
-            <section className="event-table" aria-label="Hybrid Search 结果">
+            <section className="event-table" aria-label={t('memory.searchResultsLabel')}>
               <div className="memory-governance__search-summary">
-                检索到 <strong>{searchResults.length}</strong> 条结果
+                {t('memory.searchResultCount', { count: searchResults.length })}
               </div>
               <table>
                 <thead>
                   <tr>
-                    <th className="memory-governance__rank-cell">排名</th>
-                    <th>内容</th>
-                    <th className="memory-governance__score-cell">分数</th>
-                    <th>来源</th>
-                    <th>事实键</th>
-                    <th>租户</th>
-                    <th>用户</th>
+                    <th className="memory-governance__rank-cell">{t('memory.rank')}</th>
+                    <th>{t('memory.content')}</th>
+                    <th className="memory-governance__score-cell">{t('memory.score')}</th>
+                    <th>{t('memory.source')}</th>
+                    <th>{t('memory.factKey')}</th>
+                    <th>{t('memory.tenant')}</th>
+                    <th>{t('memory.user')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -837,53 +855,65 @@ export function MemoryGovernancePage() {
           <>
             <div className="summary-card-grid">
               <section className="summary-card">
-                <span>候选事实</span>
+                <span>{t('memory.candidateFacts')}</span>
                 <strong>{metrics.totalCandidates}</strong>
               </section>
               <section className="summary-card">
-                <span>待处理</span>
+                <span>{t('memory.pending')}</span>
                 <strong>{metrics.pendingCandidates}</strong>
               </section>
               <section className="summary-card">
-                <span>已确认</span>
+                <span>{t('memory.confirmed')}</span>
                 <strong>{metrics.confirmedCandidates}</strong>
               </section>
               <section className="summary-card">
-                <span>已提升</span>
+                <span>{t('memory.promoted')}</span>
                 <strong>{metrics.promotedCandidates}</strong>
-                <small>已拒绝 {metrics.rejectedCandidates}</small>
+                <small>{t('memory.rejectedCount', { count: metrics.rejectedCandidates })}</small>
               </section>
             </div>
 
             <div className="summary-card-grid">
               <section className="summary-card">
-                <span>项目事实</span>
+                <span>{t('memory.projectFacts')}</span>
                 <strong>{metrics.totalProjectFacts}</strong>
               </section>
               <section className="summary-card">
-                <span>活跃项目事实</span>
+                <span>{t('memory.activeProjectFacts')}</span>
                 <strong>{metrics.activeProjectFacts}</strong>
               </section>
               <section className="summary-card">
-                <span>已取代的事实</span>
+                <span>{t('memory.supersededFacts')}</span>
                 <strong>{metrics.supersededProjectFacts}</strong>
               </section>
               <section className="summary-card">
-                <span>当前筛选</span>
-                <strong>{candidateFilters.tenant_id || '全部租户'}</strong>
+                <span>{t('memory.currentFilter')}</span>
+                <strong>{candidateFilters.tenant_id || t('memory.allTenants')}</strong>
                 <small>
-                  用户 {candidateFilters.user_id || '全部用户'} · 候选 {candidateFilters.status || '全部'} · 项目 {projectFilters.status || '全部'}
+                  {t('memory.filterSummary', {
+                    user: candidateFilters.user_id || t('memory.allUsers'),
+                    candidate: candidateFilters.status || t('memory.all'),
+                    project: projectFilters.status || t('memory.all'),
+                  })}
                 </small>
               </section>
             </div>
 
             <div className="memory-governance__content">
               <div className="memory-governance__candidate-panel">
-                <section className="event-state memory-governance__batch-toolbar" aria-label="候选事实批量操作">
+                <section className="event-state memory-governance__batch-toolbar" aria-label={t('memory.batchOperations')}>
                       <div>
-                        <strong>批量操作</strong>
+                        <strong>{t('memory.batch')}</strong>
                         <div>
-                          已选当前可见 {selectedVisibleCandidateFacts.length} / {pagedCandidateFacts.length} · 本地筛选 {filteredCandidateFacts.length} · 已拉取 {candidateFacts.length} · 可确认 {selectedCandidateMetrics.confirm} · 可拒绝 {selectedCandidateMetrics.reject} · 可提升 {selectedCandidateMetrics.promote}
+                          {t('memory.batchSummary', {
+                            selected: selectedVisibleCandidateFacts.length,
+                            total: pagedCandidateFacts.length,
+                            filtered: filteredCandidateFacts.length,
+                            fetched: candidateFacts.length,
+                            confirmable: selectedCandidateMetrics.confirm,
+                            rejectable: selectedCandidateMetrics.reject,
+                            promotable: selectedCandidateMetrics.promote,
+                          })}
                     </div>
                   </div>
                   <div className="policy-actions">
@@ -898,11 +928,12 @@ export function MemoryGovernancePage() {
                           setActionSuccess,
                           setPendingBatchAction,
                           setPendingBatchFacts,
+                          t,
                         )
                       }
                       disabled={batchActionSubmitting !== null || selectedCandidateMetrics.confirm === 0}
                     >
-                      {batchActionSubmitting === 'confirm' ? '批量确认中…' : '批量确认'}
+                      {batchActionSubmitting === 'confirm' ? t('memory.batchConfirming') : t('memory.batchConfirm')}
                     </button>
                     <button
                       type="button"
@@ -915,11 +946,12 @@ export function MemoryGovernancePage() {
                           setActionSuccess,
                           setPendingBatchAction,
                           setPendingBatchFacts,
+                          t,
                         )
                       }
                       disabled={batchActionSubmitting !== null || selectedCandidateMetrics.reject === 0}
                     >
-                      {batchActionSubmitting === 'reject' ? '批量拒绝中…' : '批量拒绝'}
+                      {batchActionSubmitting === 'reject' ? t('memory.batchRejecting') : t('memory.batchReject')}
                     </button>
                     <button
                       type="button"
@@ -932,27 +964,28 @@ export function MemoryGovernancePage() {
                           setActionSuccess,
                           setPendingBatchAction,
                           setPendingBatchFacts,
+                          t,
                         )
                       }
                       disabled={batchActionSubmitting !== null || selectedCandidateMetrics.promote === 0}
                     >
-                      {batchActionSubmitting === 'promote' ? '批量提升中…' : '批量提升'}
+                      {batchActionSubmitting === 'promote' ? t('memory.batchPromoting') : t('memory.batchPromote')}
                     </button>
                   </div>
                 </section>
 
-                <section className="event-state memory-governance__table-toolbar" aria-label="候选事实本地控制">
+                <section className="event-state memory-governance__table-toolbar" aria-label={t('memory.candidateLocalControl')}>
                   <div className="memory-governance__table-toolbar-fields">
                     <label>
-                      本地搜索
+                      {t('memory.localSearch')}
                       <input
                         value={candidateLocalQuery}
                         onChange={(event) => setCandidateLocalQuery(event.target.value)}
-                        placeholder="搜索键值/来源/租户/用户/状态"
+                        placeholder={t('memory.localSearchPlaceholder')}
                       />
                     </label>
                     <label>
-                       每页条数
+                      {t('memory.pageSize')}
                       <select value={String(candidatePageSize)} onChange={(event) => setCandidatePageSize(Number(event.target.value))}>
                         {pageSizeOptions.map((size) => (
                           <option key={size} value={size}>
@@ -963,14 +996,19 @@ export function MemoryGovernancePage() {
                     </label>
                   </div>
                   <div className="memory-governance__scope-summary">
-                    <strong>当前可见范围</strong>
+                    <strong>{t('memory.visibleScope')}</strong>
                     <span>
-                      显示第 {candidatePagination.start}-{candidatePagination.end} 条，共 {candidatePagination.total} 条本地筛选结果（后端已拉取 {candidateFacts.length} 条）。
+                      {t('memory.scopeSummary', {
+                        start: candidatePagination.start,
+                        end: candidatePagination.end,
+                        total: candidatePagination.total,
+                        fetched: candidateFacts.length,
+                      })}
                     </span>
                   </div>
                 </section>
 
-                <section className="event-table" aria-label="候选事实表">
+                <section className="event-table" aria-label={t('memory.candidateTable')}>
                   <table>
                     <thead>
                       <tr>
@@ -980,13 +1018,13 @@ export function MemoryGovernancePage() {
                             type="checkbox"
                             checked={allVisibleSelected}
                             onChange={(event) => handleToggleSelectAllVisible(event.target.checked)}
-                            aria-label="选择当前可见候选事实"
+                            aria-label={t('memory.selectAllVisible')}
                           />
                         </th>
-                        <th>事实键</th>
-                        <th>值</th>
-                        <th>租户</th>
-                        <th>用户</th>
+                        <th>{t('memory.factKeyHeader')}</th>
+                        <th>{t('memory.value')}</th>
+                        <th>{t('memory.tenant')}</th>
+                        <th>{t('memory.user')}</th>
                         <th>
                           <button
                             type="button"
@@ -997,11 +1035,11 @@ export function MemoryGovernancePage() {
                               setCandidateSortField('status')
                             }}
                           >
-                            状态 {sortIndicator(candidateSortField, candidateSortDirection, 'status')}
+                            {t('memory.status')} {sortIndicator(candidateSortField, candidateSortDirection, 'status')}
                           </button>
                         </th>
-                        <th>确认次数</th>
-                        <th>来源序号</th>
+                        <th>{t('memory.confirmCount')}</th>
+                        <th>{t('memory.sourceSeq')}</th>
                         <th>
                           <button
                             type="button"
@@ -1012,10 +1050,10 @@ export function MemoryGovernancePage() {
                               setCandidateSortField('updated_at')
                             }}
                           >
-                            更新时间 {sortIndicator(candidateSortField, candidateSortDirection, 'updated_at')}
+                            {t('memory.updatedAt')} {sortIndicator(candidateSortField, candidateSortDirection, 'updated_at')}
                           </button>
                         </th>
-                        <th>操作</th>
+                        <th>{t('memory.actions')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1037,14 +1075,14 @@ export function MemoryGovernancePage() {
                                 checked={selectedCandidateKeySet.has(rowKey)}
                                 onChange={(event) => handleToggleCandidateSelection(row, event.target.checked)}
                                 onClick={(event) => event.stopPropagation()}
-                                aria-label={`选择候选事实 ${row.fact_key}`}
+                                 aria-label={t('memory.selectCandidate', { key: row.fact_key })}
                               />
                             </td>
                             <td>{row.fact_key}</td>
                             <td>
                               <div className="memory-fact-cell">
                                 <strong>{row.fact_value}</strong>
-                                <small>{row.source_text || '无来源摘录'}</small>
+                                <small>{row.source_text || t('memory.noSourceExcerpt')}</small>
                               </div>
                             </td>
                             <td>{row.tenant_id || '—'}</td>
@@ -1052,13 +1090,13 @@ export function MemoryGovernancePage() {
                             <td>
                               <div className="memory-fact-cell">
                                 <span className={`status-pill ${row.status}`}>{row.status}</span>
-                                <small>最近更新：{formatDate(row.updated_at)}</small>
+                                <small>{t('memory.lastUpdated', { date: formatDate(row.updated_at) })}</small>
                               </div>
                             </td>
                             <td>
                               <div className="memory-fact-cell memory-fact-cell--compact">
                                 <strong>{row.confirmation_count}</strong>
-                                <small>来源序号：{row.source_message_seq}</small>
+                                <small>{t('memory.sourceSeqLabel', { seq: row.source_message_seq })}</small>
                               </div>
                             </td>
                             <td>{row.source_message_seq}</td>
@@ -1073,9 +1111,9 @@ export function MemoryGovernancePage() {
                                     void handleCandidateAction(row, 'confirm')
                                   }}
                                   disabled={!isActionAllowed(row.status, 'confirm') || Boolean(actionSubmitting[confirmKey]) || batchActionSubmitting !== null}
-                                  title={isActionAllowed(row.status, 'confirm') ? '' : '仅 pending 状态支持确认'}
+                                  title={isActionAllowed(row.status, 'confirm') ? '' : t('memory.onlyPendingConfirm')}
                                 >
-                                  {actionSubmitting[confirmKey] ? '确认中…' : '确认'}
+                                  {actionSubmitting[confirmKey] ? t('memory.confirming') : t('memory.confirm')}
                                 </button>
                                 <button
                                   type="button"
@@ -1085,9 +1123,9 @@ export function MemoryGovernancePage() {
                                     void handleCandidateAction(row, 'reject')
                                   }}
                                   disabled={!isActionAllowed(row.status, 'reject') || Boolean(actionSubmitting[rejectKey]) || batchActionSubmitting !== null}
-                                  title={isActionAllowed(row.status, 'reject') ? '' : '仅 pending / confirmed 状态支持拒绝'}
+                                  title={isActionAllowed(row.status, 'reject') ? '' : t('memory.onlyPendingConfirmedReject')}
                                 >
-                                  {actionSubmitting[rejectKey] ? '拒绝中…' : '拒绝'}
+                                  {actionSubmitting[rejectKey] ? t('memory.rejecting') : t('memory.reject')}
                                 </button>
                                 <button
                                   type="button"
@@ -1097,9 +1135,9 @@ export function MemoryGovernancePage() {
                                     void handleCandidateAction(row, 'promote')
                                   }}
                                   disabled={!isActionAllowed(row.status, 'promote') || Boolean(actionSubmitting[promoteKey]) || batchActionSubmitting !== null}
-                                  title={isActionAllowed(row.status, 'promote') ? '' : '仅 confirmed 状态支持提升'}
+                                  title={isActionAllowed(row.status, 'promote') ? '' : t('memory.onlyConfirmedPromote')}
                                 >
-                                  {actionSubmitting[promoteKey] ? '提升中…' : '提升'}
+                                  {actionSubmitting[promoteKey] ? t('memory.promoting') : t('memory.promote')}
                                 </button>
                               </div>
                             </td>
@@ -1110,8 +1148,8 @@ export function MemoryGovernancePage() {
                         <tr>
                           <td colSpan={10}>
                             {candidateFacts.length === 0
-                              ? '当前后端筛选结果下暂无 candidate facts。'
-                              : '没有匹配当前本地搜索的 candidate facts，请调整关键字或重置本地搜索。'}
+                              ? t('memory.noCandidateFacts')
+                              : t('memory.noLocalCandidateMatch')}
                           </td>
                         </tr>
                       ) : null}
@@ -1119,9 +1157,15 @@ export function MemoryGovernancePage() {
                   </table>
                 </section>
 
-                <div className="memory-governance__pager" role="group" aria-label="候选事实分页">
+                <div className="memory-governance__pager" role="group" aria-label={t('memory.candidatePagination')}>
                   <span>
-                    第 {candidatePage} / {candidatePageCount} 页 · 显示第 {candidatePagination.start}-{candidatePagination.end} 条，共 {candidatePagination.total} 条
+                    {t('memory.paginationSummary', {
+                      page: candidatePage,
+                      totalPages: candidatePageCount,
+                      start: candidatePagination.start,
+                      end: candidatePagination.end,
+                      total: candidatePagination.total,
+                    })}
                   </span>
                   <div className="policy-actions">
                     <button
@@ -1130,7 +1174,7 @@ export function MemoryGovernancePage() {
                       onClick={() => setCandidatePage((value) => Math.max(1, value - 1))}
                       disabled={candidatePage === 1}
                     >
-                      上一页
+                      {t('memory.prevPage')}
                     </button>
                     <button
                       type="button"
@@ -1138,103 +1182,103 @@ export function MemoryGovernancePage() {
                       onClick={() => setCandidatePage((value) => Math.min(candidatePageCount, value + 1))}
                       disabled={candidatePage === candidatePageCount}
                     >
-                      下一页
+                      {t('memory.nextPage')}
                     </button>
                   </div>
                 </div>
               </div>
 
-              <section className="memory-governance__detail event-state" aria-label="Selected Memory Fact Details">
-                <strong>{selectedFact ? '事实详情' : '选择一条事实查看详情'}</strong>
+              <section className="memory-governance__detail event-state" aria-label={t('memory.factDetail')}>
+                <strong>{selectedFact ? t('memory.factDetail') : t('memory.selectFactForDetail')}</strong>
                 {selectedFact ? (
-                  <div className="memory-governance__detail-grid">
-                    <div>
-                      <span>类型</span>
-                      <strong>{selectedFact.kind === 'candidate' ? 'Candidate Fact' : 'Project Fact'}</strong>
+                    <div className="memory-governance__detail-grid">
+                      <div>
+                        <span>{t('memory.type')}</span>
+                        <strong>{selectedFact.kind === 'candidate' ? 'Candidate Fact' : 'Project Fact'}</strong>
+                      </div>
+                      <div>
+                        <span>Fact Key</span>
+                        <strong>{selectedFact.fact.fact_key}</strong>
+                      </div>
+                      <div>
+                        <span>Tenant</span>
+                        <strong>{selectedFact.fact.tenant_id || '—'}</strong>
+                      </div>
+                      <div>
+                        <span>User</span>
+                        <strong>{selectedFact.fact.user_id}</strong>
+                      </div>
+                      <div>
+                        <span>Status</span>
+                        <strong>{selectedFact.fact.status}</strong>
+                      </div>
+                      <div>
+                        <span>Source Seq</span>
+                        <strong>{selectedFact.fact.source_message_seq}</strong>
+                      </div>
+                      <div className="memory-governance__detail-wide">
+                        <span>Value</span>
+                        <strong>{selectedFact.fact.fact_value}</strong>
+                      </div>
+                      <div className="memory-governance__detail-wide">
+                        <span>Source Text</span>
+                        <pre>{selectedFact.fact.source_text || t('memory.noSourceExcerpt')}</pre>
+                      </div>
+                      {selectedFact.kind === 'candidate' ? (
+                        <>
+                          <div>
+                            <span>Confirmations</span>
+                            <strong>{selectedFact.fact.confirmation_count}</strong>
+                          </div>
+                          <div>
+                            <span>Allowed Actions</span>
+                            <strong>
+                              {(['confirm', 'reject', 'promote'] as const)
+                                .filter((action) => isActionAllowed(selectedFact.fact.status, action))
+                                .map((action) => actionLabel(action, t))
+                                .join(' / ') || t('memory.readOnly')}
+                            </strong>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div>
+                            <span>Superseded By</span>
+                            <strong>{selectedFact.fact.superseded_by ? `#${selectedFact.fact.superseded_by}` : t('memory.currentlyActive')}</strong>
+                          </div>
+                          <div>
+                            <span>Last Verified</span>
+                            <strong>{formatDate(selectedFact.fact.last_verified_at)}</strong>
+                          </div>
+                        </>
+                      )}
+                      <div>
+                        <span>Updated At</span>
+                        <strong>{formatDate(selectedFact.fact.updated_at)}</strong>
+                      </div>
+                      <div>
+                        <span>Created At</span>
+                        <strong>{formatDate(selectedFact.fact.created_at)}</strong>
+                      </div>
                     </div>
-                    <div>
-                      <span>Fact Key</span>
-                      <strong>{selectedFact.fact.fact_key}</strong>
-                    </div>
-                    <div>
-                      <span>Tenant</span>
-                      <strong>{selectedFact.fact.tenant_id || '—'}</strong>
-                    </div>
-                    <div>
-                      <span>User</span>
-                      <strong>{selectedFact.fact.user_id}</strong>
-                    </div>
-                    <div>
-                      <span>Status</span>
-                      <strong>{selectedFact.fact.status}</strong>
-                    </div>
-                    <div>
-                      <span>Source Seq</span>
-                      <strong>{selectedFact.fact.source_message_seq}</strong>
-                    </div>
-                    <div className="memory-governance__detail-wide">
-                      <span>Value</span>
-                      <strong>{selectedFact.fact.fact_value}</strong>
-                    </div>
-                    <div className="memory-governance__detail-wide">
-                      <span>Source Text</span>
-                      <pre>{selectedFact.fact.source_text || '无来源摘录'}</pre>
-                    </div>
-                    {selectedFact.kind === 'candidate' ? (
-                      <>
-                        <div>
-                          <span>Confirmations</span>
-                          <strong>{selectedFact.fact.confirmation_count}</strong>
-                        </div>
-                        <div>
-                          <span>Allowed Actions</span>
-                          <strong>
-                            {(['confirm', 'reject', 'promote'] as const)
-                              .filter((action) => isActionAllowed(selectedFact.fact.status, action))
-                              .map((action) => actionLabel(action))
-                              .join(' / ') || '只读'}
-                          </strong>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div>
-                          <span>Superseded By</span>
-                          <strong>{selectedFact.fact.superseded_by ? `#${selectedFact.fact.superseded_by}` : '当前生效'}</strong>
-                        </div>
-                        <div>
-                          <span>Last Verified</span>
-                          <strong>{formatDate(selectedFact.fact.last_verified_at)}</strong>
-                        </div>
-                      </>
-                    )}
-                    <div>
-                      <span>Updated At</span>
-                      <strong>{formatDate(selectedFact.fact.updated_at)}</strong>
-                    </div>
-                    <div>
-                      <span>Created At</span>
-                      <strong>{formatDate(selectedFact.fact.created_at)}</strong>
-                    </div>
-                  </div>
                 ) : (
-                  <div>点击候选事实或项目事实表中的任意一行，可集中查看完整来源摘录、状态和可执行动作说明。</div>
+                  <div>{t('memory.clickRowHint')}</div>
                 )}
               </section>
 
               <div className="memory-governance__project-panel">
-                <section className="event-state memory-governance__table-toolbar" aria-label="项目事实本地控制">
+                <section className="event-state memory-governance__table-toolbar" aria-label={t('memory.projectLocalControl')}>
                   <div className="memory-governance__table-toolbar-fields">
                     <label>
-                      本地搜索
+                      {t('memory.localSearch')}
                       <input
                         value={projectLocalQuery}
                         onChange={(event) => setProjectLocalQuery(event.target.value)}
-                        placeholder="搜索键值/来源/租户/用户/状态"
+                        placeholder={t('memory.localSearchPlaceholder')}
                       />
                     </label>
                     <label>
-                       每页条数
+                      {t('memory.pageSize')}
                       <select value={String(projectPageSize)} onChange={(event) => setProjectPageSize(Number(event.target.value))}>
                         {pageSizeOptions.map((size) => (
                           <option key={size} value={size}>
@@ -1245,21 +1289,26 @@ export function MemoryGovernancePage() {
                     </label>
                   </div>
                   <div className="memory-governance__scope-summary">
-                    <strong>当前可见范围</strong>
+                    <strong>{t('memory.visibleScope')}</strong>
                     <span>
-                      显示第 {projectPagination.start}-{projectPagination.end} 条，共 {projectPagination.total} 条本地筛选结果（后端已拉取 {projectFacts.length} 条）。
+                      {t('memory.scopeSummary', {
+                        start: projectPagination.start,
+                        end: projectPagination.end,
+                        total: projectPagination.total,
+                        fetched: projectFacts.length,
+                      })}
                     </span>
                   </div>
                 </section>
 
-                <section className="event-table" aria-label="项目事实表">
+                <section className="event-table" aria-label={t('memory.projectTable')}>
                   <table>
                     <thead>
                       <tr>
-                        <th>事实键</th>
-                        <th>值</th>
-                        <th>租户</th>
-                        <th>用户</th>
+                        <th>{t('memory.factKeyHeader')}</th>
+                        <th>{t('memory.value')}</th>
+                        <th>{t('memory.tenant')}</th>
+                        <th>{t('memory.user')}</th>
                         <th>
                           <button
                             type="button"
@@ -1270,11 +1319,11 @@ export function MemoryGovernancePage() {
                               setProjectSortField('status')
                             }}
                           >
-                            状态 {sortIndicator(projectSortField, projectSortDirection, 'status')}
+                            {t('memory.status')} {sortIndicator(projectSortField, projectSortDirection, 'status')}
                           </button>
                         </th>
-                        <th>来源序号</th>
-                        <th>最后验证</th>
+                        <th>{t('memory.sourceSeq')}</th>
+                        <th>{t('memory.lastVerified')}</th>
                         <th>
                           <button
                             type="button"
@@ -1285,7 +1334,7 @@ export function MemoryGovernancePage() {
                               setProjectSortField('updated_at')
                             }}
                           >
-                            更新时间 {sortIndicator(projectSortField, projectSortDirection, 'updated_at')}
+                            {t('memory.updatedAt')} {sortIndicator(projectSortField, projectSortDirection, 'updated_at')}
                           </button>
                         </th>
                       </tr>
@@ -1300,34 +1349,34 @@ export function MemoryGovernancePage() {
                           <td>{row.fact_key}</td>
                           <td>
                             <div className="memory-fact-cell">
-                              <strong>{row.fact_value}</strong>
-                              <small>{row.source_text || '无来源摘录'}</small>
-                            </div>
-                          </td>
-                          <td>{row.tenant_id || '—'}</td>
-                          <td>{row.user_id}</td>
-                          <td>
-                            <div className="memory-fact-cell">
-                              <span className={`status-pill ${row.status}`}>{row.status}</span>
-                              <small>{row.superseded_by ? `由事实 #${row.superseded_by} 取代` : '当前生效'}</small>
-                            </div>
-                          </td>
-                          <td>
-                            <div className="memory-fact-cell memory-fact-cell--compact">
-                              <strong>{row.source_message_seq}</strong>
-                              <small>验证：{formatDate(row.last_verified_at)}</small>
-                            </div>
-                          </td>
-                          <td>{formatDate(row.last_verified_at)}</td>
-                          <td>{formatDate(row.updated_at)}</td>
+                                <strong>{row.fact_value}</strong>
+                                <small>{row.source_text || t('memory.noSourceExcerpt')}</small>
+                              </div>
+                            </td>
+                            <td>{row.tenant_id || '—'}</td>
+                            <td>{row.user_id}</td>
+                            <td>
+                              <div className="memory-fact-cell">
+                                <span className={`status-pill ${row.status}`}>{row.status}</span>
+                                <small>{row.superseded_by ? t('memory.supersededBy', { id: row.superseded_by }) : t('memory.currentlyActive')}</small>
+                              </div>
+                            </td>
+                            <td>
+                              <div className="memory-fact-cell memory-fact-cell--compact">
+                                <strong>{row.source_message_seq}</strong>
+                                <small>{t('memory.verifiedAt', { date: formatDate(row.last_verified_at) })}</small>
+                              </div>
+                            </td>
+                            <td>{formatDate(row.last_verified_at)}</td>
+                            <td>{formatDate(row.updated_at)}</td>
                         </tr>
                       ))}
                       {filteredProjectFacts.length === 0 ? (
                         <tr>
                           <td colSpan={8}>
                             {projectFacts.length === 0
-                              ? '当前后端筛选结果下暂无 project facts。'
-                              : '没有匹配当前本地搜索的 project facts，请调整关键字或重置本地搜索。'}
+                              ? t('memory.noProjectFacts')
+                              : t('memory.noLocalProjectMatch')}
                           </td>
                         </tr>
                       ) : null}
@@ -1335,9 +1384,15 @@ export function MemoryGovernancePage() {
                   </table>
                 </section>
 
-                <div className="memory-governance__pager" role="group" aria-label="项目事实分页">
+                <div className="memory-governance__pager" role="group" aria-label={t('memory.projectPagination')}>
                   <span>
-                    第 {projectPage} / {projectPageCount} 页 · 显示第 {projectPagination.start}-{projectPagination.end} 条，共 {projectPagination.total} 条
+                    {t('memory.paginationSummary', {
+                      page: projectPage,
+                      totalPages: projectPageCount,
+                      start: projectPagination.start,
+                      end: projectPagination.end,
+                      total: projectPagination.total,
+                    })}
                   </span>
                   <div className="policy-actions">
                     <button
@@ -1346,7 +1401,7 @@ export function MemoryGovernancePage() {
                       onClick={() => setProjectPage((value) => Math.max(1, value - 1))}
                       disabled={projectPage === 1}
                     >
-                      上一页
+                      {t('memory.prevPage')}
                     </button>
                     <button
                       type="button"
@@ -1354,7 +1409,7 @@ export function MemoryGovernancePage() {
                       onClick={() => setProjectPage((value) => Math.min(projectPageCount, value + 1))}
                       disabled={projectPage === projectPageCount}
                     >
-                      下一页
+                      {t('memory.nextPage')}
                     </button>
                   </div>
                 </div>
@@ -1362,19 +1417,19 @@ export function MemoryGovernancePage() {
             </div>
 
             <div className="event-state memory-governance__hint">
-              <strong>运维备注</strong>
-              <div>候选事实表强调“值 + 来源摘录 + 状态/确认数”，便于快速决定确认、拒绝或提升。</div>
-              <div>本地搜索与分页只作用于前端已拉取的数据，不会改变后端筛选条件，也不会触发额外接口变更。</div>
-              <div>批量选择与批量操作严格限定在当前可见候选事实页，翻页或调整本地搜索后会自动收敛到新的可见范围。</div>
+              <strong>{t('memory.opsNote')}</strong>
+              <div>{t('memory.candidateTableNote')}</div>
+              <div>{t('memory.localSearchNote')}</div>
+              <div>{t('memory.batchScopeNote')}</div>
             </div>
 
             {pendingBatchAction ? (
-              <div className="dialog-backdrop" role="dialog" aria-modal="true" aria-label="Batch Action Confirmation">
+              <div className="dialog-backdrop" role="dialog" aria-modal="true" aria-label={t('memory.confirmBatchTitle', { action: pendingBatchLabel })}>
                 <div className="dialog-card">
                   <div className="dialog-card__header">
                     <div>
-                      <h2>确认批量{pendingBatchLabel}</h2>
-                      <p>即将对 {pendingBatchCount} 条当前可见候选事实执行“{pendingBatchLabel}”。操作会通过批量接口一次性提交，请确认后继续。</p>
+                      <h2>{t('memory.confirmBatchTitle', { action: pendingBatchLabel })}</h2>
+                      <p>{t('memory.confirmBatchDesc', { count: pendingBatchCount, action: pendingBatchLabel })}</p>
                     </div>
                     <button
                       type="button"
@@ -1383,7 +1438,7 @@ export function MemoryGovernancePage() {
                         setPendingBatchFacts([])
                       }}
                     >
-                      关闭
+                      {t('common.close')}
                     </button>
                   </div>
                   <div className="memory-governance__confirm-list">
@@ -1393,7 +1448,7 @@ export function MemoryGovernancePage() {
                         <small>{row.fact_value} · {row.status}</small>
                       </div>
                     ))}
-                    {pendingBatchFacts.length > 5 ? <div>…其余 {pendingBatchFacts.length - 5} 条已省略</div> : null}
+                    {pendingBatchFacts.length > 5 ? <div>{t('memory.remainingOmitted', { count: pendingBatchFacts.length - 5 })}</div> : null}
                   </div>
                   <div className="dialog-card__actions">
                     <button
@@ -1403,7 +1458,7 @@ export function MemoryGovernancePage() {
                         setPendingBatchFacts([])
                       }}
                     >
-                      取消
+                      {t('common.cancel')}
                     </button>
                     <button
                       type="button"
@@ -1417,7 +1472,7 @@ export function MemoryGovernancePage() {
                         }
                       }}
                     >
-                      确认批量{pendingBatchLabel}
+                      {t('memory.confirmBatchAction', { action: pendingBatchLabel })}
                     </button>
                   </div>
                 </div>

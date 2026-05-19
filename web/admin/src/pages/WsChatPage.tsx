@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { AppShell } from '../components/layout/AppShell'
 import { WsClient, type WsMessage } from '../lib/api/websocket'
 
@@ -9,6 +10,7 @@ type ChatMessage = {
 }
 
 export function WsChatPage() {
+  const { t } = useTranslation()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [connected, setConnected] = useState(false)
@@ -42,7 +44,7 @@ export function WsChatPage() {
         if (msg.type === 'error') {
           setMessages((prev) => [
             ...prev,
-            { id: msgIdRef.current++, role: 'assistant', content: `错误: ${msg.message}` },
+            { id: msgIdRef.current++, role: 'assistant', content: `${t('wsChat.error')}: ${msg.message}` },
           ])
           streamRef.current = ''
           setStreaming(false)
@@ -96,16 +98,16 @@ export function WsChatPage() {
   }, [handleSend])
 
   return (
-    <AppShell title="WebSocket 聊天" description="通过 WebSocket 与 AI 实时对话">
+    <AppShell title={t('wsChat.pageTitle')} description={t('wsChat.pageDescription')}>
       <div className="ws-chat-page">
         <div className="ws-chat-status">
           <span className={`status-dot ${connected ? 'status-dot--online' : 'status-dot--offline'}`} />
-          {connected ? '已连接' : '连接中...'}
+          {connected ? t('wsChat.connected') : t('wsChat.connecting')}
         </div>
 
         <div className="ws-chat-messages">
           {messages.length === 0 && (
-            <div className="ws-chat-empty">发送消息开始对话</div>
+            <div className="ws-chat-empty">{t('wsChat.emptyHint')}</div>
           )}
           {messages.map((m) => (
             <div
@@ -113,7 +115,7 @@ export function WsChatPage() {
               className={`ws-chat-message ws-chat-message--${m.role}`}
             >
               <div className="ws-chat-message__role">
-                {m.role === 'user' ? '你' : 'AI'}
+                {m.role === 'user' ? t('wsChat.you') : 'AI'}
               </div>
               <div className="ws-chat-message__content">{m.content}</div>
             </div>
@@ -122,7 +124,7 @@ export function WsChatPage() {
             <div className="ws-chat-message ws-chat-message--assistant">
               <div className="ws-chat-message__role">AI</div>
               <div className="ws-chat-message__content">
-                {streamRef.current || '思考中...'}
+                {streamRef.current || t('wsChat.thinking')}
               </div>
             </div>
           )}
@@ -135,7 +137,7 @@ export function WsChatPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+            placeholder={t('wsChat.inputPlaceholder')}
             rows={2}
             disabled={!connected || streaming}
           />
@@ -145,7 +147,7 @@ export function WsChatPage() {
             onClick={handleSend}
             disabled={!connected || streaming || !input.trim()}
           >
-            发送
+            {t('wsChat.send')}
           </button>
         </div>
       </div>
