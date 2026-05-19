@@ -46,7 +46,7 @@ export function BillingPage() {
               </tr>
             </thead>
             <tbody>
-              {ledgerQuery.data.data.map(e => (
+              {(ledgerQuery.data.data ?? []).map(e => (
                 <tr key={e.id}>
                   <td>{new Date(e.created_at).toLocaleString()}</td>
                   <td>{e.type}</td>

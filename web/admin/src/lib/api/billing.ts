@@ -14,7 +14,7 @@ async function userFetch(input: string, init?: RequestInit): Promise<Response> {
   const res = await fetch(input, init)
   if (res.status === 401) {
     sessionStorage.removeItem('llm_gateway_user_token')
-    window.location.href = '/login'
+    window.location.href = '/admin/ui/login'
     throw new Error('Unauthorized')
   }
   return res

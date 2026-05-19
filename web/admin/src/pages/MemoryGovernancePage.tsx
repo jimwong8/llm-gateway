@@ -235,7 +235,7 @@ function openBatchConfirmation(
   setActionSuccess: (value: string) => void,
   setPendingBatchAction: (value: MemoryFactAction | null) => void,
   setPendingBatchFacts: (value: MemoryCandidateFact[]) => void,
-  t: (key: string) => string,
+  t: (key: string, options?: Record<string, unknown>) => string,
 ) {
   if (facts.length === 0) {
     setActionError(t('memory.batchSelectRequired'))
@@ -276,7 +276,9 @@ function buildPaginationSummary(total: number, page: number, pageSize: number): 
 }
 
 export function MemoryGovernancePage() {
-  const { t } = useTranslation()
+  const { t: _t } = useTranslation()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const t = _t as (key: string, options?: Record<string, unknown>) => string
   const [activeTab, setActiveTab] = useState<'governance' | 'search'>('governance')
   const [draftFilters, setDraftFilters] = useState<MemoryFactFilters>(initialFilters)
   const [draftCandidateStatus, setDraftCandidateStatus] = useState('')

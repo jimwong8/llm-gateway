@@ -8,27 +8,27 @@ test.describe('管理功能', () => {
   })
 
   test('渠道管理 — 页面加载', async ({ adminPage }) => {
-    await adminPage.goto('/channels')
-    await adminPage.waitForSelector('h2')
-    await expect(adminPage.locator('h2')).toContainText('渠道管理')
+    await adminPage.goto('channels')
+    await adminPage.waitForSelector('h1')
+    await expect(adminPage.locator('h1')).toContainText('渠道管理')
   })
 
   test('渠道管理 — 搜索框存在', async ({ adminPage }) => {
-    await adminPage.goto('/channels')
+    await adminPage.goto('channels')
     await adminPage.waitForSelector('.channels-page')
     const searchInput = adminPage.locator('input[placeholder*="搜索"]').first()
     await expect(searchInput).toBeVisible()
   })
 
   test('渠道管理 — 状态筛选下拉存在', async ({ adminPage }) => {
-    await adminPage.goto('/channels')
+    await adminPage.goto('channels')
     await adminPage.waitForSelector('.channels-page')
     const filter = adminPage.locator('select.channels-filter').first()
     await expect(filter).toBeVisible()
   })
 
   test('渠道管理 — 添加渠道按钮存在', async ({ adminPage }) => {
-    await adminPage.goto('/channels')
+    await adminPage.goto('channels')
     await adminPage.waitForSelector('.channels-page')
     const addBtn = adminPage.locator('button:has-text("添加渠道")').first()
     await expect(addBtn).toBeVisible()
@@ -45,14 +45,14 @@ test.describe('管理功能', () => {
   })
 
   test('定价管理 — 页面加载', async ({ adminPage }) => {
-    await adminPage.goto('/billing-pricing')
-    await adminPage.waitForSelector('h2')
-    await expect(adminPage.locator('h2')).toContainText('定价管理')
+    await adminPage.goto('billing-pricing')
+    await adminPage.waitForSelector('h1')
+    await expect(adminPage.locator('h1')).toContainText('定价管理')
   })
 
   test('定价管理 — 表单元素存在', async ({ adminPage }) => {
-    await adminPage.goto('/billing-pricing')
-    await adminPage.waitForSelector('h2')
+    await adminPage.goto('billing-pricing')
+    await adminPage.waitForSelector('h1')
     const formInputs = adminPage.locator('input[placeholder="openai"], input[placeholder="gpt-4"]')
     const count = await formInputs.count()
     expect(count).toBeGreaterThanOrEqual(1)

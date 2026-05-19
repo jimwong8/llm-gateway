@@ -14,7 +14,7 @@ export default defineConfig({
     : [['html', { outputFolder: 'playwright-report' }], ['list']],
 
   use: {
-    baseURL: `${BASE_URL}/admin/ui`,
+    baseURL: `${BASE_URL}/admin/ui/`,
     trace: process.env.CI ? 'on-first-retry' : 'on',
     screenshot: process.env.CI ? 'only-on-failure' : 'on',
     video: process.env.CI ? 'retain-on-failure' : 'off',
@@ -39,7 +39,7 @@ export default defineConfig({
         command: 'npm run dev',
         port: 5173,
         reuseExistingServer: true,
-        cwd: './web/admin',
+        cwd: '.',
         timeout: 30_000,
       },
 })

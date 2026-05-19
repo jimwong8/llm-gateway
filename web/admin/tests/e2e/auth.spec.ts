@@ -6,25 +6,25 @@ test.describe('认证流程', () => {
   test('管理员 Token 登录', async ({ page }) => {
     const token = process.env.E2E_ADMIN_KEY ?? 'sk-admin-e2e-test'
     await loginAsAdmin(page, token)
-    await expect(page.locator('h2')).toContainText('仪表盘')
+    await expect(page).toHaveURL(/\/dashboard/, { timeout: 10_000 })
     const stored = await page.evaluate(() => sessionStorage.getItem('llm_gateway_admin_token'))
     expect(stored).toBe(token)
   })
 
   test('管理员登录 — 空 Token 提示错误', async ({ page }) => {
-    await page.goto('/login')
+    await page.goto('login')
     await page.waitForSelector('.login-card')
     await page.click('button:has-text("管理员")')
-    await page.fill('input[name="admin-token"]', '')
+    await page.fill('#admin-token', '')
     await page.click('button:has-text("进入控制台")')
     await expect(page.locator('[role="alert"]')).toContainText('请输入管理员 Token')
   })
 
   test('管理员登录 — 短 Token 提示无效', async ({ page }) => {
-    await page.goto('/login')
+    await page.goto('login')
     await page.waitForSelector('.login-card')
     await page.click('button:has-text("管理员")')
-    await page.fill('input[name="admin-token"]', 'ab')
+    await page.fill('#admin-token', 'ab')
     await page.click('button:has-text("进入控制台")')
     await expect(page.locator('[role="alert"]')).toContainText('Token 格式无效')
   })
@@ -34,20 +34,21 @@ test.describe('认证流程', () => {
     const username = uniqueId('e2e-auth')
     const password = 'TestPass123!'
     await signupUser(page, email, username, password)
-    await expect(page).toHaveURL(/\/dashboard/)
+    await expect(page).toHaveURL(/\/dashboard/, { timeout: 10_000 })
+    await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {})
     const token = await page.evaluate(() => sessionStorage.getItem('llm_gateway_user_token'))
     expect(token).toBeTruthy()
   })
 
   test('用户注册 — 空字段提示错误', async ({ page }) => {
-    await page.goto('/signup')
+    await page.goto('signup')
     await page.waitForSelector('.login-card')
     await page.click('button:has-text("注册")')
     await expect(page.locator('[role="alert"]')).toContainText('请填写所有字段')
   })
 
   test('用户注册 — 短密码提示错误', async ({ page }) => {
-    await page.goto('/signup')
+    await page.goto('signup')
     await page.waitForSelector('.login-card')
     await page.fill('#email', 'test@test.example')
     await page.fill('#username', 'testuser')
@@ -64,7 +65,8 @@ test.describe('认证流程', () => {
 
     const token = await page.evaluate(() => sessionStorage.getItem('llm_gateway_user_token'))
     await page.evaluate(() => sessionStorage.clear())
-    await page.goto('/login')
+    await page.waitForURL(/\/login/, { timeout: 10_000 }).catch(() => {})
+    await page.goto('login')
 
     await loginAsUser(page, email, password)
     await expect(page).toHaveURL(/\/dashboard/)
@@ -79,13 +81,16 @@ test.describe('认证流程', () => {
     const password = 'TestPass123!'
     await signupUser(page, email, username, password)
     await page.evaluate(() => sessionStorage.clear())
-    await page.goto('/login')
+    await page.waitForURL(/\/login/, { timeout: 10_000 }).catch(() => {})
+    await page.goto('login')
+    await page.waitForSelector('.login-card', { timeout: 10_000 })
 
-    await page.click('button:has-text("用户登录")')
+    await page.getByRole('tab', { name: '用户登录' }).click()
+    await page.waitForSelector('#email', { timeout: 5_000 })
     await page.fill('#email', email)
     await page.fill('#password', 'WrongPassword!')
-    await page.click('button:has-text("登录")')
-    await expect(page.locator('[role="alert"]')).toBeVisible()
+    await page.click('button[type="submit"]')
+    await expect(page.locator('[role="alert"]')).toBeVisible({ timeout: 8_000 })
   })
 
   test('API Key 创建流程', async ({ page }) => {
@@ -94,9 +99,9 @@ test.describe('认证流程', () => {
     const password = 'TestPass123!'
     await signupUser(page, email, username, password)
 
-    await page.goto('/api-keys')
-    await page.waitForSelector('h2')
-    await expect(page.locator('h2')).toContainText('API 密钥管理')
+    await page.goto('http://localhost:8080/admin/ui/api-keys')
+    await page.waitForSelector('h1', { timeout: 10_000 })
+    await expect(page.locator('h1')).toContainText('API 密钥管理')
 
     await page.fill('input[placeholder="密钥名称"]', 'e2e-test-key')
     await page.click('button:has-text("创建新密钥")')

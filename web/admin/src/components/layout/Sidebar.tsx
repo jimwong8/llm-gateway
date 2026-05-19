@@ -110,7 +110,7 @@ function SidebarLayout({ mobile = false, open = false, onClose, currentPath = ''
 
   const handleLogout = () => {
     clearToken()
-    window.location.href = '/login'
+    window.location.href = '/admin/ui/login'
   }
 
   return (

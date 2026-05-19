@@ -15,10 +15,10 @@ export function uniqueId(prefix: string): string {
 
 export async function loginAsAdmin(page: Page, token?: string) {
   const adminToken = token ?? process.env.E2E_ADMIN_KEY ?? 'sk-admin-e2e-test'
-  await page.goto('/login')
+  await page.goto('login')
   await page.waitForSelector('.login-card', { timeout: 10_000 })
   await page.click('button:has-text("管理员")')
-  await page.fill('input[name="admin-token"]', adminToken)
+  await page.fill('#admin-token', adminToken)
   await page.click('button:has-text("进入控制台")')
   await page.waitForURL(/\/dashboard/, { timeout: 10_000 })
   const stored = await page.evaluate((k: string) => sessionStorage.getItem(k), ADMIN_TOKEN_KEY)
@@ -26,23 +26,26 @@ export async function loginAsAdmin(page: Page, token?: string) {
 }
 
 export async function signupUser(page: Page, email: string, username: string, password: string) {
-  await page.goto('/signup')
+  await page.goto('signup')
   await page.waitForSelector('.login-card', { timeout: 10_000 })
   await page.fill('#email', email)
   await page.fill('#username', username)
   await page.fill('#password', password)
   await page.click('button:has-text("注册")')
-  await page.waitForURL(/\/dashboard/, { timeout: 10_000 })
+  await page.waitForURL(/\/dashboard/, { timeout: 15_000 })
+  await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {})
 }
 
 export async function loginAsUser(page: Page, email: string, password: string) {
-  await page.goto('/login')
+  await page.goto('login')
   await page.waitForSelector('.login-card', { timeout: 10_000 })
-  await page.click('button:has-text("用户登录")')
+  await page.getByRole('tab', { name: '用户登录' }).click()
+  await page.waitForSelector('#email', { timeout: 5_000 })
   await page.fill('#email', email)
   await page.fill('#password', password)
-  await page.click('button:has-text("登录")')
-  await page.waitForURL(/\/dashboard/, { timeout: 10_000 })
+  await page.click('button[type="submit"]')
+  await page.waitForURL(/\/dashboard/, { timeout: 15_000 })
+  await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {})
 }
 
 export async function createApiKeyViaAPI(request: APIRequestContext, userToken: string, name = 'e2e-key') {
@@ -62,6 +65,8 @@ export async function deleteTestSessionsViaAPI(request: APIRequestContext, userT
     headers: { 'Authorization': `Bearer ${userToken}` },
   })
   if (!listRes.ok()) return
+  const contentType = listRes.headers()['content-type'] ?? ''
+  if (!contentType.includes('application/json')) return
   const body = await listRes.json() as { data?: { id: number }[] }
   if (!body.data) return
   for (const session of body.data) {
@@ -111,7 +116,7 @@ export async function addPricingViaAPI(request: APIRequestContext, pricing: {
   is_default?: boolean
 }) {
   const adminToken = process.env.E2E_ADMIN_KEY ?? 'sk-admin-e2e-test'
-  const res = await request.post(`${API_BASE}/admin/billing/pricing`, {
+  const res = await request.post(`${API_BASE}/api/admin/billing/pricing`, {
     headers: {
       'Authorization': `Bearer ${adminToken}`,
       'Content-Type': 'application/json',

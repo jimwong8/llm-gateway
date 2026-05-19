@@ -9,6 +9,8 @@ import type {
   ChannelStatusPoint,
   LatencyPoint,
   ErrorRatePoint,
+  UserUsageLog,
+  CostTrendPoint,
 } from '../../types/dashboard'
 
 export type {
@@ -62,7 +64,7 @@ async function userFetch(input: string, init?: RequestInit): Promise<Response> {
   const res = await fetch(input, init)
   if (res.status === 401) {
     sessionStorage.removeItem('llm_gateway_user_token')
-    window.location.href = '/login'
+    window.location.href = '/admin/ui/login'
     throw new Error('Unauthorized')
   }
   return res
@@ -89,9 +91,17 @@ export async function getUserUsage(days = 7): Promise<UserUsageResponse> {
 }
 
 export async function getUserUsageLogs(limit = 50, offset = 0): Promise<{ object: string; data: UserUsageLog[]; total: number }> {
-  return apiRequest(`/api/user/usage-logs?limit=${limit}&offset=${offset}`)
+  const res = await userFetch(`/api/user/usage-logs?limit=${limit}&offset=${offset}`, {
+    headers: { ...userAuthHeaders() },
+  })
+  if (!res.ok) throw new Error('Failed to fetch usage logs')
+  return res.json()
 }
 
 export async function getUserCostTrend(days = 30): Promise<{ object: string; data: CostTrendPoint[]; days: number }> {
-  return apiRequest(`/api/user/cost-trend?days=${days}`)
+  const res = await userFetch(`/api/user/cost-trend?days=${days}`, {
+    headers: { ...userAuthHeaders() },
+  })
+  if (!res.ok) throw new Error('Failed to fetch cost trend')
+  return res.json()
 }

@@ -20,7 +20,7 @@ export function ForgotPasswordPage() {
     }
     setLoading(true)
     try {
-      await apiRequest('/api/auth/forgot-password', { email: email.trim() }, { auth: 'none', method: 'POST' })
+      await apiRequest('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email: email.trim() }), headers: { 'Content-Type': 'application/json' } }, { auth: 'none' })
       setSuccess(true)
       toast.success(t('password.resetLinkSentToast'))
     } catch (err: any) {

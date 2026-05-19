@@ -32,7 +32,7 @@ export function ResetPasswordPage() {
     }
     setLoading(true)
     try {
-      await apiRequest('/api/auth/reset-password', { token, password }, { auth: 'none', method: 'POST' })
+      await apiRequest('/api/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, password }), headers: { 'Content-Type': 'application/json' } }, { auth: 'none' })
       setSuccess(true)
       toast.success(t('password.resetSuccessToast'))
       setTimeout(() => navigate('/login'), 2000)

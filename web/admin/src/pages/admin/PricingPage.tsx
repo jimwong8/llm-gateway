@@ -104,7 +104,7 @@ export function PricingPage() {
               </tr>
             </thead>
             <tbody>
-              {pricingQuery.data.data.map((p: PricingEntry, i: number) => (
+              {(pricingQuery.data.data ?? []).map((p: PricingEntry, i: number) => (
                 <tr key={`${p.provider}-${p.model}-${i}`}>
                   <td>{p.provider}</td>
                   <td>{p.model || '—'}</td>

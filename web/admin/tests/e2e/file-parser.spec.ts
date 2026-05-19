@@ -45,7 +45,7 @@ test.describe('File Parser — 文件上传解析', () => {
 
   test.skip('上传 .md 文件 → 验证解析结果', async ({ adminPage }) => {
     // TODO: 替换为实际的文件上传页面路由
-    // await adminPage.goto('/file-parser')
+    // await adminPage.goto('file-parser')
     // await adminPage.waitForSelector('.file-parser-page')
 
     // 使用 setInputFiles 上传文件
@@ -64,7 +64,7 @@ test.describe('File Parser — 文件上传解析', () => {
 
   test.skip('上传不支持的格式 → 验证错误提示', async ({ adminPage }) => {
     // TODO: 替换为实际的文件上传页面路由
-    // await adminPage.goto('/file-parser')
+    // await adminPage.goto('file-parser')
     // await adminPage.waitForSelector('.file-parser-page')
 
     // 上传不支持的文件格式
@@ -81,7 +81,7 @@ test.describe('File Parser — 文件上传解析', () => {
 
   test.skip('拖拽上传 .md 文件 → 验证解析结果', async ({ adminPage }) => {
     // TODO: 如果页面支持拖拽上传，测试拖拽交互
-    // await adminPage.goto('/file-parser')
+    // await adminPage.goto('file-parser')
     // const dropZone = adminPage.locator('.drop-zone, [class*="upload"]')
     // await dropZone.dispatchEvent('drop', {
     //   dataTransfer: { files: [path.join(tempDir, 'test-valid.md')] },
@@ -91,7 +91,7 @@ test.describe('File Parser — 文件上传解析', () => {
 
   test.skip('空文件上传 → 提示选择文件', async ({ adminPage }) => {
     // TODO: 验证未选择文件时的状态
-    // await adminPage.goto('/file-parser')
+    // await adminPage.goto('file-parser')
     // const uploadBtn = adminPage.locator('button:has-text("上传"), button:has-text("解析")')
     // const isDisabled = await uploadBtn.isDisabled().catch(() => false)
     // expect(isDisabled).toBeTruthy()

@@ -19,10 +19,8 @@ import type { MaskRule, MaskRuleInput, PromptPreset, PromptPresetInput } from '.
 
 type PresetFormState = {
   name: string
-  system_prompt: string
-  model: string
-  temperature: string
-  max_tokens: string
+  template: string
+  description: string
   variables: string
 }
 
@@ -34,10 +32,8 @@ type MaskFormState = {
 
 const emptyPresetForm: PresetFormState = {
   name: '',
-  system_prompt: '',
-  model: '',
-  temperature: '0.7',
-  max_tokens: '4096',
+  template: '',
+  description: '',
   variables: '',
 }
 
@@ -48,13 +44,15 @@ const emptyMaskForm: MaskFormState = {
 }
 
 function buildPresetInput(form: PresetFormState): PromptPresetInput {
+  const variables = form.variables
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean)
   return {
-    tenant_id: 'default',
     name: form.name.trim(),
-    system_prompt: form.system_prompt.trim(),
-    model: form.model.trim(),
-    temperature: parseFloat(form.temperature) || 0.7,
-    max_tokens: parseInt(form.max_tokens, 10) || 4096,
+    template: form.template.trim(),
+    description: form.description.trim(),
+    variables,
   }
 }
 
@@ -127,8 +125,8 @@ export function PresetsPage() {
   })
 
   const toggleMaskMutation = useMutation({
-    mutationFn: ({ id, enabled }: { id: number; enabled: boolean }) =>
-      updateMaskRule(id, { enabled }),
+    mutationFn: ({ id, enabled, name, pattern, replace }: { id: number; enabled: boolean; name: string; pattern: string; replace: string }) =>
+      updateMaskRule(id, { is_active: enabled, name, pattern, replacement: replace }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['mask-rules'] }),
   })
 
@@ -156,10 +154,8 @@ export function PresetsPage() {
     setEditingPresetId(preset.id)
     setPresetForm({
       name: preset.name,
-      system_prompt: preset.system_prompt,
-      model: preset.model,
-      temperature: String(preset.temperature),
-      max_tokens: String(preset.max_tokens),
+      template: preset.template,
+      description: preset.description ?? '',
       variables: '',
     })
     setShowPresetForm(false)
@@ -184,8 +180,8 @@ export function PresetsPage() {
 
   // ── Variable preview ─────────────────────────────────
   const variablePreview = useMemo(
-    () => previewTemplate(presetForm.system_prompt, presetForm.variables),
-    [presetForm.system_prompt, presetForm.variables],
+    () => previewTemplate(presetForm.template, presetForm.variables),
+    [presetForm.template, presetForm.variables],
   )
 
   const isEditing = editingPresetId !== null
@@ -199,7 +195,7 @@ export function PresetsPage() {
 
   return (
     <AppShell title={t('presets.pageTitle')} description={t('presets.pageDescription')}>
-      <Tabs items={tabItems} activeKey={activeTab} onChange={(k) => setActiveTab(k as 'presets' | 'masks')} />
+      <Tabs tabs={tabItems} activeKey={activeTab} onChange={(k) => setActiveTab(k as 'presets' | 'masks')} />
 
       {activeTab === 'presets' ? (
         <div className="presets-section">
@@ -237,40 +233,19 @@ export function PresetsPage() {
                   />
                 </label>
                 <label>
-                  {t('presets.model')}
+                  {t('presets.description')}
                   <input
-                    value={presetForm.model}
-                    onChange={(e) => setPresetForm((p) => ({ ...p, model: e.target.value }))}
-                    placeholder={t('presets.modelPlaceholder')}
-                    required
-                  />
-                </label>
-                <label>
-                  {t('presets.temperature')}
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max="2"
-                    value={presetForm.temperature}
-                    onChange={(e) => setPresetForm((p) => ({ ...p, temperature: e.target.value }))}
-                  />
-                </label>
-                <label>
-                  {t('presets.maxTokens')}
-                  <input
-                    type="number"
-                    min="1"
-                    value={presetForm.max_tokens}
-                    onChange={(e) => setPresetForm((p) => ({ ...p, max_tokens: e.target.value }))}
+                    value={presetForm.description}
+                    onChange={(e) => setPresetForm((p) => ({ ...p, description: e.target.value }))}
+                    placeholder={t('presets.descriptionPlaceholder')}
                   />
                 </label>
                 <label style={{ gridColumn: '1 / -1' }}>
                   {t('presets.systemPrompt')}
                   <textarea
                     rows={4}
-                    value={presetForm.system_prompt}
-                    onChange={(e) => setPresetForm((p) => ({ ...p, system_prompt: e.target.value }))}
+                    value={presetForm.template}
+                    onChange={(e) => setPresetForm((p) => ({ ...p, template: e.target.value }))}
                     placeholder={t('presets.systemPromptPlaceholder')}
                     required
                   />
@@ -283,7 +258,7 @@ export function PresetsPage() {
                     placeholder={t('presets.variablesPlaceholder')}
                   />
                 </label>
-                {presetForm.variables.trim() && presetForm.system_prompt.trim() ? (
+                {presetForm.variables.trim() && presetForm.template.trim() ? (
                   <div style={{ gridColumn: '1 / -1' }}>
                     <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
                       {t('presets.preview')}
@@ -333,7 +308,7 @@ export function PresetsPage() {
           ) : null}
 
           {presetsQuery.isLoading ? (
-            <TableSkeleton rows={5} cols={5} />
+            <TableSkeleton rows={5} cols={3} />
           ) : presets.length === 0 ? (
             <EmptyState
               title={t('presets.emptyTitle')}
@@ -346,9 +321,7 @@ export function PresetsPage() {
                 <thead>
                   <tr>
                     <th>{t('presets.name')}</th>
-                    <th>{t('presets.model')}</th>
-                    <th>{t('presets.temperature')}</th>
-                    <th>{t('presets.maxTokens')}</th>
+                    <th>{t('presets.description')}</th>
                     <th>{t('presets.createdAt')}</th>
                     <th>{t('presets.actions')}</th>
                   </tr>
@@ -357,9 +330,7 @@ export function PresetsPage() {
                   {presets.map((p) => (
                     <tr key={p.id}>
                       <td>{p.name}</td>
-                      <td>{p.model}</td>
-                      <td>{p.temperature}</td>
-                      <td>{p.max_tokens}</td>
+                      <td>{p.description ?? '-'}</td>
                       <td>{p.created_at ?? '-'}</td>
                       <td>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -482,23 +453,22 @@ export function PresetsPage() {
                     <tr key={m.id}>
                       <td>{m.name}</td>
                       <td><code>{m.pattern}</code></td>
-                      <td>{m.replacement}</td>
+                      <td>{m.replace}</td>
                       <td>
                         <button
                           type="button"
-                          className={m.enabled ? 'badge badge--success' : 'badge badge--warning'}
+                          className={m.is_active ? 'badge badge--success' : 'badge badge--warning'}
                           onClick={() => {
-                            const action = m.enabled ? 'disable' : 'enable'
-                            const confirmKey = m.enabled
+                            const confirmKey = m.is_active
                               ? 'presets.confirmToggleDisable'
                               : 'presets.confirmToggleEnable'
                             if (confirm(t(confirmKey, { name: m.name }))) {
-                              toggleMaskMutation.mutate({ id: m.id, enabled: !m.enabled })
+                              toggleMaskMutation.mutate({ id: m.id, enabled: !m.is_active, name: m.name, pattern: m.pattern, replace: m.replace })
                             }
                           }}
                           style={{ cursor: 'pointer', border: 'none', font: 'inherit' }}
                         >
-                          {m.enabled ? t('presets.enabled') : t('presets.disabled')}
+                          {m.is_active ? t('presets.enabled') : t('presets.disabled')}
                         </button>
                       </td>
                       <td>{m.created_at ?? '-'}</td>

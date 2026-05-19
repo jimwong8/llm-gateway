@@ -52,7 +52,7 @@ export function Topbar({ onToggleNavigation }: { onToggleNavigation: () => void 
 
   const handleLogout = useCallback(() => {
     clearToken()
-    window.location.href = '/login'
+    window.location.href = '/admin/ui/login'
   }, [])
 
   const fetchBanners = useCallback(async () => {
