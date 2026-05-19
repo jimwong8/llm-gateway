@@ -1,0 +1,170 @@
+name: Staging Deploy
+
+on:
+  push:
+    branches: [develop]
+
+concurrency:
+  group: staging-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  STAGING_HOST: ${{ secrets.STAGING_HOST }}
+  STAGING_USER: ${{ secrets.STAGING_USER }}
+  STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+  STAGING_PORT: ${{ secrets.STAGING_PORT || '22' }}
+
+jobs:
+  # ── Build & Push Staging Image ────────────────────────
+  build-staging:
+    name: Build Staging Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ steps.tag.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate staging tag
+        id: tag
+        run: |
+          SHA_SHORT=$(echo ${{ github.sha }} | cut -c1-8)
+          TAG="staging-${SHA_SHORT}"
+          echo "image_tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "TAG=${TAG}" >> "$GITHUB_ENV"
+
+      - name: Build and push staging image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TAG }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:staging-latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── Deploy to Staging ─────────────────────────────────
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build-staging
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ env.STAGING_SSH_KEY }}" > ~/.ssh/staging_key
+          chmod 600 ~/.ssh/staging_key
+          cat >> ~/.ssh/config << EOF
+          Host staging
+            HostName ${{ env.STAGING_HOST }}
+            User ${{ env.STAGING_USER }}
+            Port ${{ env.STAGING_PORT }}
+            IdentityFile ~/.ssh/staging_key
+            StrictHostKeyChecking no
+          EOF
+
+      - name: Deploy on staging server
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build-staging.outputs.image_tag }}"
+
+          ssh staging << 'REMOTE_SCRIPT'
+            set -e
+
+            echo "=== Pulling staging image ==="
+            docker pull ${IMAGE}
+
+            echo "=== Stopping current container ==="
+            docker stop llm-gateway-staging 2>/dev/null || true
+            docker rm llm-gateway-staging 2>/dev/null || true
+
+            echo "=== Starting new container ==="
+            docker run -d \
+              --name llm-gateway-staging \
+              --restart unless-stopped \
+              -p 8080:8080 \
+              -e MOCK_MODE=true \
+              -e ADMIN_API_KEY=${STAGING_ADMIN_API_KEY:-staging-key} \
+              ${IMAGE}
+
+            echo "=== Waiting for service to start ==="
+            for i in $(seq 1 30); do
+              if curl -sf http://localhost:8080/health >/dev/null 2>&1; then
+                echo "Service is healthy!"
+                exit 0
+              fi
+              echo "Waiting... ($i/30)"
+              sleep 2
+            done
+
+            echo "ERROR: Service failed to start"
+            docker logs llm-gateway-staging --tail 50
+            exit 1
+          REMOTE_SCRIPT
+
+  # ── Smoke Tests ───────────────────────────────────────
+  smoke-tests:
+    name: Smoke Tests
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup SSH for smoke tests
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ env.STAGING_SSH_KEY }}" > ~/.ssh/staging_key
+          chmod 600 ~/.ssh/staging_key
+          cat >> ~/.ssh/config << EOF
+          Host staging
+            HostName ${{ env.STAGING_HOST }}
+            User ${{ env.STAGING_USER }}
+            Port ${{ env.STAGING_PORT }}
+            IdentityFile ~/.ssh/staging_key
+            StrictHostKeyChecking no
+          EOF
+
+      - name: Run smoke tests against staging
+        run: |
+          STAGING_URL="http://${{ env.STAGING_HOST }}:8080"
+
+          echo "=== Health Check ==="
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${STAGING_URL}/health")
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "FAIL: Health check returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+          echo "PASS: Health check OK"
+
+          echo "=== API Endpoint Check ==="
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer staging-test-key" "${STAGING_URL}/v1/models")
+          echo "Models endpoint: HTTP $HTTP_CODE"
+
+          echo "=== Container Health ==="
+          ssh staging "docker inspect --format='{{.State.Status}}' llm-gateway-staging" | grep -q "running"
+          echo "PASS: Container is running"
+
+          echo "=== All smoke tests passed ==="
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Staging smoke tests failed!"
+          ssh staging "docker logs llm-gateway-staging --tail 100" || true

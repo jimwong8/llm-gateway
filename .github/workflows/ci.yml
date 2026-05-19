@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [master, develop]
   pull_request:
-    branches: [master]
+    branches: [master, develop]
 
 env:
   POSTGRES_DSN: "postgres://postgres:postgres@localhost:5432/llmgateway_ci?sslmode=disable"
@@ -18,37 +18,108 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  go-build:
-    name: Go Build
+  # ── Lint ──────────────────────────────────────────────
+  lint:
+    name: Lint (golangci-lint)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
-      - run: go build ./...
-      - run: go vet ./...
 
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m --out-format=colored-line-number
+
+  # ── Go Build ──────────────────────────────────────────
+  go-build:
+    name: Go Build
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Build binary
+        run: go build -v ./...
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-gateway-binary
+          path: llm-gateway
+          retention-days: 7
+
+  # ── Unit Tests + Coverage ─────────────────────────────
+  unit-test:
+    name: Unit Tests + Coverage
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Run tests with coverage
+        run: |
+          go test ./... -coverprofile=coverage.out -covermode=atomic -count=1
+
+      - name: Generate coverage report
+        run: go tool cover -html=coverage.out -o coverage.html
+
+      - name: Print coverage summary
+        run: go tool cover -func=coverage.out | tail -1
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage.out
+            coverage.html
+          retention-days: 14
+
+  # ── Web Admin ─────────────────────────────────────────
   web-admin:
     name: Web Admin Build + Test
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: web/admin
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
           cache-dependency-path: web/admin/package-lock.json
+
       - run: npm ci
       - run: npm test
       - run: npm run build
 
+      - name: Upload web admin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-admin-dist
+          path: web/admin/dist
+          retention-days: 7
+
+  # ── Integration Tests ─────────────────────────────────
   integration:
     name: Integration Tests (PG)
     runs-on: ubuntu-latest
+    needs: [go-build, unit-test]
     services:
       postgres:
         image: postgres:16
@@ -64,6 +135,7 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
