@@ -1,4 +1,4 @@
-export type ChannelProvider = 'openai' | 'anthropic' | 'google' | 'azure' | 'aws' | 'custom'
+export type ChannelProvider = 'openai' | 'anthropic' | 'google' | 'azure' | 'aws' | 'deepseek' | 'moonshot' | 'zhipu' | 'qwen' | 'baichuan' | 'minimax' | 'mistral' | 'cohere' | 'groq' | 'together' | 'replicate' | 'custom'
 
 export type ChannelStatus = 'active' | 'inactive' | 'error' | 'maintenance'
 

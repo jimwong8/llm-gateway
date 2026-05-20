@@ -5,11 +5,22 @@ import type { Channel, CreateChannelRequest, ChannelProvider, ChannelPriority } 
 
 const PROVIDERS: { value: ChannelProvider; label: string }[] = [
   { value: 'openai', label: 'OpenAI' },
-  { value: 'anthropic', label: 'Anthropic' },
-  { value: 'google', label: 'Google AI' },
   { value: 'azure', label: 'Azure OpenAI' },
+  { value: 'anthropic', label: 'Anthropic (Claude)' },
+  { value: 'google', label: 'Google (Gemini)' },
   { value: 'aws', label: 'AWS Bedrock' },
-  { value: 'custom', label: '自定义' },
+  { value: 'deepseek', label: 'DeepSeek' },
+  { value: 'moonshot', label: 'Moonshot (月之暗面)' },
+  { value: 'zhipu', label: '智谱 (ChatGLM)' },
+  { value: 'qwen', label: '通义千问 (Qwen)' },
+  { value: 'baichuan', label: '百川 (Baichuan)' },
+  { value: 'minimax', label: 'MiniMax' },
+  { value: 'mistral', label: 'Mistral AI' },
+  { value: 'cohere', label: 'Cohere' },
+  { value: 'groq', label: 'Groq' },
+  { value: 'together', label: 'Together AI' },
+  { value: 'replicate', label: 'Replicate' },
+  { value: 'custom', label: '自定义（自行输入）' },
 ]
 
 const PRIORITIES: { value: ChannelPriority; label: string }[] = [
@@ -282,7 +293,7 @@ export function ChannelFormModal({ channel, onClose }: ChannelFormModalProps) {
                       marginBottom: '8px',
                       background: 'var(--surface-color)',
                     }}>
-                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px', textAlign: 'left' }}>
                         共 {fetchedModels.length} 个模型，已选 {selectedFetchedModels.size} 个
                       </div>
                       {availableToAdd.map((m) => (
@@ -292,18 +303,20 @@ export function ChannelFormModal({ channel, onClose }: ChannelFormModalProps) {
                             display: 'flex',
                             alignItems: 'center',
                             gap: '6px',
-                            padding: '2px 0',
+                            padding: '3px 4px',
                             cursor: 'pointer',
                             fontSize: '13px',
+                            textAlign: 'left',
+                            borderRadius: '3px',
                           }}
                         >
                           <input
                             type="checkbox"
                             checked={selectedFetchedModels.has(m)}
                             onChange={() => toggleFetchedModel(m)}
-                            style={{ margin: 0 }}
+                            style={{ margin: 0, flexShrink: 0 }}
                           />
-                          {m}
+                          <span style={{ textAlign: 'left', wordBreak: 'break-all' }}>{m}</span>
                         </label>
                       ))}
                       {selectedFetchedModels.size > 0 && (
