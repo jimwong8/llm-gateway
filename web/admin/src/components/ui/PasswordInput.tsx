@@ -1,7 +1,7 @@
 import { forwardRef, type InputHTMLAttributes, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '../../lib/cn'
-import { Input } from './Input'
+import { Input } from './input'
 
 type PasswordInputProps = {
   label?: string

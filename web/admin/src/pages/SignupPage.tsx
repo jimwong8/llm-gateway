@@ -168,7 +168,7 @@ export function SignupPage() {
 
           {error ? <div className="login-error" role="alert" aria-live="assertive">{error}</div> : null}
 
-          <Button type="submit" variant="primary" size="lg" loading={loading} disabled={loading}>
+          <Button type="submit" variant="default" size="lg" loading={loading} disabled={loading}>
             {loading ? t('signup.signingUp') : t('signup.signup')}
           </Button>
         </form>

@@ -6,7 +6,7 @@ import { DashboardAdminOverviewSection } from '../components/dashboard/Dashboard
 import { DashboardSessionOpsSection } from '../components/dashboard/DashboardSessionOpsSection'
 import { UserDashboardView } from '../components/dashboard/UserDashboardView'
 import { TokenUsageChart, ModelDistributionChart, CacheHitRateChart, ChannelStatusChart, LatencyChart, ErrorRateChart } from '../components/charts'
-import { Tabs } from '../components/ui'
+import { SimpleTabs } from '../components/ui/simple-tabs'
 import { apiRequest } from '../lib/http'
 import { getUserToken } from '../lib/api/identity'
 import { getTokenUsage, getModelDistribution, getCacheHitRate, getChannelStatus, getLatencyTrend, getErrorRateTrend } from '../lib/api/dashboard'
@@ -125,7 +125,7 @@ function DashboardAdminView() {
       />
 
       <div className="page-surface" style={{ marginTop: '1rem' }}>
-        <Tabs tabs={CHART_TABS} activeKey={activeTab} onChange={(key) => setActiveTab(key as ChartTab)} />
+        <SimpleTabs tabs={CHART_TABS} activeKey={activeTab} onChange={(key) => setActiveTab(key as ChartTab)} />
 
         <div style={{ marginTop: '1rem' }}>
           {chartLoading ? <div className="event-state">{t('dashboard.chartLoading')}</div> : null}

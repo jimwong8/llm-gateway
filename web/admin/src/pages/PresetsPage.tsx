@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AppShell } from '../components/layout/AppShell'
 import { EmptyState } from '../components/ui/EmptyState'
 import { TableSkeleton } from '../components/ui/Skeleton'
-import { Tabs } from '../components/ui/Tabs'
+import { SimpleTabs } from '../components/ui/simple-tabs'
 import { PresetFormModal } from '../components/presets/PresetFormModal'
 import { MaskFormModal } from '../components/presets/MaskFormModal'
 import {
@@ -203,7 +203,7 @@ export function PresetsPage() {
 
   return (
     <AppShell title={t('presets.pageTitle')} description={t('presets.pageDescription')}>
-      <Tabs tabs={tabItems} activeKey={activeTab} onChange={(k) => setActiveTab(k as 'presets' | 'masks')} />
+      <SimpleTabs tabs={tabItems} activeKey={activeTab} onChange={(k) => setActiveTab(k as 'presets' | 'masks')} />
 
       {/* 全局脱敏开关 */}
       <div className="mask-global-toggle" style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', background: 'var(--surface-color)', border: '1px solid var(--border-color)', borderRadius: '8px', marginBottom: '16px' }}>

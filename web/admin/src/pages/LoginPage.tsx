@@ -4,7 +4,8 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { setToken } from '../lib/auth'
 import { apiRequest } from '../lib/http'
 import { getGitHubLoginUrl, login, setUserToken } from '../lib/api/identity'
-import { Button, Input, PasswordInput, Tabs } from '../components/ui'
+import { Button, Input, PasswordInput } from '../components/ui'
+import { SimpleTabs } from '../components/ui/simple-tabs'
 
 type LocationState = {
   from?: {
@@ -110,7 +111,7 @@ export function LoginPage() {
         </div>
 
         <div style={{ marginBottom: '1.5rem' }}>
-          <Tabs tabs={MODE_TABS} activeKey={mode} onChange={handleModeChange} />
+          <SimpleTabs tabs={MODE_TABS} activeKey={mode} onChange={handleModeChange} />
         </div>
 
         {mode === 'admin' ? (

@@ -166,7 +166,7 @@ export function ResetPasswordPage() {
 
           {error ? <div className="login-error" role="alert" aria-live="assertive">{error}</div> : null}
 
-          <Button type="submit" variant="primary" size="lg" loading={loading} disabled={loading}>
+          <Button type="submit" variant="default" size="lg" loading={loading} disabled={loading}>
             {loading ? t('password.resetting') : t('password.resetAction')}
           </Button>
         </form>
