@@ -178,3 +178,8 @@ func (c *cachedPresetStore) UpdateMaskRule(ctx context.Context, ruleID, userID i
 	c.invalidateByPrefix(fmt.Sprintf("mask:%d", ruleID))
 	return nil
 }
+
+func (c *cachedPresetStore) ApplyMasks(ctx context.Context, userID int64, tenantID, text string) (string, error) {
+	// ApplyMasks is a real-time operation, delegate directly to base store
+	return c.base.ApplyMasks(ctx, userID, tenantID, text)
+}

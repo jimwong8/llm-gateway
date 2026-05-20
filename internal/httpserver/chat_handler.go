@@ -332,6 +332,17 @@ func (s *Server) chatStreamMessages(w http.ResponseWriter, r *http.Request) {
 		assistantContent = resp.Choices[0].Message.Content
 	}
 
+	// Apply mask rules to assistant response in streaming mode
+	if s.maskEnabled && s.presetStore != nil && assistantContent != "" {
+		maskCtx, maskCancel := context.WithTimeout(context.Background(), 1*time.Second)
+		masked, err := s.presetStore.ApplyMasks(maskCtx, claims.UserID, "", assistantContent)
+		maskCancel()
+		if err == nil && masked != assistantContent {
+			assistantContent = masked
+			w.Header().Set("X-Mask-Applied", "true")
+		}
+	}
+
 	assistantMsg, err := s.chatStore.AddMessage(r.Context(), sessionID, "assistant", assistantContent, resp.Model, resp.Usage.CompletionTokens)
 	if err != nil {
 		slog.Warn("failed to store assistant message", "err", err)

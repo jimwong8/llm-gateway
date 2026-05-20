@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react'
+import { FormEvent, useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AppShell } from '../components/layout/AppShell'
@@ -13,8 +13,10 @@ import {
   deleteMaskRule,
   deletePreset,
   fetchMaskRules,
+  fetchMaskSettings,
   fetchPresets,
   updateMaskRule,
+  updateMaskSettings,
   updatePreset,
 } from '../lib/api/presets'
 import type { MaskRuleInput, PromptPreset, PromptPresetInput } from '../types/preset'
@@ -67,6 +69,24 @@ export function PresetsPage() {
   const [editingPresetId, setEditingPresetId] = useState<number | null>(null)
   const [presetForm, setPresetForm] = useState<PresetFormState>(emptyPresetForm)
   const [maskForm, setMaskForm] = useState<MaskFormState>(emptyMaskForm)
+
+  // ── Mask Settings ──────────────────────────────────────
+  const maskSettingsQuery = useQuery({
+    queryKey: ['mask-settings'],
+    queryFn: fetchMaskSettings,
+  })
+
+  const updateMaskSettingsMutation = useMutation({
+    mutationFn: (enabled: boolean) => updateMaskSettings(enabled),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mask-settings'] })
+    },
+  })
+
+  const handleToggleMaskEnabled = useCallback(() => {
+    const currentEnabled = maskSettingsQuery.data?.enabled ?? false
+    updateMaskSettingsMutation.mutate(!currentEnabled)
+  }, [maskSettingsQuery.data?.enabled, updateMaskSettingsMutation])
 
   // ── Queries ──────────────────────────────────────────
   const presetsQuery = useQuery({
@@ -184,6 +204,26 @@ export function PresetsPage() {
   return (
     <AppShell title={t('presets.pageTitle')} description={t('presets.pageDescription')}>
       <Tabs tabs={tabItems} activeKey={activeTab} onChange={(k) => setActiveTab(k as 'presets' | 'masks')} />
+
+      {/* 全局脱敏开关 */}
+      <div className="mask-global-toggle" style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', background: 'var(--surface-color)', border: '1px solid var(--border-color)', borderRadius: '8px', marginBottom: '16px' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: 500 }}>
+          <input
+            type="checkbox"
+            checked={maskSettingsQuery.data?.enabled ?? false}
+            onChange={handleToggleMaskEnabled}
+            disabled={updateMaskSettingsMutation.isPending}
+            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+          />
+          {t('presets.maskGlobalToggle') ?? '启用脱敏（在聊天请求/响应中自动应用脱敏规则）'}
+        </label>
+        {updateMaskSettingsMutation.isPending && <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>...</span>}
+        {maskSettingsQuery.data?.enabled && (
+          <span className="badge badge--success" style={{ fontSize: '11px' }}>
+            {t('presets.maskEnabled') ?? '已启用'}
+          </span>
+        )}
+      </div>
 
       {activeTab === 'presets' ? (
         <div className="presets-section">

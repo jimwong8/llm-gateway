@@ -55,6 +55,7 @@ type Config struct {
 	FallbackMinScoreRatio    float64
 	AuditRetentionDays       int
 	DefaultAPIKeyRPM         int
+	MaskEnabled              bool
 	GitHubClientID           string
 	GitHubClientSecret       string
 	SMTPHost                 string
@@ -114,6 +115,7 @@ func Load() Config {
 		FallbackMinScoreRatio:        getenvFloat("FALLBACK_MIN_SCORE_RATIO", 0.5),
 		AuditRetentionDays:           getenvInt("AUDIT_RETENTION_DAYS", 90),
 		DefaultAPIKeyRPM:             getenvInt("DEFAULT_API_KEY_RPM", 60),
+		MaskEnabled:                  getenvBool("MASK_ENABLED", false),
 		GitHubClientID:               getenv("GITHUB_CLIENT_ID", ""),
 		GitHubClientSecret:           getenv("GITHUB_CLIENT_SECRET", ""),
 		SMTPHost:                     getenv("SMTP_HOST", ""),

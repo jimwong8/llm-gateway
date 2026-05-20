@@ -80,6 +80,7 @@ type Server struct {
 	usageLogStore                 usageLogStore
 	chatStore                     chatStore
 	presetStore                   presetStore
+	maskEnabled                   bool
 	webhookRegistry               *webhook.WebhookRegistry
 	apiKeyRateLimiter             *APIKeyRateLimiter
 	defaultAPIKeyRPM              int
@@ -1845,6 +1846,24 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(sessionIDHeader, req.SessionID)
 	slog.Info("session_id resolved", "source", sessionSource, "session_id", req.SessionID)
 
+	// Apply mask rules to user messages if enabled
+	if s.maskEnabled && s.presetStore != nil {
+		claims := getUserClaims(r.Context())
+		if claims != nil {
+			maskCtx, maskCancel := context.WithTimeout(context.Background(), 1*time.Second)
+			for i := range req.Messages {
+				if strings.EqualFold(req.Messages[i].Role, "user") && req.Messages[i].Content != "" {
+					masked, err := s.presetStore.ApplyMasks(maskCtx, claims.UserID, req.TenantID, req.Messages[i].Content)
+					if err == nil && masked != req.Messages[i].Content {
+						req.Messages[i].Content = masked
+						w.Header().Set("X-Mask-Applied", "true")
+					}
+				}
+			}
+			maskCancel()
+		}
+	}
+
 	if s.policy != nil && req.TenantID != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		allowedModels, err := s.policy.AllowedModels(ctx, req.TenantID)
@@ -2068,6 +2087,23 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		if err == nil && hit {
 			cacheStatus = "HIT"
 			w.Header().Set("X-Cache", cacheStatus)
+			// Apply mask rules to cached response
+			if s.maskEnabled && s.presetStore != nil && len(cached.Choices) > 0 {
+				claims := getUserClaims(r.Context())
+				if claims != nil {
+					maskCtx, maskCancel := context.WithTimeout(context.Background(), 1*time.Second)
+					for i := range cached.Choices {
+						if cached.Choices[i].Message.Content != "" {
+							masked, err := s.presetStore.ApplyMasks(maskCtx, claims.UserID, req.TenantID, cached.Choices[i].Message.Content)
+							if err == nil && masked != cached.Choices[i].Message.Content {
+								cached.Choices[i].Message.Content = masked
+								w.Header().Set("X-Mask-Applied", "true")
+							}
+						}
+					}
+					maskCancel()
+				}
+			}
 			s.writeAuditAsync(audit.Event{RequestID: requestID, RouteMode: decision.RouteMode, RouteTask: decision.Task, RouteModel: decision.Model, RouteProvider: decision.Provider, RouteReason: decision.Reason, RouteScore: routeScore, CacheStatus: cacheStatus, FallbackUsed: false, RequestPayload: requestToMap(req), ResponsePayload: responseToMap(*cached)})
 			be := buildUsageEvent(requestID, req, decision, decision.Provider, "HIT", "l1_exact", false, true, "", "", time.Since(startedAt), *cached)
 			s.writeBillingAsync(be)
@@ -2088,6 +2124,23 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			cacheStatus = "SEMANTIC_HIT"
 			w.Header().Set("X-Cache", cacheStatus)
 			w.Header().Set("X-Semantic-Score", fmt.Sprintf("%.4f", hit.Score))
+			// Apply mask rules to semantic cached response
+			if s.maskEnabled && s.presetStore != nil && len(hit.Response.Choices) > 0 {
+				claims := getUserClaims(r.Context())
+				if claims != nil {
+					maskCtx, maskCancel := context.WithTimeout(context.Background(), 1*time.Second)
+					for i := range hit.Response.Choices {
+						if hit.Response.Choices[i].Message.Content != "" {
+							masked, err := s.presetStore.ApplyMasks(maskCtx, claims.UserID, req.TenantID, hit.Response.Choices[i].Message.Content)
+							if err == nil && masked != hit.Response.Choices[i].Message.Content {
+								hit.Response.Choices[i].Message.Content = masked
+								w.Header().Set("X-Mask-Applied", "true")
+							}
+						}
+					}
+					maskCancel()
+				}
+			}
 			s.writeAuditAsync(audit.Event{RequestID: requestID, RouteMode: decision.RouteMode, RouteTask: decision.Task, RouteModel: decision.Model, RouteProvider: decision.Provider, RouteReason: decision.Reason, RouteScore: routeScore, CacheStatus: cacheStatus, FallbackUsed: false, RequestPayload: requestToMap(req), ResponsePayload: responseToMap(hit.Response)})
 			be := buildUsageEvent(requestID, req, decision, decision.Provider, "SEMANTIC_HIT", "l2_semantic", false, true, "", "", time.Since(startedAt), hit.Response)
 			s.writeBillingAsync(be)
@@ -2189,6 +2242,25 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	cacheStatus = "MISS"
 	w.Header().Set("X-Cache", cacheStatus)
+
+	// Apply mask rules to assistant response before returning to client
+	if s.maskEnabled && s.presetStore != nil && len(resp.Choices) > 0 {
+		claims := getUserClaims(r.Context())
+		if claims != nil {
+			maskCtx, maskCancel := context.WithTimeout(context.Background(), 1*time.Second)
+			for i := range resp.Choices {
+				if resp.Choices[i].Message.Content != "" {
+					masked, err := s.presetStore.ApplyMasks(maskCtx, claims.UserID, req.TenantID, resp.Choices[i].Message.Content)
+					if err == nil && masked != resp.Choices[i].Message.Content {
+						resp.Choices[i].Message.Content = masked
+						w.Header().Set("X-Mask-Applied", "true")
+					}
+				}
+			}
+			maskCancel()
+		}
+	}
+
 	s.writeAuditAsync(audit.Event{RequestID: requestID, RouteMode: decision.RouteMode, RouteTask: decision.Task, RouteModel: decision.Model, RouteProvider: decision.Provider, RouteReason: decision.Reason, RouteScore: routeScore, CacheStatus: cacheStatus, FallbackUsed: fallbackUsed, RequestPayload: requestToMap(req), ResponsePayload: responseToMap(resp)})
 	be := buildUsageEvent(requestID, req, decision, decision.Provider, "MISS", "none", fallbackUsed, true, "", "", time.Since(startedAt), resp)
 	s.writeBillingAsync(be)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -22,6 +23,7 @@ type presetStore interface {
 	ListMaskRules(ctx context.Context, userID int64, tenantID string) ([]memory.MaskRule, error)
 	DeleteMaskRule(ctx context.Context, ruleID, userID int64, tenantID string) error
 	UpdateMaskRule(ctx context.Context, ruleID, userID int64, tenantID, name, pattern, replace string, enabled bool) error
+	ApplyMasks(ctx context.Context, userID int64, tenantID, text string) (string, error)
 }
 
 func (s *Server) WithPresetStore(store presetStore) *Server {
@@ -29,10 +31,16 @@ func (s *Server) WithPresetStore(store presetStore) *Server {
 	return s
 }
 
+func (s *Server) WithMaskEnabled(enabled bool) *Server {
+	s.maskEnabled = enabled
+	return s
+}
+
 func (s *Server) mountPresetRoutes(mux *http.ServeMux) {
 	if s.presetStore == nil {
 		return
 	}
+	mux.HandleFunc("/api/memory/masks/settings", s.requireUser(s.maskSettings))
 	mux.HandleFunc("/api/memory/presets", s.requireUser(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -368,4 +376,42 @@ func (s *Server) maskDelete(w http.ResponseWriter, r *http.Request, id int64) {
 		"id": id,
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
+func (s *Server) maskSettings(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, map[string]any{"enabled": s.maskEnabled})
+	case http.MethodPut:
+		var body struct {
+			Enabled bool `json:"enabled"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			badRequest(w, "invalid JSON")
+			return
+		}
+		s.maskEnabled = body.Enabled
+		s.writeAuditAsync(audit.Event{
+			RequestPayload: map[string]any{
+				"action":  "mask_settings_updated",
+				"enabled": body.Enabled,
+			},
+		})
+		writeJSON(w, http.StatusOK, map[string]any{"enabled": s.maskEnabled})
+	default:
+		methodNotAllowed(w, r)
+	}
+}
+
+// ApplyMaskToText applies all active mask rules to the given text.
+func (s *Server) ApplyMaskToText(ctx context.Context, userID int64, tenantID, text string) string {
+	if !s.maskEnabled || s.presetStore == nil || text == "" {
+		return text
+	}
+	masked, err := s.presetStore.ApplyMasks(ctx, userID, tenantID, text)
+	if err != nil {
+		slog.Warn("mask application failed", "err", err)
+		return text
+	}
+	return masked
 }

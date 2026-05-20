@@ -222,6 +222,7 @@ func main() {
 		} else {
 			srv = srv.WithPresetStore(memory.NewPresetStore(db))
 			srv = srv.WithUsageLogStore(httpserver.NewSQLUsageLogStore(db))
+			srv = srv.WithMaskEnabled(cfg.MaskEnabled)
 		}
 	}
 	if cfg.ModelGovernanceEnabled && governanceStore != nil {
