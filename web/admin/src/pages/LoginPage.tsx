@@ -1,10 +1,10 @@
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { setToken } from '../lib/auth'
 import { apiRequest } from '../lib/http'
 import { getGitHubLoginUrl, login, setUserToken } from '../lib/api/identity'
-import { Button, Input, Tabs } from '../components/ui'
+import { Button, Input, PasswordInput, Tabs } from '../components/ui'
 
 type LocationState = {
   from?: {
@@ -14,7 +14,7 @@ type LocationState = {
 
 type LoginMode = 'admin' | 'user'
 
-
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export function LoginPage() {
   const { t } = useTranslation()
@@ -48,6 +48,11 @@ export function LoginPage() {
     apiRequest<{ github_enabled: boolean }>('/api/auth/oauth/config', {}, { auth: 'none' })
       .then(cfg => setGitHubEnabled(cfg.github_enabled))
       .catch(() => {})
+  }, [location.search, navigate, nextPath])
+
+  const handleModeChange = useCallback((key: string) => {
+    setMode(key as LoginMode)
+    setError('')
   }, [])
 
   async function handleAdminSubmit(event: FormEvent<HTMLFormElement>) {
@@ -69,10 +74,20 @@ export function LoginPage() {
   async function handleUserSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError('')
-    if (!email.trim() || !password) {
-      setError(t('auth.emailPasswordRequired'))
+
+    if (!email.trim()) {
+      setError(t('auth.emailRequired'))
       return
     }
+    if (!EMAIL_REGEX.test(email.trim())) {
+      setError(t('auth.emailInvalid'))
+      return
+    }
+    if (!password) {
+      setError(t('auth.passwordRequired'))
+      return
+    }
+
     setLoading(true)
     try {
       const res = await login({ email: email.trim(), password })
@@ -87,7 +102,7 @@ export function LoginPage() {
 
   return (
     <main className="login-page">
-      <section className="login-card">
+      <section className="login-card" aria-label={t('auth.loginTitle')}>
         <div className="login-card__header">
           <span className="login-badge">LLM Gateway</span>
           <h1>{t('auth.loginTitle')}</h1>
@@ -95,11 +110,11 @@ export function LoginPage() {
         </div>
 
         <div style={{ marginBottom: '1.5rem' }}>
-          <Tabs tabs={MODE_TABS} activeKey={mode} onChange={(key) => { setMode(key as LoginMode); setError('') }} />
+          <Tabs tabs={MODE_TABS} activeKey={mode} onChange={handleModeChange} />
         </div>
 
         {mode === 'admin' ? (
-          <form className="login-form" onSubmit={handleAdminSubmit}>
+          <form className="login-form" onSubmit={handleAdminSubmit} noValidate>
             <Input
               id="admin-token"
               label={t('auth.adminToken')}
@@ -108,16 +123,35 @@ export function LoginPage() {
               value={token}
               onChange={(event) => setTokenValue(event.target.value)}
               error={error}
+              autoComplete="off"
+              required
             />
             <Button type="submit" variant="primary" size="lg">{t('auth.enterConsole')}</Button>
           </form>
         ) : (
           <>
-            <form className="login-form" onSubmit={handleUserSubmit}>
-              <Input label={t('auth.email')} id="email" type="email" placeholder={t('auth.emailPlaceholder')} value={email} onChange={(e) => setEmail(e.target.value)} />
-              <Input label={t('auth.password')} id="password" type="password" placeholder={t('auth.passwordPlaceholder')} value={password} onChange={(e) => setPassword(e.target.value)} />
+            <form className="login-form" onSubmit={handleUserSubmit} noValidate>
+              <Input
+                id="email"
+                label={t('auth.email')}
+                type="email"
+                placeholder={t('auth.emailPlaceholder')}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                required
+              />
+              <PasswordInput
+                id="password"
+                label={t('auth.password')}
+                placeholder={t('auth.passwordPlaceholder')}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                required
+              />
               {error ? (
-                <div className="login-error" role="alert">{error}</div>
+                <div className="login-error" role="alert" aria-live="assertive">{error}</div>
               ) : null}
               <Button type="submit" variant="primary" size="lg" loading={loading} disabled={loading}>
                 {loading ? t('auth.loggingIn') : t('auth.login')}
@@ -135,7 +169,7 @@ export function LoginPage() {
                     fontWeight: 500, fontSize: '0.9rem',
                   }}
                 >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                     <path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.387.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.73.083-.73 1.205.085 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795 24 17.295 24 12 24 5.37 18.63 0 12 0z"/>
                   </svg>
                   {t('auth.githubLogin')}
@@ -143,7 +177,7 @@ export function LoginPage() {
               </div>
             )}
             <p style={{ textAlign: 'center', marginTop: '0.5rem' }}>
-              <Link to="/forgot-password" style={{ color: '#94a3b8', fontSize: '0.85rem' }}>忘记密码？</Link>
+              <Link to="/forgot-password" style={{ color: '#94a3b8', fontSize: '0.85rem' }}>{t('auth.forgotPassword')}</Link>
             </p>
             <p style={{ textAlign: 'center', marginTop: '0.5rem', color: '#94a3b8', fontSize: '0.85rem' }}>
               {t('auth.noAccount')}<Link to="/signup">{t('auth.register')}</Link>

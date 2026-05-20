@@ -81,6 +81,10 @@ func (m *mockPresetStore) DeleteMaskRule(_ context.Context, ruleID, userID int64
 	return errNotFound
 }
 
+func (m *mockPresetStore) ApplyMasks(_ context.Context, userID int64, tenantID, text string) (string, error) {
+	return text, nil
+}
+
 func (m *mockPresetStore) UpdateMaskRule(_ context.Context, ruleID, userID int64, tenantID, name, pattern, replace string, enabled bool) error {
 	for i := range m.masks {
 		if m.masks[i].ID == ruleID && m.masks[i].UserID == userID {

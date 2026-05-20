@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/mail"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"llm-gateway/gateway/internal/auth"
 	"llm-gateway/gateway/internal/billing"
@@ -143,14 +145,24 @@ func (s *Server) authSignup(w http.ResponseWriter, r *http.Request) {
 	}
 	body.Email = strings.TrimSpace(strings.ToLower(body.Email))
 	body.Username = strings.TrimSpace(body.Username)
-	body.Password = strings.TrimSpace(body.Password)
 
 	if body.Email == "" || body.Username == "" || body.Password == "" {
 		badRequest(w, "email, username, and password are required")
 		return
 	}
-	if len(body.Password) < 8 {
-		badRequest(w, "password must be at least 8 characters")
+
+	if _, err := mail.ParseAddress(body.Email); err != nil {
+		badRequest(w, "invalid email format")
+		return
+	}
+
+	if len(body.Username) < 2 || len(body.Username) > 32 {
+		badRequest(w, "username must be between 2 and 32 characters")
+		return
+	}
+
+	if msg := validatePasswordStrength(body.Password); msg != "" {
+		badRequest(w, msg)
 		return
 	}
 
@@ -163,7 +175,7 @@ func (s *Server) authSignup(w http.ResponseWriter, r *http.Request) {
 	user, err := s.userStore.CreateUser(r.Context(), body.Email, body.Username, hash)
 	if err != nil {
 		if strings.Contains(err.Error(), "unique") || strings.Contains(err.Error(), "duplicate") {
-			writeJSON(w, http.StatusConflict, map[string]any{"error": map[string]any{"message": "email or username already exists", "type": "conflict_error"}})
+			writeJSON(w, http.StatusConflict, map[string]any{"error": map[string]any{"message": "registration failed, please try again", "type": "conflict_error"}})
 			return
 		}
 		internalError(w, err)
@@ -197,10 +209,14 @@ func (s *Server) authLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body.Email = strings.TrimSpace(strings.ToLower(body.Email))
-	body.Password = strings.TrimSpace(body.Password)
 
 	if body.Email == "" || body.Password == "" {
 		badRequest(w, "email and password are required")
+		return
+	}
+
+	if _, err := mail.ParseAddress(body.Email); err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]any{"message": "invalid email or password", "type": "authentication_error"}})
 		return
 	}
 
@@ -598,4 +614,53 @@ func (s *Server) userAPIKeyUsageByID(w http.ResponseWriter, r *http.Request) {
 		"summary": summary,
 		"history": history,
 	})
+}
+
+// validatePasswordStrength 检查密码强度，返回空字符串表示通过，否则返回错误消息。
+// 要求：至少 8 个字符，且包含大写字母、小写字母、数字、特殊字符中的至少 3 种。
+func validatePasswordStrength(password string) string {
+	if len(password) < 8 {
+		return "password must be at least 8 characters"
+	}
+	if len(password) > 128 {
+		return "password must not exceed 128 characters"
+	}
+
+	var (
+		hasUpper   bool
+		hasLower   bool
+		hasDigit   bool
+		hasSpecial bool
+	)
+	for _, c := range password {
+		switch {
+		case unicode.IsUpper(c):
+			hasUpper = true
+		case unicode.IsLower(c):
+			hasLower = true
+		case unicode.IsDigit(c):
+			hasDigit = true
+		case unicode.IsPunct(c) || unicode.IsSymbol(c):
+			hasSpecial = true
+		}
+	}
+
+	categories := 0
+	if hasUpper {
+		categories++
+	}
+	if hasLower {
+		categories++
+	}
+	if hasDigit {
+		categories++
+	}
+	if hasSpecial {
+		categories++
+	}
+
+	if categories < 3 {
+		return "password must contain at least 3 of the following: uppercase letters, lowercase letters, digits, special characters"
+	}
+	return ""
 }

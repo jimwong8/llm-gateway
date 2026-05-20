@@ -3,6 +3,9 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { apiRequest } from '../lib/http'
+import { Button, Input } from '../components/ui'
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export function ForgotPasswordPage() {
   const { t } = useTranslation()
@@ -14,13 +17,23 @@ export function ForgotPasswordPage() {
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError('')
+
     if (!email.trim()) {
       setError(t('password.emailRequired'))
       return
     }
+    if (!EMAIL_REGEX.test(email.trim())) {
+      setError(t('password.emailInvalid'))
+      return
+    }
+
     setLoading(true)
     try {
-      await apiRequest('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email: email.trim() }), headers: { 'Content-Type': 'application/json' } }, { auth: 'none' })
+      await apiRequest('/api/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email: email.trim() }),
+        headers: { 'Content-Type': 'application/json' },
+      }, { auth: 'none' })
       setSuccess(true)
       toast.success(t('password.resetLinkSentToast'))
     } catch (err: unknown) {
@@ -35,7 +48,7 @@ export function ForgotPasswordPage() {
   if (success) {
     return (
       <main className="login-page">
-        <section className="login-card">
+        <section className="login-card" aria-label={t('password.resetLinkSentTitle')}>
           <div className="login-card__header">
             <h1>{t('password.resetLinkSentTitle')}</h1>
             <p>{t('password.resetLinkSentDescription')}</p>
@@ -50,21 +63,27 @@ export function ForgotPasswordPage() {
 
   return (
     <main className="login-page">
-      <section className="login-card">
+      <section className="login-card" aria-label={t('password.forgotTitle')}>
         <div className="login-card__header">
           <span className="login-badge">LLM Gateway</span>
           <h1>{t('password.forgotTitle')}</h1>
           <p>{t('password.forgotDescription')}</p>
         </div>
-        <form className="login-form" onSubmit={handleSubmit}>
-          <label>
-            {t('auth.email')}
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder={t('auth.emailPlaceholder')} />
-          </label>
-          {error ? <div className="login-error" role="alert">{error}</div> : null}
-          <button type="submit" className="button-primary" disabled={loading}>
+        <form className="login-form" onSubmit={handleSubmit} noValidate>
+          <Input
+            id="email"
+            label={t('auth.email')}
+            type="email"
+            placeholder={t('auth.emailPlaceholder')}
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            error={error}
+            autoComplete="email"
+            required
+          />
+          <Button type="submit" variant="primary" size="lg" loading={loading} disabled={loading}>
             {loading ? t('password.sending') : t('password.sendResetLink')}
-          </button>
+          </Button>
         </form>
         <p style={{ textAlign: 'center', marginTop: '1rem' }}>
           <Link to="/login">{t('password.backToLogin')}</Link>
