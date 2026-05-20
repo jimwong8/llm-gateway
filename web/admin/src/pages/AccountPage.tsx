@@ -14,9 +14,10 @@ export function AccountPage() {
     setLoading(true)
     try {
       const res = await listOAuthBindings()
-      setBindings(res.data)
+      setBindings(res?.data ?? [])
     } catch (err: unknown) {
       setError((err as Error)?.message ?? t('account.loadError'))
+      setBindings([])
     } finally {
       setLoading(false)
     }

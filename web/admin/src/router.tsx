@@ -113,10 +113,6 @@ export const router = createBrowserRouter([
         element: <SystemPage />,
       },
       {
-        path: 'system/settings',
-        element: <SystemPage />,
-      },
-      {
         path: 'playground',
         element: <PlaygroundPage />,
       },

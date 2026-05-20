@@ -72,12 +72,12 @@ export async function listOAuthBindings(): Promise<{ object: string; data: OAuth
   return apiRequest('/api/user/oauth', {
     method: 'GET',
     headers: authHeaders(),
-  }, { auth: 'none' })
+  }, { auth: 'admin' })
 }
 
 export async function deleteOAuthBinding(provider: string): Promise<{ status: string }> {
   return apiRequest(`/api/user/oauth/${provider}`, {
     method: 'DELETE',
     headers: authHeaders(),
-  }, { auth: 'none' })
+  }, { auth: 'admin' })
 }
