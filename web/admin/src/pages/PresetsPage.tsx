@@ -212,15 +212,15 @@ export function PresetsPage() {
             type="checkbox"
             checked={maskSettingsQuery.data?.enabled ?? false}
             onChange={handleToggleMaskEnabled}
-            disabled={updateMaskSettingsMutation.isPending}
+            disabled={updateMaskSettingsMutation.isPending || maskSettingsQuery.isLoading}
             style={{ width: '16px', height: '16px', cursor: 'pointer' }}
           />
-          {t('presets.maskGlobalToggle') ?? '启用脱敏（在聊天请求/响应中自动应用脱敏规则）'}
+          启用脱敏（在聊天请求/响应中自动应用脱敏规则）
         </label>
-        {updateMaskSettingsMutation.isPending && <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>...</span>}
+        {updateMaskSettingsMutation.isPending && <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>保存中...</span>}
         {maskSettingsQuery.data?.enabled && (
           <span className="badge badge--success" style={{ fontSize: '11px' }}>
-            {t('presets.maskEnabled') ?? '已启用'}
+            已启用
           </span>
         )}
       </div>
