@@ -71,3 +71,16 @@ export async function batchUpdateChannelsStatus(ids: string[], status: ChannelSt
 export async function testChannel(id: string): Promise<ChannelTestResult> {
   return apiRequest<ChannelTestResult>(`/admin/channels/${id}/test`, { method: 'POST' })
 }
+
+export async function fetchProviderModels(input: {
+  provider: string
+  base_url: string
+  api_key: string
+}): Promise<string[]> {
+  const resp = await apiRequest<{ object: string; data: string[] }>('/admin/channels/fetch-models', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  return resp.data ?? []
+}

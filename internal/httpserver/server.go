@@ -234,6 +234,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/admin/channels/batch-delete", s.requireAdmin(s.adminChannelsBatchDelete))
 	mux.HandleFunc("/admin/channels/batch-status", s.requireAdmin(s.adminChannelsBatchStatus))
 	mux.HandleFunc("/admin/dashboard", s.requireAdmin(s.adminDashboard))
+	mux.HandleFunc("/admin/channels/fetch-models", s.requireAdmin(s.adminFetchProviderModels))
 	mux.HandleFunc("/admin/assets", s.requireAdmin(s.adminAssets))
 	mux.HandleFunc("/admin/assets/", s.requireAdmin(s.adminAssetByID))
 	mux.HandleFunc("/admin/assets/stats", s.requireAdmin(s.adminAssetStats))
@@ -1817,6 +1818,79 @@ func (s *Server) models(w http.ResponseWriter, _ *http.Request) {
 		data = append(data, map[string]any{"id": item.ID, "object": "model", "owned_by": item.Provider, "task": item.Task, "description": item.Description, "capability": item.Capability, "cost_score": item.CostScore, "latency_score": item.LatencyScore, "health_score": item.HealthScore})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
+}
+
+func (s *Server) adminFetchProviderModels(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, r)
+		return
+	}
+	var body struct {
+		Provider string `json:"provider"`
+		BaseURL  string `json:"base_url"`
+		APIKey   string `json:"api_key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		badRequest(w, "invalid JSON body")
+		return
+	}
+	body.Provider = strings.TrimSpace(body.Provider)
+	body.BaseURL = strings.TrimSpace(body.BaseURL)
+	body.APIKey = strings.TrimSpace(body.APIKey)
+	if body.BaseURL == "" {
+		badRequest(w, "base_url is required")
+		return
+	}
+
+	// Build request URL: append /v1/models if not already present
+	url := strings.TrimRight(body.BaseURL, "/")
+	if !strings.HasSuffix(url, "/v1") && !strings.HasSuffix(url, "/v1/models") {
+		url += "/v1/models"
+	} else if strings.HasSuffix(url, "/v1") {
+		url += "/models"
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid URL", "type": "invalid_request_error"}})
+		return
+	}
+	if body.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+body.APIKey)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{"error": map[string]any{"message": fmt.Sprintf("failed to fetch models: %v", err), "type": "provider_error"}})
+		return
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Object string `json:"object"`
+		Data   []struct {
+			ID      string `json:"id"`
+			Object  string `json:"object"`
+			OwnedBy string `json:"owned_by"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{"error": map[string]any{"message": fmt.Sprintf("failed to parse models response: %v", err), "type": "provider_error"}})
+		return
+	}
+
+	modelIDs := make([]string, 0, len(result.Data))
+	for _, m := range result.Data {
+		if m.ID != "" {
+			modelIDs = append(modelIDs, m.ID)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": modelIDs})
 }
 
 func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {

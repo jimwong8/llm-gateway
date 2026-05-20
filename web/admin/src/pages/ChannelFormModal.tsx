@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { createChannel, updateChannel } from '../lib/channels'
+import { createChannel, updateChannel, fetchProviderModels } from '../lib/channels'
 import type { Channel, CreateChannelRequest, ChannelProvider, ChannelPriority } from '../types/channel'
 
 const PROVIDERS: { value: ChannelProvider; label: string }[] = [
@@ -43,6 +43,56 @@ export function ChannelFormModal({ channel, onClose }: ChannelFormModalProps) {
 
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [modelInput, setModelInput] = useState('')
+  const [providerInput, setProviderInput] = useState<string>(channel?.provider ?? 'openai')
+
+  // ── 读取模型 ────────────────────────────
+  const [fetchedModels, setFetchedModels] = useState<string[]>([])
+  const [fetchingModels, setFetchingModels] = useState(false)
+  const [fetchModelsError, setFetchModelsError] = useState('')
+  const [selectedFetchedModels, setSelectedFetchedModels] = useState<Set<string>>(new Set())
+
+  const handleFetchModels = async () => {
+    if (!form.base_url.trim()) {
+      setFetchModelsError('请先填写 Base URL')
+      return
+    }
+    setFetchingModels(true)
+    setFetchModelsError('')
+    try {
+      const models = await fetchProviderModels({
+        provider: form.provider,
+        base_url: form.base_url,
+        api_key: form.api_key ?? '',
+      })
+      setFetchedModels(models)
+      setSelectedFetchedModels(new Set())
+    } catch (err) {
+      setFetchModelsError((err as Error).message ?? '读取模型失败')
+    } finally {
+      setFetchingModels(false)
+    }
+  }
+
+  const toggleFetchedModel = (model: string) => {
+    setSelectedFetchedModels(prev => {
+      const next = new Set(prev)
+      if (next.has(model)) next.delete(model)
+      else next.add(model)
+      return next
+    })
+  }
+
+  const addSelectedModels = () => {
+    const existing = new Set(form.models ?? [])
+    selectedFetchedModels.forEach(m => existing.add(m))
+    setForm({ ...form, models: Array.from(existing) })
+    setSelectedFetchedModels(new Set())
+  }
+
+  const availableToAdd = useMemo(() => {
+    const existing = new Set(form.models ?? [])
+    return fetchedModels.filter(m => !existing.has(m))
+  }, [fetchedModels, form.models])
 
   const mutation = useMutation({
     mutationFn: isEditing
@@ -132,16 +182,24 @@ export function ChannelFormModal({ channel, onClose }: ChannelFormModalProps) {
 
                 <label>
                   供应商
-                  <select
-                    value={form.provider}
-                    onChange={(e) => updateField('provider', e.target.value as ChannelProvider)}
-                  >
-                    {PROVIDERS.map((p) => (
-                      <option key={p.value} value={p.value}>
-                        {p.label}
-                      </option>
-                    ))}
-                  </select>
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    <input
+                      type="text"
+                      list="provider-options"
+                      value={providerInput}
+                      onChange={(e) => {
+                        setProviderInput(e.target.value)
+                        updateField('provider', e.target.value as ChannelProvider)
+                      }}
+                      placeholder="选择或输入供应商名称"
+                      style={{ flex: 1 }}
+                    />
+                    <datalist id="provider-options">
+                      {PROVIDERS.map((p) => (
+                        <option key={p.value} value={p.value}>{p.label}</option>
+                      ))}
+                    </datalist>
+                  </div>
                 </label>
 
                 <label>
@@ -196,6 +254,72 @@ export function ChannelFormModal({ channel, onClose }: ChannelFormModalProps) {
 
                 <label className="channel-form__full-row">
                   模型列表
+                  {/* 读取模型按钮 */}
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                    <button
+                      type="button"
+                      className="btn btn--outline btn--sm"
+                      onClick={handleFetchModels}
+                      disabled={fetchingModels}
+                    >
+                      {fetchingModels ? '读取中...' : '📡 读取模型'}
+                    </button>
+                    {fetchModelsError && (
+                      <span style={{ color: 'var(--danger-color)', fontSize: '12px', alignSelf: 'center' }}>
+                        {fetchModelsError}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 读取到的模型列表（多选） */}
+                  {fetchedModels.length > 0 && (
+                    <div style={{
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '6px',
+                      padding: '8px',
+                      maxHeight: '200px',
+                      overflowY: 'auto',
+                      marginBottom: '8px',
+                      background: 'var(--surface-color)',
+                    }}>
+                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                        共 {fetchedModels.length} 个模型，已选 {selectedFetchedModels.size} 个
+                      </div>
+                      {availableToAdd.map((m) => (
+                        <label
+                          key={m}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '2px 0',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedFetchedModels.has(m)}
+                            onChange={() => toggleFetchedModel(m)}
+                            style={{ margin: 0 }}
+                          />
+                          {m}
+                        </label>
+                      ))}
+                      {selectedFetchedModels.size > 0 && (
+                        <button
+                          type="button"
+                          className="btn btn--sm btn--primary"
+                          onClick={addSelectedModels}
+                          style={{ marginTop: '8px', width: '100%' }}
+                        >
+                          添加选中的 {selectedFetchedModels.size} 个模型
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 手动添加模型 */}
                   <div className="channel-form__tag-input">
                     <input
                       type="text"
