@@ -113,9 +113,51 @@ describe('DashboardPage - admin view', () => {
     renderPage()
 
     expect(await screen.findByRole('heading', { name: '仪表盘', level: 1 })).toBeInTheDocument()
-    expect(await screen.findByText('llm-gateway')).toBeInTheDocument()
-    expect(screen.getByText('88.0%')).toBeInTheDocument()
-    expect(screen.getByText('12.5%')).toBeInTheDocument()
+    expect(screen.getAllByText('LLM Gateway').length).toBeGreaterThan(0)
+    // Terminal-style dashboard renders polaris metrics from admin endpoints
+    expect(await screen.findByText('RPS')).toBeInTheDocument()
+  })
+
+  it('renders terminal homepage sections', async () => {
+    const fetchMock = adminFetchMocks()
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderPage()
+
+    // 北极星状态带 — RPS metric label
+    expect(await screen.findByText('RPS')).toBeInTheDocument()
+    // 渠道健康矩阵
+    expect(await screen.findByText('[ CHANNEL HEALTH ]')).toBeInTheDocument()
+    // 安全事件面板
+    expect(await screen.findByText('[ SECURITY EVENTS ]')).toBeInTheDocument()
+    // 快捷动作面板
+    expect(await screen.findByText('[ QUICK ACTIONS ]')).toBeInTheDocument()
+  })
+
+  it('renders loading state while queries are pending', async () => {
+    // Deferred promise so fetch never resolves during the assertion
+    let resolveFetch!: (value: Response) => void
+    const deferred = new Promise<Response>((resolve) => {
+      resolveFetch = resolve
+    })
+    const fetchMock = vi.fn().mockReturnValue(deferred)
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderPage()
+
+    // Loading text should appear when queries are in-flight
+    expect(await screen.findByText('正在加载首页概览…')).toBeInTheDocument()
+
+    // Resolve pending fetches so the test doesn't hang / produce act warnings
+    resolveFetch(
+      new Response(JSON.stringify({}), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    await vi.waitFor(() => {
+      expect(screen.queryByText('正在加载首页概览…')).not.toBeInTheDocument()
+    })
   })
 })
 
@@ -145,7 +187,7 @@ describe('DashboardPage - user view with JWT role', () => {
     renderPage()
 
     expect(await screen.findByRole('heading', { name: '仪表盘', level: 1 })).toBeInTheDocument()
-    expect(await screen.findByText('llm-gateway')).toBeInTheDocument()
+    expect(screen.getAllByText('LLM Gateway').length).toBeGreaterThan(0)
   })
 
   it('renders admin dashboard when JWT role is operator', async () => {
