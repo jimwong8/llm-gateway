@@ -17,8 +17,8 @@ export function mapTopMetrics(
     { id: 'p95', label: 'P95', value: `${summary?.avg_latency_ms ?? 0}ms`, level: 'degraded' },
     { id: 'healthy_channels', label: 'HEALTHY CH', value: `${healthyChannels}/${channels.length}`, level: healthyChannels === channels.length ? 'healthy' : 'degraded' },
     { id: 'open_circuit', label: 'OPEN CIRCUIT', value: String(openCircuit), level: openCircuit > 0 ? 'critical' : 'healthy' },
-    { id: 'today_cost', label: 'TODAY COST', value: `$${0}`, level: 'healthy' }, // estimated_cost not available in AdminSummary
-    { id: 'alert_count', label: 'ALERTS', value: `0`, level: 'healthy' }, // compensation_stats not available in AdminHealth
+    { id: 'today_cost', label: 'TODAY COST', value: '--', level: 'healthy' },
+    { id: 'alert_count', label: 'ALERTS', value: '--', level: 'healthy' },
   ]
 }
 

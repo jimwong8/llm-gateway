@@ -2,6 +2,7 @@ import { HomeTopStatusStrip } from './HomeTopStatusStrip'
 import { mapTopMetrics } from './dashboard-home.mappers'
 import { SecurityRadarPanel } from './SecurityRadarPanel'
 import { OperationsActionPanel } from './OperationsActionPanel'
+import { CostQuotaPanel } from './CostQuotaPanel'
 import type { AdminHealth, AdminSummary } from '../../types/dashboard'
 import type { Channel } from '../../types/channel'
 import type { SecurityEventItem } from './dashboard-home.types'
@@ -48,9 +49,15 @@ export function DashboardAdminOverviewSection({
           console.log('Metric clicked:', metric)
         }}
       />
+      <CostQuotaPanel
+        todayCost={'--'}
+        monthCost={'--'}
+        cacheHitRate={`${(summary?.cache_hit_rate ?? 0).toFixed(1)}%`}
+        providerErrorRate={`${(summary?.provider_error_rate ?? 0).toFixed(1)}%`}
+        totalTokens={String(summary?.total_tokens ?? 0)}
+      />
       <SecurityRadarPanel events={mockSecurityEvents} onSelectEvent={(event) => {
         console.log('Security event selected:', event);
-        // In real implementation, this would open a detail drawer
       }} />
       <OperationsActionPanel />
     </section>

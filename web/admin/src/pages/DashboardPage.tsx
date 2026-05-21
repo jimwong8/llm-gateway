@@ -18,7 +18,7 @@ import type { AdminHealth, AdminSummary, TokenUsagePoint, ModelDistributionPoint
 import type { Channel } from '../types/channel'
 import type { SessionAdminDashboard } from '../types/sessionDashboard'
 import type { DrawerPayload } from '../components/dashboard/dashboard-home.types'
-import { formatPercent } from '../lib/format'
+
 
 type ChartTab = 'tokens' | 'models' | 'cache' | 'channels' | 'latency' | 'errorRate'
 

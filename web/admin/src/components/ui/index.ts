@@ -1,4 +1,4 @@
-export { Badge } from './badge'
+export { Badge } from './Badge'
 export { Button } from './button'
 export { Input } from './input'
 export { PasswordInput } from './PasswordInput'
