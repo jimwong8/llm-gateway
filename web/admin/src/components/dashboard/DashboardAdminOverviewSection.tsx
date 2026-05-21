@@ -1,7 +1,10 @@
 import { HomeTopStatusStrip } from './HomeTopStatusStrip'
 import { mapTopMetrics } from './dashboard-home.mappers'
+import { SecurityRadarPanel } from './SecurityRadarPanel'
+import { OperationsActionPanel } from './OperationsActionPanel'
 import type { AdminHealth, AdminSummary } from '../../types/dashboard'
 import type { Channel } from '../../types/channel'
+import type { SecurityEventItem } from './dashboard-home.types'
 
 type DashboardAdminOverviewSectionProps = {
   health: AdminHealth | undefined
@@ -16,6 +19,26 @@ export function DashboardAdminOverviewSection({
 }: DashboardAdminOverviewSectionProps) {
   const metrics = mapTopMetrics(health, summary, channels)
 
+  // Mock security events for now - in real implementation this would come from API
+  const mockSecurityEvents: SecurityEventItem[] = [
+    {
+      id: 'evt-1',
+      level: 'critical',
+      title: 'Key brute-force suspected',
+      summary: 'IP 1.2.3.4 attempted 500+ keys in 5 minutes',
+      timestamp: '14:23:11',
+      source: '1.2.3.4',
+    },
+    {
+      id: 'evt-2',
+      level: 'warning',
+      title: 'Unusual token usage spike',
+      summary: 'User user-123 exceeded daily quota by 300%',
+      timestamp: '14:20:05',
+      source: 'user-123',
+    }
+  ];
+
   return (
     <section className="admin-overview-section">
       <HomeTopStatusStrip
@@ -25,6 +48,11 @@ export function DashboardAdminOverviewSection({
           console.log('Metric clicked:', metric)
         }}
       />
+      <SecurityRadarPanel events={mockSecurityEvents} onSelectEvent={(event) => {
+        console.log('Security event selected:', event);
+        // In real implementation, this would open a detail drawer
+      }} />
+      <OperationsActionPanel />
     </section>
   )
 }
