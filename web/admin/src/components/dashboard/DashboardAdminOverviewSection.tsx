@@ -1,30 +1,30 @@
-import { SummaryMetricCard } from './SummaryMetricCard'
+import { HomeTopStatusStrip } from './HomeTopStatusStrip'
+import { mapTopMetrics } from './dashboard-home.mappers'
+import type { AdminHealth, AdminSummary } from '../../types/dashboard'
+import type { Channel } from '../../types/channel'
 
 type DashboardAdminOverviewSectionProps = {
-  service: string | number
-  adminAuth: string | number
-  requests: string | number
-  cacheHitRate: string | number
-  providerErrorRate: string | number
-  totalTokens: string | number
+  health: AdminHealth | undefined
+  summary: AdminSummary | undefined
+  channels: Channel[]
 }
 
 export function DashboardAdminOverviewSection({
-  service,
-  adminAuth,
-  requests,
-  cacheHitRate,
-  providerErrorRate,
-  totalTokens,
+  health,
+  summary,
+  channels,
 }: DashboardAdminOverviewSectionProps) {
+  const metrics = mapTopMetrics(health, summary, channels)
+
   return (
-    <div className="summary-card-grid">
-      <SummaryMetricCard label="服务" value={service} />
-      <SummaryMetricCard label="管理员认证" value={adminAuth} />
-      <SummaryMetricCard label="请求量" value={requests} />
-      <SummaryMetricCard label="缓存命中率" value={cacheHitRate} />
-      <SummaryMetricCard label="Provider 错误率" value={providerErrorRate} />
-      <SummaryMetricCard label="总 Token 数" value={totalTokens} />
-    </div>
+    <section className="admin-overview-section">
+      <HomeTopStatusStrip
+        metrics={metrics}
+        onClickMetric={(metric) => {
+          // Handle metric click - for now just log
+          console.log('Metric clicked:', metric)
+        }}
+      />
+    </section>
   )
 }

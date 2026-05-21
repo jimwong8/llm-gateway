@@ -7,9 +7,9 @@ type SummaryMetricCardProps = {
 
 export const SummaryMetricCard = React.memo(function SummaryMetricCard({ label, value }: SummaryMetricCardProps) {
   return (
-    <section className="summary-card">
-      <span>{label}</span>
-      <strong>{value}</strong>
+    <section className="summary-metric-card">
+      <span className="summary-metric-card__label">{label}</span>
+      <strong className="summary-metric-card__value">{value}</strong>
     </section>
   )
 })
