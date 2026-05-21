@@ -7,6 +7,7 @@ import { DashboardSessionOpsSection } from '../components/dashboard/DashboardSes
 import { UserDashboardView } from '../components/dashboard/UserDashboardView'
 import { TokenUsageChart, ModelDistributionChart, CacheHitRateChart, ChannelStatusChart, LatencyChart, ErrorRateChart } from '../components/charts'
 import { SimpleTabs } from '../components/ui/simple-tabs'
+import { DetailDrawer } from '../components/dashboard/DetailDrawer'
 import { apiRequest } from '../lib/http'
 import { getUserToken } from '../lib/api/identity'
 import { getTokenUsage, getModelDistribution, getCacheHitRate, getChannelStatus, getLatencyTrend, getErrorRateTrend } from '../lib/api/dashboard'
@@ -205,6 +206,34 @@ function DashboardAdminView() {
           ) : null}
         </div>
       </div>
+
+      {/* 详情抽屉 */}
+      <DetailDrawer
+        open={!!drawerPayload}
+        title={drawerPayload?.kind === 'channel' ? '渠道详情' : drawerPayload?.kind === 'security-event' ? '安全事件' : drawerPayload?.kind === 'cost-item' ? '费用项目' : '详情'}
+        subtitle={drawerPayload?.kind === 'channel' ? `查看渠道 ${drawerPayload.channelId}` : undefined}
+        onClose={() => setDrawerPayload(null)}
+      >
+        {/* 抽屉内容将根据drawerPayload类型动态渲染 */}
+        {drawerPayload?.kind === 'channel' && (
+          <div>
+            <p>渠道 ID: {drawerPayload.channelId}</p>
+            <p>此处应显示渠道详细信息</p>
+          </div>
+        )}
+        {drawerPayload?.kind === 'security-event' && (
+          <div>
+            <p>事件 ID: {drawerPayload.eventId}</p>
+            <p>此处应显示安全事件详细信息</p>
+          </div>
+        )}
+        {drawerPayload?.kind === 'cost-item' && (
+          <div>
+            <p>项目 ID: {drawerPayload.itemId}</p>
+            <p>此处应显示费用项目详细信息</p>
+          </div>
+        )}
+      </DetailDrawer>
     </>
   )
 }
