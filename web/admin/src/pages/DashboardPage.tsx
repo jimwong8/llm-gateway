@@ -11,9 +11,12 @@ import { apiRequest } from '../lib/http'
 import { getUserToken } from '../lib/api/identity'
 import { getTokenUsage, getModelDistribution, getCacheHitRate, getChannelStatus, getLatencyTrend, getErrorRateTrend } from '../lib/api/dashboard'
 import { listChannels } from '../lib/channels'
+import { mapChannelNodes } from '../components/dashboard/dashboard-home.mappers'
+import { ChannelHealthMatrix } from '../components/dashboard/ChannelHealthMatrix'
 import type { AdminHealth, AdminSummary, TokenUsagePoint, ModelDistributionPoint, CacheHitPoint, ChannelStatusPoint, LatencyPoint, ErrorRatePoint } from '../types/dashboard'
 import type { Channel } from '../types/channel'
 import type { SessionAdminDashboard } from '../types/sessionDashboard'
+import type { DrawerPayload } from '../components/dashboard/dashboard-home.types'
 import { formatPercent } from '../lib/format'
 
 type ChartTab = 'tokens' | 'models' | 'cache' | 'channels' | 'latency' | 'errorRate'
@@ -30,6 +33,7 @@ const CHART_TAB_CONFIG: { key: ChartTab; label: string; icon: string }[] = [
 function DashboardAdminView() {
   const { t } = useTranslation()
   const [activeTab, setActiveTab] = useState<ChartTab>('tokens')
+  const [drawerPayload, setDrawerPayload] = useState<DrawerPayload>(null)
 
   const healthQuery = useQuery({
     queryKey: ['dashboard-health'],
@@ -108,6 +112,7 @@ function DashboardAdminView() {
   const channelData = channelStatusQuery.data?.data
   const latencyData = latencyQuery.data?.data
   const errorRateData = errorRateQuery.data?.data
+  const channelNodes = mapChannelNodes(channelsQuery.data ?? [])
 
   return (
     <>
@@ -134,11 +139,19 @@ function DashboardAdminView() {
       ) : null}
 
       {!loading && !hasError ? (
-        <DashboardAdminOverviewSection
-          health={healthQuery.data}
-          summary={summaryQuery.data}
-          channels={channelsQuery.data ?? []}
-        />
+        <>
+          <DashboardAdminOverviewSection
+            health={healthQuery.data}
+            summary={summaryQuery.data}
+            channels={channelsQuery.data ?? []}
+          />
+          <ChannelHealthMatrix
+            channels={channelNodes}
+            onSelect={(node) => {
+              setDrawerPayload({ kind: 'channel', channelId: node.id })
+            }}
+          />
+        </>
       ) : null}
 
       <DashboardSessionOpsSection
