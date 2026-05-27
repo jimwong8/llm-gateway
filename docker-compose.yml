@@ -1,47 +1,102 @@
+# ============================================
+# LLM Gateway — Docker Compose (开发/测试环境)
+# ============================================
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
+    container_name: llm-gateway-postgres
     environment:
       POSTGRES_USER: llmadmin
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-CHANGE_ME}
       POSTGRES_DB: llmgateway
     ports:
       - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U llmadmin -d llmgateway"]
-      interval: 5s
+      interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 15s
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./internal/db/migrations:/docker-entrypoint-initdb.d:ro
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - llm-gateway-net
 
   redis:
     image: redis:7-alpine
+    container_name: llm-gateway-redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
       - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
+      interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
+    volumes:
+      - redisdata:/data
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - llm-gateway-net
 
   gateway:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llm-gateway
     ports:
       - "8080:8080"
     environment:
-      APP_ENV: production
+      APP_ENV: ${APP_ENV:-production}
       APP_PORT: "8080"
-      POSTGRES_DSN: postgres://llmadmin:${POSTGRES_PASSWORD}@postgres:5432/llmgateway?sslmode=disable
+      POSTGRES_DSN: postgres://llmadmin:${POSTGRES_PASSWORD:-CHANGE_ME}@postgres:5432/llmgateway?sslmode=disable
       REDIS_ADDR: redis:6379
-      MOCK_MODE: "false"
-      ADMIN_API_KEY: ${ADMIN_API_KEY:-admin-dev-key}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      MOCK_MODE: "${MOCK_MODE:-false}"
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-CHANGE_ME_ADMIN_KEY}
+      JWT_SECRET: ${JWT_SECRET:-CHANGE_ME_JWT_SECRET_AT_LEAST_32_CHARACTERS}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AUDIT_LOG_ENABLED: "${AUDIT_LOG_ENABLED:-true}"
+      BILLING_ENABLED: "${BILLING_ENABLED:-true}"
+      SEMANTIC_CACHE_ENABLED: "${SEMANTIC_CACHE_ENABLED:-false}"
+      MEMORY_ENABLED: "${MEMORY_ENABLED:-true}"
+      MODEL_GOVERNANCE_ENABLED: "${MODEL_GOVERNANCE_ENABLED:-true}"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    networks:
+      - llm-gateway-net
 
 volumes:
   pgdata:
+    driver: local
+  redisdata:
+    driver: local
+
+networks:
+  llm-gateway-net:
+    driver: bridge

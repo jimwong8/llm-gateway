@@ -34,6 +34,7 @@ type UsageEvent struct {
 
 type QueryFilter struct {
 	TenantID string
+	UserID   string
 	Provider string
 	Model    string
 	From     time.Time
@@ -126,6 +127,43 @@ func (s *Store) ensureSchema(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_usage_events_model_created_at ON usage_events (model, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_usage_events_cache_status_created_at ON usage_events (cache_status, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_usage_events_success_created_at ON usage_events (success, created_at DESC)`,
+
+		`CREATE TABLE IF NOT EXISTS wallets (
+			id BIGSERIAL PRIMARY KEY,
+			user_id TEXT UNIQUE NOT NULL,
+			balance DOUBLE PRECISION NOT NULL DEFAULT 0,
+			currency TEXT NOT NULL DEFAULT 'USD',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_wallets_user_id ON wallets (user_id)`,
+
+		`CREATE TABLE IF NOT EXISTS pricing (
+			id BIGSERIAL PRIMARY KEY,
+			provider TEXT NOT NULL DEFAULT '',
+			model TEXT NOT NULL DEFAULT '',
+			input_price_per_1k DOUBLE PRECISION NOT NULL DEFAULT 0,
+			output_price_per_1k DOUBLE PRECISION NOT NULL DEFAULT 0,
+			is_default BOOLEAN NOT NULL DEFAULT FALSE,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_pricing_provider_model ON pricing (provider, model)`,
+		`CREATE INDEX IF NOT EXISTS idx_pricing_provider_default ON pricing (provider) WHERE is_default = TRUE`,
+
+		`CREATE TABLE IF NOT EXISTS ledger (
+			id BIGSERIAL PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			type TEXT NOT NULL,
+			amount DOUBLE PRECISION NOT NULL,
+			balance_after DOUBLE PRECISION NOT NULL,
+			reference_id TEXT NOT NULL DEFAULT '',
+			description TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_ledger_user_id ON ledger (user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_ledger_user_created ON ledger (user_id, created_at DESC)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_ledger_reference_id ON ledger (reference_id) WHERE reference_id <> ''`,
 	}
 	for _, stmt := range statements {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
@@ -232,6 +270,69 @@ FROM usage_events
 	return out, rows.Err()
 }
 
+type DailyUsageRow struct {
+	Date           string  `json:"date"`
+	Requests       int64   `json:"requests"`
+	PromptTokens   int64   `json:"prompt_tokens"`
+	CompletionTokens int64 `json:"completion_tokens"`
+	TotalTokens    int64   `json:"total_tokens"`
+	EstimatedCost  float64 `json:"estimated_cost"`
+}
+
+func (s *Store) DailyUsage(ctx context.Context, filter QueryFilter) ([]DailyUsageRow, error) {
+	query, args := buildWhere(`
+SELECT
+	to_char(created_at AT TIME ZONE 'UTC', 'MM/DD') AS date,
+	COUNT(*) AS requests,
+	COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
+	COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
+	COALESCE(SUM(total_tokens), 0) AS total_tokens,
+	COALESCE(SUM(estimated_cost), 0) AS estimated_cost
+FROM usage_events
+`, filter)
+	query += ` GROUP BY to_char(created_at AT TIME ZONE 'UTC', 'MM/DD') ORDER BY date ASC`
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []DailyUsageRow{}
+	for rows.Next() {
+		var row DailyUsageRow
+		if err := rows.Scan(&row.Date, &row.Requests, &row.PromptTokens, &row.CompletionTokens, &row.TotalTokens, &row.EstimatedCost); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) ModelBreakdown(ctx context.Context, filter QueryFilter) ([]HotspotRow, error) {
+	query, args := buildWhere(`
+SELECT
+	COALESCE(model, 'unknown') AS key,
+	COUNT(*) AS requests,
+	COALESCE(SUM(total_tokens), 0) AS total_tokens,
+	COALESCE(SUM(estimated_cost), 0) AS estimated_cost
+FROM usage_events
+`, filter)
+	query += ` GROUP BY model ORDER BY requests DESC, model ASC`
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []HotspotRow{}
+	for rows.Next() {
+		var row HotspotRow
+		if err := rows.Scan(&row.Key, &row.Requests, &row.TotalTokens, &row.EstimatedCost); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) Hotspots(ctx context.Context, filter QueryFilter) (HotspotsResult, error) {
 	limit := filter.Limit
 	if limit <= 0 {
@@ -272,12 +373,61 @@ FROM usage_events
 	return out, rows.Err()
 }
 
+type PricingRow struct {
+	ID             int64   `json:"id"`
+	Provider       string  `json:"provider"`
+	Model          string  `json:"model"`
+	InputPrice1K   float64 `json:"input_price_per_1k"`
+	OutputPrice1K  float64 `json:"output_price_per_1k"`
+	IsDefault      bool    `json:"is_default"`
+}
+
+func (s *Store) UpsertPricing(ctx context.Context, provider, model string, inputPrice1K, outputPrice1K float64, isDefault bool) error {
+	_, err := s.db.ExecContext(ctx, `
+INSERT INTO pricing (provider, model, input_price_per_1k, output_price_per_1k, is_default, updated_at)
+VALUES ($1, $2, $3, $4, $5, NOW())
+ON CONFLICT (provider, model) DO UPDATE SET
+	input_price_per_1k = $3,
+	output_price_per_1k = $4,
+	is_default = $5,
+	updated_at = NOW()`,
+		provider, model, inputPrice1K, outputPrice1K, isDefault)
+	return err
+}
+
+func (s *Store) AllPricing(ctx context.Context) ([]PricingRow, error) {
+	return s.ListPricing(ctx)
+}
+
+func (s *Store) ListPricing(ctx context.Context) ([]PricingRow, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, provider, model, input_price_per_1k, output_price_per_1k, is_default
+FROM pricing ORDER BY provider, model`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PricingRow
+	for rows.Next() {
+		var p PricingRow
+		if err := rows.Scan(&p.ID, &p.Provider, &p.Model, &p.InputPrice1K, &p.OutputPrice1K, &p.IsDefault); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 func buildWhere(base string, filter QueryFilter) (string, []any) {
 	clauses := []string{"1=1"}
 	args := []any{}
 	if strings.TrimSpace(filter.TenantID) != "" {
 		args = append(args, filter.TenantID)
 		clauses = append(clauses, fmt.Sprintf("tenant_id = $%d", len(args)))
+	}
+	if strings.TrimSpace(filter.UserID) != "" {
+		args = append(args, filter.UserID)
+		clauses = append(clauses, fmt.Sprintf("user_id = $%d", len(args)))
 	}
 	if strings.TrimSpace(filter.Provider) != "" {
 		args = append(args, filter.Provider)

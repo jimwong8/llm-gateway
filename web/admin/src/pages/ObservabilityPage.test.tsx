@@ -16,26 +16,33 @@ describe('ObservabilityPage', () => {
   })
 
   it('renders summary, providers, and hotspots', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ requests: 12, cache_hit_rate: 0.5, provider_error_rate: 0.1, avg_latency_ms: 85.5 }), {
+    const responses = [
+      new Response(JSON.stringify({ requests: 12, cache_hit_rate: 0.5, provider_error_rate: 0.1, avg_latency_ms: 85.5 }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+      new Response(JSON.stringify({ object: 'list', data: [{ provider: 'openai', requests: 8, total_tokens: 240, provider_error_rate: 0.05 }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+      new Response(JSON.stringify({ tenants: [{ key: 'tenant-a', requests: 8, total_tokens: 240, estimated_cost: 1.2 }], models: [{ key: 'gpt-4o-mini', requests: 8, total_tokens: 240, estimated_cost: 1.2 }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    ]
+    let callIndex = 0
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ object: 'list', data: [{ provider: 'openai', requests: 8, total_tokens: 240, provider_error_rate: 0.05 }] }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ tenants: [{ key: 'tenant-a', requests: 8, total_tokens: 240, estimated_cost: 1.2 }], models: [{ key: 'gpt-4o-mini', requests: 8, total_tokens: 240, estimated_cost: 1.2 }] }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
+        })
+      }
+      const response = responses[callIndex]
+      callIndex++
+      return response
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     renderPage()
@@ -47,12 +54,37 @@ describe('ObservabilityPage', () => {
   })
 
   it('applies filters to observability requests', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ object: 'list', data: [] }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    )
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url.includes('/admin/observability/hotspots')) {
+        return new Response(
+          JSON.stringify({ tenants: [], models: [] }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      if (url.includes('/admin/observability/providers')) {
+        return new Response(
+          JSON.stringify({ object: 'list', data: [] }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      if (url.includes('/admin/observability/summary')) {
+        return new Response(
+          JSON.stringify({ requests: 0, cache_hit_rate: 0, provider_error_rate: 0, avg_latency_ms: 0 }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      return new Response(
+        JSON.stringify({ object: 'list', data: [] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      )
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     renderPage()

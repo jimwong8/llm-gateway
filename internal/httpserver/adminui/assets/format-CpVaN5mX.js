@@ -1,0 +1,1 @@
+function s(t){if(!t)return"—";const r=new Date(t);return Number.isNaN(r.getTime())?t:r.toLocaleString()}function a(t){return`${((t??0)*100).toFixed(1)}%`}function c(t,r){const e=new URLSearchParams;for(const[i,o]of Object.entries(r))o.trim()&&e.set(i,o.trim());const n=e.toString();return n?`${t}?${n}`:t}export{s as a,c as b,a as f};

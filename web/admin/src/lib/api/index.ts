@@ -1,3 +1,15 @@
 export * from './admin'
 export * from './session'
 export * from './config'
+export * from './presets'
+export * from './dashboard'
+export * from './identity'
+export * from './chat'
+export * from './billing'
+export * from './audit'
+export * from './tenant-keys'
+export * from './assets'
+export * from './broadcasts'
+// Note: memory.ts does not exist as a separate module.
+// Memory-related APIs are in presets.ts (presets/masks) and admin.ts (memory admin routes).
+export * from './websocket'

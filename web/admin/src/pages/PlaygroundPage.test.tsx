@@ -16,8 +16,15 @@ describe('PlaygroundPage', () => {
 
   it('submits a chat completion request and renders response metadata', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(
         JSON.stringify({
           id: 'chatcmpl-1',
           object: 'chat.completion',
@@ -46,8 +53,8 @@ describe('PlaygroundPage', () => {
             'X-Semantic-Score': '0.92',
           },
         },
-      ),
-    )
+      )
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     render(<PlaygroundPage />)
@@ -62,12 +69,29 @@ describe('PlaygroundPage', () => {
     expect(screen.getByText('0.92')).toBeInTheDocument()
     expect(screen.getByText('200')).toBeInTheDocument()
     // Verify the URL includes the chat completions endpoint
-    const fetchCall = fetchMock.mock.calls[0]
-    expect(String(fetchCall[0])).toContain('/v1/chat/completions')
+    const chatCall = fetchMock.mock.calls.find(
+      (call) => String(call[0]).includes('/v1/chat/completions'),
+    )
+    expect(chatCall).toBeDefined()
+    expect(String(chatCall![0])).toContain('/v1/chat/completions')
   })
 
   it('adds a new message row', async () => {
     const user = userEvent.setup()
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(JSON.stringify({}), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
 
     render(<PlaygroundPage />)
 

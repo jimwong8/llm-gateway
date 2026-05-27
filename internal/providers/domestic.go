@@ -75,7 +75,7 @@ func (p *DomesticProvider) ChatCompletion(ctx context.Context, req ChatCompletio
 		return ChatCompletionResponse{}, fmt.Errorf("read provider response: %w", err)
 	}
 	if resp.StatusCode >= 400 {
-		return ChatCompletionResponse{}, fmt.Errorf("domestic provider returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+		return ChatCompletionResponse{}, newUpstreamHTTPError(resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
 
 	var out ChatCompletionResponse

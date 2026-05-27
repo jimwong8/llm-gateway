@@ -15,6 +15,21 @@ describe('ReleasesPage', () => {
   })
 
   it('renders release and promotion workbench sections', async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(JSON.stringify({}), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
     render(<ReleasesPage />)
 
     expect(screen.getByRole('heading', { name: '发布管理', level: 1 })).toBeInTheDocument()
@@ -24,8 +39,15 @@ describe('ReleasesPage', () => {
 
   it('shows latest result after a release action succeeds', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(
         JSON.stringify({
           version_id: 'cfg_201',
           status: 'released',
@@ -40,8 +62,8 @@ describe('ReleasesPage', () => {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         },
-      ),
-    )
+      )
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     render(<ReleasesPage />)

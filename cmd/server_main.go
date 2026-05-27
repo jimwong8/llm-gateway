@@ -18,6 +18,7 @@ import (
 	"llm-gateway/gateway/internal/config"
 	"llm-gateway/gateway/internal/controlplane"
 	"llm-gateway/gateway/internal/governance"
+	"llm-gateway/gateway/internal/health"
 	"llm-gateway/gateway/internal/httpserver"
 	"llm-gateway/gateway/internal/memory"
 	"llm-gateway/gateway/internal/policy"
@@ -59,11 +60,19 @@ func main() {
 		}
 	}
 	var billingStore *billing.Store
+	var billingService *billing.Service
 	if cfg.BillingEnabled {
 		if store, err := billing.NewStore(cfg.PostgresDSN); err != nil {
 			log.Printf("billing init failed: %v", err)
 		} else {
 			billingStore = store
+			pricer := billing.NewPricer()
+			pricer.SetDefaultProviderPrice("openai", 0.01, 0.03)
+			pricer.SetDefaultProviderPrice("anthropic", 0.015, 0.075)
+			pricer.SetDefaultProviderPrice("google", 0.0025, 0.0075)
+			pricer.SetDefaultProviderPrice("mock", 0.001, 0.002)
+			billingService = billing.NewService(store, pricer)
+			billingService.LoadPricingFromDB(context.Background())
 		}
 	}
 	adminStore, err := admin.NewStore(cfg.PostgresDSN)
@@ -158,6 +167,9 @@ func main() {
 
 	srv := httpserver.New(cfg, registry, redisCache, modelRouter, auditStore, semanticCache, memoryStore, billingStore, limiter, adminStore, policyStore).
 		WithControlPlane(controlPlaneService, controlPlaneAudit, runtimePublisher, runtimeManager)
+	if billingService != nil {
+		srv = srv.WithBillingService(billingService)
+	}
 	if memoryStore != nil {
 		srv = srv.WithMemoryAdminHandler(httpserver.NewMemoryAdminHandler(memoryStore))
 	}
@@ -179,6 +191,31 @@ func main() {
 		srv = srv.WithModelGovernanceHandler(modelGovernanceHandler).
 			WithModelRuntimeHandler(modelRuntimeHandler)
 	}
+	// 创建并启动 HealthChecker
+	pingers := make(map[string]health.Pinger)
+	if auditStore != nil {
+		pingers["audit"] = auditStore
+	}
+	if redisCache != nil {
+		pingers["redis"] = redisCache
+	}
+	if memoryStore != nil {
+		pingers["memory"] = memoryStore
+	}
+	if billingStore != nil {
+		pingers["billing"] = billingStore
+	}
+
+	checkerCfg := health.CheckerConfig{
+		Interval:           30 * time.Second,
+		FailureThreshold:   3,
+		MemoryThresholdPct: 85.0,
+		GoroutineThreshold: 10000,
+	}
+	healthChecker := health.NewHealthChecker(cfg, registry, pingers, checkerCfg)
+	healthChecker.Start()
+	srv = srv.WithHealthChecker(healthChecker)
+
 	log.Printf("starting %s on %s mock_mode=%v redis=%s audit=%v semantic=%v memory=%v billing=%v governance=%v", cfg.AppName, cfg.Addr(), cfg.MockMode, cfg.RedisAddr, auditStore != nil, semanticCache != nil, memoryStore != nil, billingStore != nil, governanceStore != nil)
 
 	httpServer := &http.Server{
@@ -191,6 +228,8 @@ func main() {
 		signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
 		sig := <-sigChan
 		log.Printf("received signal %v, initiating graceful shutdown", sig)
+
+		healthChecker.Stop()
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	_ "github.com/lib/pq"
 )
@@ -115,3 +116,97 @@ INSERT INTO business_audit_logs (
 }
 
 func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
+
+func (s *Store) DeleteOldEvents(ctx context.Context, retentionDays int) (int64, error) {
+	result, err := s.db.ExecContext(ctx, `
+DELETE FROM request_audit_logs WHERE created_at < NOW() - INTERVAL '1 day' * $1
+`, retentionDays)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+type AuditEventRecord struct {
+	ID             int64     `json:"id"`
+	RequestID      string    `json:"request_id"`
+	RouteMode      string    `json:"route_mode"`
+	RouteTask      string    `json:"route_task"`
+	RouteModel     string    `json:"route_model"`
+	RouteProvider  string    `json:"route_provider"`
+	RouteReason    string    `json:"route_reason"`
+	RouteScore     string    `json:"route_score"`
+	CacheStatus    string    `json:"cache_status"`
+	FallbackUsed   bool      `json:"fallback_used"`
+	RequestPayload string    `json:"request_payload"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+func (s *Store) ExportTenantData(ctx context.Context, tenantID string) ([]AuditEventRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, request_id, route_mode, route_task, route_model, route_provider, route_reason, route_score, cache_status, fallback_used, request_payload::text, created_at
+FROM request_audit_logs
+WHERE request_payload->>'tenant_id' = $1
+ORDER BY created_at DESC
+LIMIT 10000
+`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var records []AuditEventRecord
+	for rows.Next() {
+		var r AuditEventRecord
+		if err := rows.Scan(&r.ID, &r.RequestID, &r.RouteMode, &r.RouteTask, &r.RouteModel, &r.RouteProvider, &r.RouteReason, &r.RouteScore, &r.CacheStatus, &r.FallbackUsed, &r.RequestPayload, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		records = append(records, r)
+	}
+	return records, rows.Err()
+}
+
+func (s *Store) SearchEvents(ctx context.Context, tenantID, provider, fromDate, toDate string, limit, offset int) ([]AuditEventRecord, error) {
+	query := `
+SELECT id, request_id, route_mode, route_task, route_model, route_provider, route_reason, route_score, cache_status, fallback_used, request_payload::text, created_at
+FROM request_audit_logs
+WHERE 1=1
+`
+	args := []interface{}{}
+	argIdx := 1
+	if tenantID != "" {
+		query += fmt.Sprintf(" AND request_payload->>'tenant_id' = $%d", argIdx)
+		args = append(args, tenantID)
+		argIdx++
+	}
+	if provider != "" {
+		query += fmt.Sprintf(" AND route_provider = $%d", argIdx)
+		args = append(args, provider)
+		argIdx++
+	}
+	if fromDate != "" {
+		query += fmt.Sprintf(" AND created_at >= $%d", argIdx)
+		args = append(args, fromDate)
+		argIdx++
+	}
+	if toDate != "" {
+		query += fmt.Sprintf(" AND created_at <= $%d", argIdx)
+		args = append(args, toDate)
+		argIdx++
+	}
+	query += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", argIdx, argIdx+1)
+	args = append(args, limit, offset)
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var records []AuditEventRecord
+	for rows.Next() {
+		var r AuditEventRecord
+		if err := rows.Scan(&r.ID, &r.RequestID, &r.RouteMode, &r.RouteTask, &r.RouteModel, &r.RouteProvider, &r.RouteReason, &r.RouteScore, &r.CacheStatus, &r.FallbackUsed, &r.RequestPayload, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		records = append(records, r)
+	}
+	return records, rows.Err()
+}

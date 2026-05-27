@@ -158,135 +158,50 @@ func NewStore(dsn string, rc *cache.RedisCache) (*Store, error) {
 }
 
 func (s *Store) ensureSchema(ctx context.Context) error {
+	// NOTE: Tables are now created by formal migration files (029_memory_store.sql).
+	// This function only ensures backward-compatible column additions.
 	_, err := s.db.ExecContext(ctx, `
-CREATE TABLE IF NOT EXISTS session_memories (
-    id BIGSERIAL PRIMARY KEY,
-    tenant_id TEXT,
-    user_id TEXT,
-    session_id TEXT NOT NULL,
-    role TEXT NOT NULL,
-    content TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_session_memories_tenant_user_session_created_at ON session_memories (tenant_id, user_id, session_id, created_at DESC);
+-- Ensure messages table has search_vector and deleted_at (backward compat)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'messages') THEN
+        ALTER TABLE messages ADD COLUMN IF NOT EXISTS search_vector tsvector;
+        ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+    END IF;
+END$$;
 
-CREATE TABLE IF NOT EXISTS conversations (
-    id BIGSERIAL PRIMARY KEY,
-    tenant_id TEXT,
-    user_id TEXT,
-    session_id TEXT NOT NULL,
-    status TEXT,
-    last_seq BIGINT NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_session_id ON conversations (session_id);
-CREATE INDEX IF NOT EXISTS idx_conversations_tenant_user_session ON conversations (tenant_id, user_id, session_id);
+-- Ensure project_facts has status/superseded_by/source_message_seq/last_verified_at (backward compat)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'project_facts') THEN
+        ALTER TABLE project_facts ADD COLUMN IF NOT EXISTS status TEXT;
+        ALTER TABLE project_facts ALTER COLUMN status SET DEFAULT 'active';
+        UPDATE project_facts SET status = 'active' WHERE status IS NULL OR TRIM(status) = '';
+        ALTER TABLE project_facts ADD COLUMN IF NOT EXISTS superseded_by BIGINT REFERENCES project_facts(id);
+        ALTER TABLE project_facts ADD COLUMN IF NOT EXISTS source_message_seq BIGINT;
+        ALTER TABLE project_facts ALTER COLUMN source_message_seq SET DEFAULT 0;
+        UPDATE project_facts SET source_message_seq = 0 WHERE source_message_seq IS NULL;
+        ALTER TABLE project_facts ADD COLUMN IF NOT EXISTS last_verified_at TIMESTAMPTZ;
+        ALTER TABLE project_facts ALTER COLUMN last_verified_at SET DEFAULT NOW();
+        UPDATE project_facts SET last_verified_at = COALESCE(last_verified_at, updated_at, created_at, NOW());
+    END IF;
+END$$;
 
-CREATE TABLE IF NOT EXISTS messages (
-    id BIGSERIAL PRIMARY KEY,
-    session_id TEXT NOT NULL,
-    conversation_id BIGINT REFERENCES conversations(id),
-    seq BIGINT NOT NULL,
-    role TEXT NOT NULL,
-    content TEXT NOT NULL,
-    search_vector tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED,
-    token_count INTEGER,
-    deleted_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_messages_session_seq UNIQUE (session_id, seq)
-);
-ALTER TABLE messages ADD COLUMN IF NOT EXISTS search_vector tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED;
-ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
-CREATE INDEX IF NOT EXISTS idx_messages_conversation_seq ON messages (conversation_id, seq);
-CREATE INDEX IF NOT EXISTS idx_messages_session_created_at ON messages (session_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_messages_search_vector ON messages USING GIN (search_vector);
-
-CREATE TABLE IF NOT EXISTS session_summaries (
-    id BIGSERIAL PRIMARY KEY,
-    tenant_id TEXT,
-    user_id TEXT,
-    session_id TEXT NOT NULL,
-    current_goal TEXT NOT NULL DEFAULT '',
-    completed_items JSONB NOT NULL DEFAULT '[]'::jsonb,
-    open_items JSONB NOT NULL DEFAULT '[]'::jsonb,
-    key_decisions JSONB NOT NULL DEFAULT '[]'::jsonb,
-    blockers JSONB NOT NULL DEFAULT '[]'::jsonb,
-    source_message_seq BIGINT NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_session_summaries_session_id ON session_summaries (session_id);
-CREATE INDEX IF NOT EXISTS idx_session_summaries_tenant_user ON session_summaries (tenant_id, user_id);
-CREATE INDEX IF NOT EXISTS idx_session_summaries_updated_at ON session_summaries (updated_at DESC);
-
-CREATE TABLE IF NOT EXISTS user_preferences (
-    id BIGSERIAL PRIMARY KEY,
-    tenant_id TEXT,
-    user_id TEXT,
-    preference_key TEXT NOT NULL,
-    preference_value TEXT NOT NULL,
-    source_text TEXT NOT NULL DEFAULT '',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_user_preferences_tenant_user_key ON user_preferences (COALESCE(tenant_id, ''), COALESCE(user_id, ''), preference_key);
-CREATE INDEX IF NOT EXISTS idx_user_preferences_tenant_user_updated_at ON user_preferences (tenant_id, user_id, updated_at DESC);
-
-CREATE TABLE IF NOT EXISTS project_facts (
-    id BIGSERIAL PRIMARY KEY,
-    tenant_id TEXT,
-    user_id TEXT,
-    fact_key TEXT NOT NULL,
-    fact_value TEXT NOT NULL,
-    source_text TEXT NOT NULL DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'active',
-    superseded_by BIGINT REFERENCES project_facts(id),
-    source_message_seq BIGINT NOT NULL DEFAULT 0,
-    last_verified_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-ALTER TABLE project_facts ADD COLUMN IF NOT EXISTS status TEXT;
-ALTER TABLE project_facts ALTER COLUMN status SET DEFAULT 'active';
-UPDATE project_facts SET status = 'active' WHERE status IS NULL OR TRIM(status) = '';
-ALTER TABLE project_facts ALTER COLUMN status SET NOT NULL;
-ALTER TABLE project_facts ADD COLUMN IF NOT EXISTS superseded_by BIGINT REFERENCES project_facts(id);
-ALTER TABLE project_facts ADD COLUMN IF NOT EXISTS source_message_seq BIGINT;
-ALTER TABLE project_facts ALTER COLUMN source_message_seq SET DEFAULT 0;
-UPDATE project_facts SET source_message_seq = 0 WHERE source_message_seq IS NULL;
-ALTER TABLE project_facts ALTER COLUMN source_message_seq SET NOT NULL;
-ALTER TABLE project_facts ADD COLUMN IF NOT EXISTS last_verified_at TIMESTAMPTZ;
-ALTER TABLE project_facts ALTER COLUMN last_verified_at SET DEFAULT NOW();
-UPDATE project_facts SET last_verified_at = COALESCE(last_verified_at, updated_at, created_at, NOW());
-ALTER TABLE project_facts ALTER COLUMN last_verified_at SET NOT NULL;
-DROP INDEX IF EXISTS idx_project_facts_tenant_user_key;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_project_facts_active_tenant_user_key ON project_facts (COALESCE(tenant_id, ''), COALESCE(user_id, ''), fact_key) WHERE status = 'active';
-CREATE INDEX IF NOT EXISTS idx_project_facts_tenant_user_key_status ON project_facts (tenant_id, user_id, fact_key, status);
-
-CREATE TABLE IF NOT EXISTS candidate_facts (
-    id BIGSERIAL PRIMARY KEY,
-    tenant_id TEXT,
-    user_id TEXT,
-    fact_key TEXT NOT NULL,
-    fact_value TEXT NOT NULL,
-    source_text TEXT NOT NULL DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'pending',
-    source_message_seq BIGINT NOT NULL DEFAULT 0,
-    confirmation_count INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT chk_candidate_facts_confirmation_count_non_negative CHECK (confirmation_count >= 0)
-);
-ALTER TABLE candidate_facts ADD COLUMN IF NOT EXISTS status TEXT;
-ALTER TABLE candidate_facts ALTER COLUMN status SET DEFAULT 'pending';
-UPDATE candidate_facts SET status = 'pending' WHERE status IS NULL OR TRIM(status) = '';
-ALTER TABLE candidate_facts ALTER COLUMN status SET NOT NULL;
-ALTER TABLE candidate_facts ADD COLUMN IF NOT EXISTS source_message_seq BIGINT;
-ALTER TABLE candidate_facts ALTER COLUMN source_message_seq SET DEFAULT 0;
-UPDATE candidate_facts SET source_message_seq = 0 WHERE source_message_seq IS NULL;
-ALTER TABLE candidate_facts ALTER COLUMN source_message_seq SET NOT NULL;
-ALTER TABLE candidate_facts ADD COLUMN IF NOT EXISTS confirmation_count INTEGER;
+-- Ensure candidate_facts has status/source_message_seq/confirmation_count (backward compat)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'candidate_facts') THEN
+        ALTER TABLE candidate_facts ADD COLUMN IF NOT EXISTS status TEXT;
+        ALTER TABLE candidate_facts ALTER COLUMN status SET DEFAULT 'pending';
+        UPDATE candidate_facts SET status = 'pending' WHERE status IS NULL OR TRIM(status) = '';
+        ALTER TABLE candidate_facts ADD COLUMN IF NOT EXISTS source_message_seq BIGINT;
+        ALTER TABLE candidate_facts ALTER COLUMN source_message_seq SET DEFAULT 0;
+        UPDATE candidate_facts SET source_message_seq = 0 WHERE source_message_seq IS NULL;
+        ALTER TABLE candidate_facts ADD COLUMN IF NOT EXISTS confirmation_count INTEGER;
+        ALTER TABLE candidate_facts ALTER COLUMN confirmation_count SET DEFAULT 0;
+        UPDATE candidate_facts SET confirmation_count = 0 WHERE confirmation_count IS NULL;
+    END IF;
+END$$;
 ALTER TABLE candidate_facts ALTER COLUMN confirmation_count SET DEFAULT 0;
 UPDATE candidate_facts SET confirmation_count = 0 WHERE confirmation_count IS NULL OR confirmation_count < 0;
 ALTER TABLE candidate_facts ALTER COLUMN confirmation_count SET NOT NULL;
@@ -433,6 +348,11 @@ func (s *Store) updateConversationCacheAsync(ctx context.Context, conversationID
 	conversationKey := strconv.FormatInt(conversationID, 10)
 
 	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("memory cache update panic conversation_id=%s: %v", conversationKey, rec)
+			}
+		}()
 		cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 		defer cancel()
 
@@ -627,6 +547,11 @@ func (s *Store) refillConversationMetaCacheAsync(ctx context.Context, conversati
 	}
 	conversationKey := strconv.FormatInt(conversationID, 10)
 	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("memory cache meta refill panic conversation_id=%s: %v", conversationKey, rec)
+			}
+		}()
 		cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 		defer cancel()
 		if err := s.cache.CacheConversationMeta(cacheCtx, conversationKey, cache.ConversationMeta{
@@ -650,6 +575,11 @@ func (s *Store) refillRecentMessagesCacheAsync(ctx context.Context, conversation
 	}
 	conversationKey := strconv.FormatInt(conversationID, 10)
 	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("memory cache recent refill panic conversation_id=%s: %v", conversationKey, rec)
+			}
+		}()
 		cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 		defer cancel()
 		if err := s.cache.CacheRecentMessages(cacheCtx, conversationKey, recent, 50); err != nil {
@@ -2440,6 +2370,11 @@ func (s *Store) invalidateConversationCacheAsync(ctx context.Context, conversati
 	}
 	conversationKey := strconv.FormatInt(conversationID, 10)
 	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("memory cache invalidate panic conversation_id=%s: %v", conversationKey, rec)
+			}
+		}()
 		cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 		defer cancel()
 		if err := s.cache.InvalidateConversationCache(cacheCtx, conversationKey); err != nil {
@@ -2562,4 +2497,37 @@ func isTentativeCandidateFactSignal(content string) bool {
 		}
 	}
 	return false
+}
+
+func (s *Store) HybridSearch(ctx context.Context, userID int64, query string, limit int) ([]HybridSearchResult, error) {
+	searcher := NewHybridSearcher(s.db)
+	return searcher.Search(ctx, userID, query, limit)
+}
+
+func (s *Store) SelectMemoriesForContext(ctx context.Context, userID int64, query string, limit int) (string, error) {
+	results, err := s.HybridSearch(ctx, userID, query, limit)
+	if err != nil {
+		return "", err
+	}
+	if len(results) == 0 {
+		return "", nil
+	}
+
+	cb := DefaultContextBudget()
+	selector := NewMemorySelector(cb)
+	memTokens := int(float64(cb.MaxTokens-cb.ReserveTokens) * cb.MemoryRatio)
+	selected := selector.SelectMemories(results, memTokens)
+	if len(selected) == 0 {
+		return "", nil
+	}
+
+	return formatMemoryContext(selected), nil
+}
+
+func formatMemoryContext(selected []HybridSearchResult) string {
+	var parts []string
+	for i, m := range selected {
+		parts = append(parts, fmt.Sprintf("[%d] %s", i+1, m.Content))
+	}
+	return "Relevant memories:\n" + strings.Join(parts, "\n")
 }

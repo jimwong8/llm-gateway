@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom'
+import '../i18n'
 
 // Node 24 + jsdom 下，react-router 构造 Request 时会把 jsdom realm 的 AbortSignal
 // 传给 undici realm 的 RequestInit，触发类型检查异常。

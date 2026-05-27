@@ -17,8 +17,15 @@ describe('RuntimeObserverPage', () => {
   })
 
   it('renders active policy, cache state and recent facts', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(
         JSON.stringify({
           environment: 'prod',
           observed_at: '2026-04-19T12:00:00Z',
@@ -42,8 +49,8 @@ describe('RuntimeObserverPage', () => {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         },
-      ),
-    )
+      )
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     renderPage()
@@ -56,8 +63,15 @@ describe('RuntimeObserverPage', () => {
   })
 
   it('submits selected environment in request', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(
         JSON.stringify({
           environment: 'staging',
           active_policy: { version_id: '' },
@@ -68,8 +82,8 @@ describe('RuntimeObserverPage', () => {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         },
-      ),
-    )
+      )
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     renderPage()

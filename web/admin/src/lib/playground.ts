@@ -9,14 +9,16 @@ export type PlaygroundResult = {
 
 export async function sendPlaygroundRequest(payload: PlaygroundRequest): Promise<PlaygroundResult> {
   const startedAt = performance.now()
-  
-  // Use bare fetch to get access to response headers
-  const token = ''
+
+  // Get token from sessionStorage (supports both admin and user tokens)
+  const token = sessionStorage.getItem('llm_gateway_admin_token')
+    || sessionStorage.getItem('llm_gateway_user_token')
+    || ''
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (token) {
     headers['Authorization'] = `Bearer ${token}`
   }
-  
+
   const response = await fetch('/v1/chat/completions', {
     method: 'POST',
     headers,

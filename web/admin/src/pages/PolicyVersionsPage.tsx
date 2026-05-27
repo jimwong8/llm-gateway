@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 import { AppShell } from '../components/layout/AppShell'
@@ -36,6 +37,7 @@ function formatDiffPayload(payload: PolicyVersionDiffPayload | undefined) {
 }
 
 export function PolicyVersionsPage() {
+  const { t } = useTranslation()
   const [searchParams] = useSearchParams()
   const [selectedVersionID, setSelectedVersionID] = useState('')
   const [actionMessage, setActionMessage] = useState('')
@@ -88,12 +90,12 @@ export function PolicyVersionsPage() {
     mutationFn: (version: PolicyVersionRow) => approvePolicyVersion(version.id, 'admin-ui'),
     onSuccess: async (data) => {
       setActionError('')
-      setActionMessage(`已审批策略版本 ${data.id}`)
+      setActionMessage(t('policyVersions.approved', { id: data.id }))
       await versionsQuery.refetch()
     },
     onError: (error) => {
       setActionMessage('')
-      setActionError(error instanceof Error ? error.message : '审批失败')
+      setActionError(error instanceof Error ? error.message : t('policyVersions.approveFailed'))
     },
   })
 
@@ -101,12 +103,12 @@ export function PolicyVersionsPage() {
     mutationFn: (version: PolicyVersionRow) => activatePolicyVersion(version.id),
     onSuccess: async (data) => {
       setActionError('')
-      setActionMessage(`已激活策略版本 ${data.id}`)
+      setActionMessage(t('policyVersions.activated', { id: data.id }))
       await versionsQuery.refetch()
     },
     onError: (error) => {
       setActionMessage('')
-      setActionError(error instanceof Error ? error.message : '激活失败')
+      setActionError(error instanceof Error ? error.message : t('policyVersions.activateFailed'))
     },
   })
 
@@ -117,32 +119,32 @@ export function PolicyVersionsPage() {
 
   return (
     <AppShell
-      title="策略版本"
-      description="查看策略版本生命周期、当前激活状态，并在右侧对比区检查选中版本的差异内容。"
+      title={t('policyVersions.title')}
+      description={t('policyVersions.description')}
     >
       <div className="policy-version-center">
-        {versionsQuery.isLoading ? <div className="event-state">正在加载策略版本列表…</div> : null}
-        {versionsQuery.error ? <div className="config-error">策略版本列表加载失败，请检查治理接口状态。</div> : null}
-        {actionError ? <div className="config-error">操作失败：{actionError}</div> : null}
+        {versionsQuery.isLoading ? <div className="event-state">{t('policyVersions.loading')}</div> : null}
+        {versionsQuery.error ? <div className="config-error">{t('policyVersions.loadError')}</div> : null}
+        {actionError ? <div className="config-error">{t('policyVersions.actionError', { error: actionError })}</div> : null}
         {actionMessage ? <div className="event-state">{actionMessage}</div> : null}
 
         {!versionsQuery.isLoading && !versionsQuery.error ? (
           <>
             <div className="summary-card-grid">
               <section className="summary-card">
-                <span>版本总数</span>
+                <span>{t('policyVersions.totalVersions')}</span>
                 <strong>{versions.length}</strong>
               </section>
               <section className="summary-card">
-                <span>当前激活版本</span>
+                <span>{t('policyVersions.activeVersion')}</span>
                 <strong>{versions.find((item) => item.status === 'active')?.id ?? '—'}</strong>
               </section>
               <section className="summary-card">
-                <span>当前选中</span>
+                <span>{t('policyVersions.currentSelected')}</span>
                 <strong>{selectedVersionEffective?.id ?? '—'}</strong>
               </section>
               <section className="summary-card">
-                <span>已审批数</span>
+                <span>{t('policyVersions.approvedCount')}</span>
                 <strong>{versions.filter((item) => item.status === 'approved').length}</strong>
               </section>
             </div>
@@ -151,15 +153,15 @@ export function PolicyVersionsPage() {
               <div className="event-table">
                 <table>
                   <thead>
-                    <tr>
-                      <th>版本 ID</th>
-                      <th>状态</th>
-                      <th>环境</th>
-                      <th>创建人</th>
-                      <th>审批人</th>
-                      <th>激活时间</th>
-                      <th>操作</th>
-                    </tr>
+                     <tr>
+                       <th>{t('policyVersions.colVersionId')}</th>
+                       <th>{t('policyVersions.colStatus')}</th>
+                       <th>{t('policyVersions.colEnvironment')}</th>
+                       <th>{t('policyVersions.colCreatedBy')}</th>
+                       <th>{t('policyVersions.colApprovedBy')}</th>
+                       <th>{t('policyVersions.colActivatedAt')}</th>
+                       <th>{t('policyVersions.colActions')}</th>
+                     </tr>
                   </thead>
                   <tbody>
                     {versions.map((row) => {
@@ -201,7 +203,7 @@ export function PolicyVersionsPage() {
                                   approveMutation.mutate(row)
                                 }}
                               >
-                                {pending && canApprove ? '审批中…' : '批准'}
+                                 {pending && canApprove ? t('policyVersions.approving') : t('policyVersions.approve')}
                               </button>
                               <button
                                 type="button"
@@ -213,14 +215,14 @@ export function PolicyVersionsPage() {
                                   activateMutation.mutate(row)
                                 }}
                               >
-                                {pending && canActivate ? '激活中…' : '激活'}
+                                 {pending && canActivate ? t('policyVersions.activating') : t('policyVersions.activate')}
                               </button>
                               {(row.status === 'approved' || row.status === 'active') ? (
                                   <Link
                                     className="rollouts-action"
                                     to={`/rollouts?policyVersionId=${encodeURIComponent(row.id)}&environment=${encodeURIComponent(row.environment || 'prod')}`}
                                   >
-                                    查看灰度发布
+                                     {t('policyVersions.viewRollout')}
                                   </Link>
                               ) : null}
                             </div>
@@ -230,32 +232,32 @@ export function PolicyVersionsPage() {
                     })}
                   </tbody>
                 </table>
-                {versions.length === 0 ? <div className="config-table__state">当前没有策略版本。</div> : null}
+                 {versions.length === 0 ? <div className="config-table__state">{t('policyVersions.noVersions')}</div> : null}
               </div>
 
               <aside className="config-drawer" aria-label="Policy version diff">
                 <div className="config-drawer__header">
                   <div>
-                    <h2>版本 Diff</h2>
+                    <h2>{t('policyVersions.versionDiff')}</h2>
                     <p>
                       {selectedVersionEffective
-                        ? `选中版本 ${selectedVersionEffective.id} 的差异内容`
-                        : '请选择一个策略版本查看差异'}
+                        ? t('policyVersions.selectedDiff', { id: selectedVersionEffective.id })
+                        : t('policyVersions.selectVersionPrompt')}
                     </p>
                   </div>
                 </div>
 
                 {!selectedVersionEffective ? (
-                  <div className="config-drawer__empty">暂无可展示的策略版本。</div>
+                  <div className="config-drawer__empty">{t('policyVersions.noVersions')}</div>
                 ) : null}
 
                 {selectedVersionEffective && diffQuery.isLoading ? (
-                  <div className="config-drawer__empty">正在加载版本差异…</div>
+                  <div className="config-drawer__empty">{t('policyVersions.loadingDiff')}</div>
                 ) : null}
 
                 {selectedVersionEffective && diffQuery.error ? (
                   <div className="config-error policy-diff__error">
-                    版本差异暂不可用（diff API 尚未就绪或返回异常）。
+                    {t('policyVersions.diffUnavailable')}
                   </div>
                 ) : null}
 

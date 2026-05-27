@@ -1,16 +1,18 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { AppShell } from '../components/layout/AppShell'
 import { PromotionPanel } from '../components/releases/PromotionPanel'
 import { ReleaseDraftPanel } from '../components/releases/ReleaseDraftPanel'
 import type { ConfigVersion } from '../types/admin'
 
 export function ReleasesPage() {
+  const { t } = useTranslation()
   const [lastResult, setLastResult] = useState<ConfigVersion | null>(null)
 
   return (
     <AppShell
-      title="发布管理"
-      description="在一个工作台里完成 Draft 发布与跨环境推广，并查看最近一次操作回执。"
+      title={t('releases.title')}
+      description={t('releases.description')}
     >
       <div className="releases-page">
         <div className="releases-grid">
@@ -19,23 +21,23 @@ export function ReleasesPage() {
         </div>
 
         <section className="release-result-card">
-          <h2>最近一次操作结果</h2>
+          <h2>{t('releases.lastResult')}</h2>
           {lastResult ? (
             <dl className="release-result-grid">
               <div>
-                <dt>版本 ID</dt>
+                <dt>{t('releases.versionId')}</dt>
                 <dd>{lastResult.version_id}</dd>
               </div>
               <div>
-                <dt>状态</dt>
+                <dt>{t('releases.status')}</dt>
                 <dd>{lastResult.status}</dd>
               </div>
               <div>
-                <dt>环境</dt>
+                <dt>{t('releases.environment')}</dt>
                 <dd>{lastResult.environment}</dd>
               </div>
               <div>
-                <dt>来源</dt>
+                <dt>{t('releases.source')}</dt>
                 <dd>
                   {lastResult.source
                     ? `${lastResult.source.source_environment} / ${lastResult.source.source_version_id}`
@@ -44,7 +46,7 @@ export function ReleasesPage() {
               </div>
             </dl>
           ) : (
-            <div className="config-drawer__empty">完成一次发布或推广后，这里会显示最新结果。</div>
+            <div className="config-drawer__empty">{t('releases.emptyResult')}</div>
           )}
         </section>
       </div>

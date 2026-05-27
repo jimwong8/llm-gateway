@@ -16,20 +16,26 @@ describe('QuotaPage', () => {
   })
 
   it('renders quota summary and trends', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ tenant_id: 'tenant-a', used: 5, limit: 20, remaining: 15, rejected: 1, reject_rate: 0.2 }), {
+    let callIndex = 0
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ tenant_id: 'tenant-a', window_minutes: 15, points: [{ minute: '2026-03-25T00:00:00Z', used: 5, rejected: 1, remaining_estimate: 15 }] }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
+        })
+      }
+      const responses = [
+        JSON.stringify({ tenant_id: 'tenant-a', used: 5, limit: 20, remaining: 15, rejected: 1, reject_rate: 0.2 }),
+        JSON.stringify({ tenant_id: 'tenant-a', window_minutes: 15, points: [{ minute: '2026-03-25T00:00:00Z', used: 5, rejected: 1, remaining_estimate: 15 }] }),
+      ]
+      const body = responses[Math.min(callIndex, responses.length - 1)]
+      callIndex++
+      return new Response(body, {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     renderPage()
@@ -41,12 +47,19 @@ describe('QuotaPage', () => {
   })
 
   it('applies tenant and window filters', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ tenant_id: 'tenant-a', window_minutes: 15, points: [] }), {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(JSON.stringify({ tenant_id: 'tenant-a', window_minutes: 15, points: [] }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
-      }),
-    )
+      })
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     renderPage()

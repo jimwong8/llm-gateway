@@ -14,6 +14,8 @@ import type {
   MemoryProjectFact,
   MemoryProjectFactFilters,
   MemoryProjectFactWire,
+  MemorySearchRequest,
+  MemorySearchResponse,
 } from '../types/memory'
 import { apiRequest, jsonRequest } from './http'
 
@@ -128,4 +130,9 @@ export async function submitMemoryCandidateFactBatchAction(
 ) {
   const response = await jsonRequest<MemoryCandidateFactBatchActionResponseWire>(`/admin/memory/candidate-facts/actions/${action}`, input)
   return normalizeBatchActionResponse(response)
+}
+
+export async function searchMemory(input: MemorySearchRequest) {
+  const response = await jsonRequest<MemorySearchResponse>('/api/memory/search', input)
+  return response
 }

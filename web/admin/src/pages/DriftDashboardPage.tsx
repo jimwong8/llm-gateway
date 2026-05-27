@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { AppShell } from '../components/layout/AppShell'
 import { listGovernanceDrifts } from '../lib/drifts'
 
@@ -15,6 +16,7 @@ function formatDate(value?: string) {
 }
 
 export function DriftDashboardPage() {
+  const { t } = useTranslation()
   const driftsQuery = useQuery({
     queryKey: ['governance-drifts'],
     queryFn: listGovernanceDrifts,
@@ -32,30 +34,30 @@ export function DriftDashboardPage() {
 
   return (
     <AppShell
-      title="漂移仪表盘"
-      description="查看治理漂移列表，聚焦当前与推荐模型的偏移状态及检测时间。"
+      title={t('drifts.title')}
+      description={t('drifts.description')}
     >
       <div className="events-page">
-        {driftsQuery.isLoading ? <div className="event-state">正在加载 drift 列表…</div> : null}
-        {driftsQuery.error ? <div className="config-error">drift 列表加载失败，请检查 governance 接口状态。</div> : null}
+        {driftsQuery.isLoading ? <div className="event-state">{t('drifts.loading')}</div> : null}
+        {driftsQuery.error ? <div className="config-error">{t('drifts.loadError')}</div> : null}
 
         {!driftsQuery.isLoading && !driftsQuery.error ? (
           <>
             <div className="summary-card-grid">
               <section className="summary-card">
-                <span>漂移总数</span>
+                <span>{t('drifts.total')}</span>
                 <strong>{metrics.total}</strong>
               </section>
               <section className="summary-card">
-                <span>已检测</span>
+                <span>{t('drifts.detected')}</span>
                 <strong>{metrics.detected}</strong>
               </section>
               <section className="summary-card">
-                <span>已接受</span>
+                <span>{t('drifts.accepted')}</span>
                 <strong>{metrics.accepted}</strong>
               </section>
               <section className="summary-card">
-                <span>已解决</span>
+                <span>{t('drifts.resolved')}</span>
                 <strong>{metrics.resolved}</strong>
               </section>
             </div>
@@ -64,13 +66,13 @@ export function DriftDashboardPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>漂移 ID</th>
-                    <th>环境</th>
-                    <th>智能体</th>
-                    <th>当前模型</th>
-                    <th>推荐模型</th>
-                    <th>状态</th>
-                    <th>检测时间</th>
+                    <th>{t('drifts.colId')}</th>
+                    <th>{t('drifts.colEnvironment')}</th>
+                    <th>{t('drifts.colAgent')}</th>
+                    <th>{t('drifts.colActiveModel')}</th>
+                    <th>{t('drifts.colRecommendedModel')}</th>
+                    <th>{t('drifts.colStatus')}</th>
+                    <th>{t('drifts.colDetectedAt')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -89,7 +91,7 @@ export function DriftDashboardPage() {
                   ))}
                 </tbody>
               </table>
-              {drifts.length === 0 ? <div className="config-table__state">当前没有漂移数据。</div> : null}
+              {drifts.length === 0 ? <div className="config-table__state">{t('drifts.noData')}</div> : null}
             </div>
           </>
         ) : null}

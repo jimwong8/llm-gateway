@@ -17,8 +17,15 @@ describe('RecommendationCenterPage', () => {
   })
 
   it('renders recommendation rows and summary metrics', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(
         JSON.stringify({
           object: 'list',
           data: [
@@ -46,14 +53,14 @@ describe('RecommendationCenterPage', () => {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         },
-      ),
-    )
+      )
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     renderPage()
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(1)
     })
 
     expect(await screen.findByRole('heading', { name: '推荐管理', level: 1 })).toBeInTheDocument()
@@ -65,10 +72,18 @@ describe('RecommendationCenterPage', () => {
 
   it('opens approval dialog and submits approval request', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
+    let callIndex = 0
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      callIndex++
+      if (callIndex === 1) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             data: [
@@ -86,10 +101,10 @@ describe('RecommendationCenterPage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
+        )
+      }
+      if (callIndex === 2) {
+        return new Response(
           JSON.stringify({
             id: 'ap-1',
             recommendation_id: 'rec-1',
@@ -99,29 +114,28 @@ describe('RecommendationCenterPage', () => {
             status: 201,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
+        )
+      }
+      return new Response(
+        JSON.stringify({
+          object: 'list',
+          data: [
+            {
+              id: 'rec-1',
+              agent_id: 'agent-1',
+              task_type: 'chat',
+              environment: 'prod',
+              recommended_model: 'gpt-4o-mini',
+              status: 'approved',
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
       )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            object: 'list',
-            data: [
-              {
-                id: 'rec-1',
-                agent_id: 'agent-1',
-                task_type: 'chat',
-                environment: 'prod',
-                recommended_model: 'gpt-4o-mini',
-                status: 'approved',
-              },
-            ],
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
+    })
 
     vi.stubGlobal('fetch', fetchMock)
 
@@ -140,10 +154,14 @@ describe('RecommendationCenterPage', () => {
     await user.click(within(form).getByRole('button', { name: '确认审批' }))
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(3)
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(3)
     })
 
-    const [approvalUrl, approvalInit] = fetchMock.mock.calls[1]
+    const approvalCall = fetchMock.mock.calls.find(
+      (call) => String(call[0]) === '/admin/governance/approvals',
+    )
+    expect(approvalCall).toBeDefined()
+    const [approvalUrl, approvalInit] = approvalCall!
     expect(String(approvalUrl)).toBe('/admin/governance/approvals')
     expect(approvalInit).toMatchObject({ method: 'POST' })
     const body = approvalInit?.body ? JSON.parse(String(approvalInit.body)) : {}

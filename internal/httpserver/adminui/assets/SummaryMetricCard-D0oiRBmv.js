@@ -1,0 +1,1 @@
+import{a as e,j as r}from"./vendor-query-C-ewo9kA.js";const c=e.memo(function({label:s,value:a}){return r.jsxs("section",{className:"summary-card",children:[r.jsx("span",{children:s}),r.jsx("strong",{children:a})]})});export{c as S};

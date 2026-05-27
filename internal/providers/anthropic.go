@@ -125,7 +125,7 @@ func (p *AnthropicProvider) ChatCompletion(ctx context.Context, req ChatCompleti
 		return ChatCompletionResponse{}, fmt.Errorf("anthropic read: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return ChatCompletionResponse{}, fmt.Errorf("anthropic status=%d body=%s", resp.StatusCode, string(raw))
+		return ChatCompletionResponse{}, newUpstreamHTTPError(resp.StatusCode, string(raw))
 	}
 
 	var anthropicResp anthropicResponse

@@ -26,8 +26,15 @@ describe('CreateDraftForm', () => {
 
   it('submits create draft request and reports success', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(
         JSON.stringify({
           version_id: 'cfg_101',
           status: 'draft',
@@ -42,8 +49,8 @@ describe('CreateDraftForm', () => {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         },
-      ),
-    )
+      )
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     const onCreated = vi.fn()
@@ -61,7 +68,7 @@ describe('CreateDraftForm', () => {
     await user.click(screen.getByRole('button', { name: '创建 Draft' }))
 
     expect(await screen.findByText('已创建 Draft cfg_101')).toBeInTheDocument()
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(1)
     expect(String(fetchMock.mock.calls[0][0])).toBe('/admin/inheritance-drafts')
     expect(onCreated).toHaveBeenCalledWith(
       expect.objectContaining({

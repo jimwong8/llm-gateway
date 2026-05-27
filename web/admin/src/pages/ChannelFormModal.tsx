@@ -1,15 +1,26 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { createChannel, updateChannel } from '../lib/channels'
+import { createChannel, updateChannel, fetchProviderModels } from '../lib/channels'
 import type { Channel, CreateChannelRequest, ChannelProvider, ChannelPriority } from '../types/channel'
 
 const PROVIDERS: { value: ChannelProvider; label: string }[] = [
   { value: 'openai', label: 'OpenAI' },
-  { value: 'anthropic', label: 'Anthropic' },
-  { value: 'google', label: 'Google AI' },
   { value: 'azure', label: 'Azure OpenAI' },
+  { value: 'anthropic', label: 'Anthropic (Claude)' },
+  { value: 'google', label: 'Google (Gemini)' },
   { value: 'aws', label: 'AWS Bedrock' },
-  { value: 'custom', label: '自定义' },
+  { value: 'deepseek', label: 'DeepSeek' },
+  { value: 'moonshot', label: 'Moonshot (月之暗面)' },
+  { value: 'zhipu', label: '智谱 (ChatGLM)' },
+  { value: 'qwen', label: '通义千问 (Qwen)' },
+  { value: 'baichuan', label: '百川 (Baichuan)' },
+  { value: 'minimax', label: 'MiniMax' },
+  { value: 'mistral', label: 'Mistral AI' },
+  { value: 'cohere', label: 'Cohere' },
+  { value: 'groq', label: 'Groq' },
+  { value: 'together', label: 'Together AI' },
+  { value: 'replicate', label: 'Replicate' },
+  { value: 'custom', label: '自定义（自行输入）' },
 ]
 
 const PRIORITIES: { value: ChannelPriority; label: string }[] = [
@@ -32,8 +43,8 @@ export function ChannelFormModal({ channel, onClose }: ChannelFormModalProps) {
   const [form, setForm] = useState<CreateChannelRequest>({
     name: channel?.name ?? '',
     provider: channel?.provider ?? 'openai',
-    baseUrl: channel?.baseUrl ?? '',
-    apiKey: channel?.apiKey ?? '',
+    base_url: channel?.base_url ?? '',
+    api_key: channel?.api_key ?? '',
     priority: channel?.priority ?? 'medium',
     weight: channel?.weight ?? 1,
     models: channel?.models ?? [],
@@ -43,6 +54,56 @@ export function ChannelFormModal({ channel, onClose }: ChannelFormModalProps) {
 
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [modelInput, setModelInput] = useState('')
+  const [providerInput, setProviderInput] = useState<string>(channel?.provider ?? 'openai')
+
+  // ── 读取模型 ────────────────────────────
+  const [fetchedModels, setFetchedModels] = useState<string[]>([])
+  const [fetchingModels, setFetchingModels] = useState(false)
+  const [fetchModelsError, setFetchModelsError] = useState('')
+  const [selectedFetchedModels, setSelectedFetchedModels] = useState<Set<string>>(new Set())
+
+  const handleFetchModels = async () => {
+    if (!form.base_url.trim()) {
+      setFetchModelsError('请先填写 Base URL')
+      return
+    }
+    setFetchingModels(true)
+    setFetchModelsError('')
+    try {
+      const models = await fetchProviderModels({
+        provider: form.provider,
+        base_url: form.base_url,
+        api_key: form.api_key ?? '',
+      })
+      setFetchedModels(models)
+      setSelectedFetchedModels(new Set())
+    } catch (err) {
+      setFetchModelsError((err as Error).message ?? '读取模型失败')
+    } finally {
+      setFetchingModels(false)
+    }
+  }
+
+  const toggleFetchedModel = (model: string) => {
+    setSelectedFetchedModels(prev => {
+      const next = new Set(prev)
+      if (next.has(model)) next.delete(model)
+      else next.add(model)
+      return next
+    })
+  }
+
+  const addSelectedModels = () => {
+    const existing = new Set(form.models ?? [])
+    selectedFetchedModels.forEach(m => existing.add(m))
+    setForm({ ...form, models: Array.from(existing) })
+    setSelectedFetchedModels(new Set())
+  }
+
+  const availableToAdd = useMemo(() => {
+    const existing = new Set(form.models ?? [])
+    return fetchedModels.filter(m => !existing.has(m))
+  }, [fetchedModels, form.models])
 
   const mutation = useMutation({
     mutationFn: isEditing
@@ -57,7 +118,7 @@ export function ChannelFormModal({ channel, onClose }: ChannelFormModalProps) {
   const validate = (): boolean => {
     const errs: Record<string, string> = {}
     if (!form.name.trim()) errs.name = '渠道名称不能为空'
-    if (!form.baseUrl.trim()) errs.baseUrl = 'Base URL 不能为空'
+    if (!form.base_url.trim()) errs.base_url = 'Base URL 不能为空'
     setErrors(errs)
     return Object.keys(errs).length === 0
   }
@@ -132,35 +193,43 @@ export function ChannelFormModal({ channel, onClose }: ChannelFormModalProps) {
 
                 <label>
                   供应商
-                  <select
-                    value={form.provider}
-                    onChange={(e) => updateField('provider', e.target.value as ChannelProvider)}
-                  >
-                    {PROVIDERS.map((p) => (
-                      <option key={p.value} value={p.value}>
-                        {p.label}
-                      </option>
-                    ))}
-                  </select>
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    <input
+                      type="text"
+                      list="provider-options"
+                      value={providerInput}
+                      onChange={(e) => {
+                        setProviderInput(e.target.value)
+                        updateField('provider', e.target.value as ChannelProvider)
+                      }}
+                      placeholder="选择或输入供应商名称"
+                      style={{ flex: 1 }}
+                    />
+                    <datalist id="provider-options">
+                      {PROVIDERS.map((p) => (
+                        <option key={p.value} value={p.value}>{p.label}</option>
+                      ))}
+                    </datalist>
+                  </div>
                 </label>
 
                 <label>
                   Base URL *
                   <input
                     type="text"
-                    value={form.baseUrl}
-                    onChange={(e) => updateField('baseUrl', e.target.value)}
+                    value={form.base_url}
+                    onChange={(e) => updateField('base_url', e.target.value)}
                     placeholder="https://api.openai.com/v1"
                   />
-                  {errors.baseUrl ? <span className="field-error">{errors.baseUrl}</span> : null}
+                  {errors.base_url ? <span className="field-error">{errors.base_url}</span> : null}
                 </label>
 
                 <label>
                   API Key
                   <input
                     type="password"
-                    value={form.apiKey ?? ''}
-                    onChange={(e) => updateField('apiKey', e.target.value)}
+                    value={form.api_key ?? ''}
+                    onChange={(e) => updateField('api_key', e.target.value)}
                     placeholder={isEditing ? '留空则不修改' : 'sk-...'}
                   />
                 </label>
@@ -196,6 +265,74 @@ export function ChannelFormModal({ channel, onClose }: ChannelFormModalProps) {
 
                 <label className="channel-form__full-row">
                   模型列表
+                  {/* 读取模型按钮 */}
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                    <button
+                      type="button"
+                      className="btn btn--outline btn--sm"
+                      onClick={handleFetchModels}
+                      disabled={fetchingModels}
+                    >
+                      {fetchingModels ? '读取中...' : '📡 读取模型'}
+                    </button>
+                    {fetchModelsError && (
+                      <span style={{ color: 'var(--danger-color)', fontSize: '12px', alignSelf: 'center' }}>
+                        {fetchModelsError}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 读取到的模型列表（多选） */}
+                  {fetchedModels.length > 0 && (
+                    <div style={{
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '6px',
+                      padding: '8px',
+                      maxHeight: '200px',
+                      overflowY: 'auto',
+                      marginBottom: '8px',
+                      background: 'var(--surface-color)',
+                    }}>
+                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px', textAlign: 'left' }}>
+                        共 {fetchedModels.length} 个模型，已选 {selectedFetchedModels.size} 个
+                      </div>
+                      {availableToAdd.map((m) => (
+                        <label
+                          key={m}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '3px 4px',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            textAlign: 'left',
+                            borderRadius: '3px',
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedFetchedModels.has(m)}
+                            onChange={() => toggleFetchedModel(m)}
+                            style={{ margin: 0, flexShrink: 0 }}
+                          />
+                          <span style={{ textAlign: 'left', wordBreak: 'break-all' }}>{m}</span>
+                        </label>
+                      ))}
+                      {selectedFetchedModels.size > 0 && (
+                        <button
+                          type="button"
+                          className="btn btn--sm btn--primary"
+                          onClick={addSelectedModels}
+                          style={{ marginTop: '8px', width: '100%' }}
+                        >
+                          添加选中的 {selectedFetchedModels.size} 个模型
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 手动添加模型 */}
                   <div className="channel-form__tag-input">
                     <input
                       type="text"

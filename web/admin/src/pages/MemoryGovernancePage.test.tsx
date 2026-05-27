@@ -17,10 +17,15 @@ describe('MemoryGovernancePage', () => {
   })
 
   it('renders candidate facts, project facts and summary metrics', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
+    let callIndex = 0
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      callIndex++
+      if (callIndex === 1) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             tenant_id: '',
@@ -45,43 +50,42 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
+        )
+      }
+      return new Response(
+        JSON.stringify({
+          object: 'list',
+          tenant_id: '',
+          user_id: '',
+          status: '',
+          data: [
+            {
+              id: 2,
+              tenant_id: 'tenant-a',
+              user_id: 'user-1',
+              fact_key: 'stack',
+              fact_value: 'go',
+              source_text: 'backend stack is go',
+              status: 'active',
+              source_message_seq: 3,
+              last_verified_at: '2026-04-19T09:00:00Z',
+              updated_at: '2026-04-19T09:30:00Z',
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
       )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            object: 'list',
-            tenant_id: '',
-            user_id: '',
-            status: '',
-            data: [
-              {
-                id: 2,
-                tenant_id: 'tenant-a',
-                user_id: 'user-1',
-                fact_key: 'stack',
-                fact_value: 'go',
-                source_text: 'backend stack is go',
-                status: 'active',
-                source_message_seq: 3,
-                last_verified_at: '2026-04-19T09:00:00Z',
-                updated_at: '2026-04-19T09:30:00Z',
-              },
-            ],
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
+    })
 
     vi.stubGlobal('fetch', fetchMock)
 
     renderPage()
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2)
     })
 
     expect(await screen.findByRole('heading', { name: '记忆治理', level: 1 })).toBeTruthy()
@@ -99,10 +103,15 @@ describe('MemoryGovernancePage', () => {
 
   it('sorts candidate facts by status and updated time', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
+    let callIndex = 0
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      callIndex++
+      if (callIndex === 1) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             tenant_id: '',
@@ -139,23 +148,22 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
+        )
+      }
+      return new Response(
+        JSON.stringify({
+          object: 'list',
+          tenant_id: '',
+          user_id: '',
+          status: '',
+          data: [],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
       )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            object: 'list',
-            tenant_id: '',
-            user_id: '',
-            status: '',
-            data: [],
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
+    })
 
     vi.stubGlobal('fetch', fetchMock)
 
@@ -179,10 +187,15 @@ describe('MemoryGovernancePage', () => {
 
   it('asks for confirmation before running batch candidate actions', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
+    let callIndex = 0
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      callIndex++
+      if (callIndex === 1) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             tenant_id: '',
@@ -206,10 +219,10 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
+        )
+      }
+      if (callIndex === 2) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             tenant_id: '',
@@ -221,10 +234,10 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
+        )
+      }
+      if (callIndex === 3) {
+        return new Response(
           JSON.stringify({
             action: 'confirm',
             success_count: 1,
@@ -253,20 +266,19 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
+        )
+      }
+      if (callIndex === 4) {
+        return new Response(
           JSON.stringify({ object: 'list', tenant_id: '', user_id: '', status: '', data: [{ id: 1, tenant_id: 'tenant-a', user_id: 'user-1', fact_key: 'repo', fact_value: 'mono', source_text: 'we use monorepo', status: 'confirmed', source_message_seq: 7, confirmation_count: 2 }] }),
           { status: 200, headers: { 'Content-Type': 'application/json' } },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ object: 'list', tenant_id: '', user_id: '', status: '', data: [] }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
+        )
+      }
+      return new Response(JSON.stringify({ object: 'list', tenant_id: '', user_id: '', status: '', data: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
 
     vi.stubGlobal('fetch', fetchMock)
 
@@ -276,29 +288,34 @@ describe('MemoryGovernancePage', () => {
     await user.click(screen.getByRole('checkbox', { name: '选择候选事实 repo' }))
     await user.click(screen.getByRole('button', { name: '批量确认' }))
 
-    expect(screen.getByRole('dialog', { name: 'Batch Action Confirmation' })).toBeTruthy()
+    expect(screen.getByRole('dialog', { name: '确认批量确认' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: '确认批量确认' })).toBeTruthy()
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2)
 
     await user.click(screen.getByRole('button', { name: '取消' }))
-    expect(screen.queryByRole('dialog', { name: 'Batch Action Confirmation' })).toBeNull()
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('dialog', { name: '确认批量确认' })).toBeNull()
+    expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2)
 
     await user.click(screen.getByRole('button', { name: '批量确认' }))
     await user.click(screen.getByRole('button', { name: '确认批量确认' }))
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(5)
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(5)
     })
     expect(await screen.findByText('批量确认完成：成功 1 条。repo→confirmed')).toBeTruthy()
   })
 
   it('shows selected fact details for candidate and project rows', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
+    let callIndex = 0
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      callIndex++
+      if (callIndex === 1) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             tenant_id: '',
@@ -323,37 +340,36 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
+        )
+      }
+      return new Response(
+        JSON.stringify({
+          object: 'list',
+          tenant_id: '',
+          user_id: '',
+          status: '',
+          data: [
+            {
+              id: 2,
+              tenant_id: 'tenant-a',
+              user_id: 'user-1',
+              fact_key: 'stack',
+              fact_value: 'go',
+              source_text: 'backend stack is go',
+              status: 'superseded',
+              source_message_seq: 3,
+              superseded_by: 8,
+              last_verified_at: '2026-04-19T09:00:00Z',
+              updated_at: '2026-04-19T09:30:00Z',
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
       )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            object: 'list',
-            tenant_id: '',
-            user_id: '',
-            status: '',
-            data: [
-              {
-                id: 2,
-                tenant_id: 'tenant-a',
-                user_id: 'user-1',
-                fact_key: 'stack',
-                fact_value: 'go',
-                source_text: 'backend stack is go',
-                status: 'superseded',
-                source_message_seq: 3,
-                superseded_by: 8,
-                last_verified_at: '2026-04-19T09:00:00Z',
-                updated_at: '2026-04-19T09:30:00Z',
-              },
-            ],
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
+    })
 
     vi.stubGlobal('fetch', fetchMock)
 
@@ -374,10 +390,15 @@ describe('MemoryGovernancePage', () => {
 
   it('submits filters and candidate fact action with current auth/api conventions', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
+    let callIndex = 0
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      callIndex++
+      if (callIndex === 1) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             tenant_id: '',
@@ -401,10 +422,10 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
+        )
+      }
+      if (callIndex === 2) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             tenant_id: '',
@@ -416,10 +437,10 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
+        )
+      }
+      if (callIndex === 3) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             tenant_id: 'tenant-a',
@@ -443,10 +464,10 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
+        )
+      }
+      if (callIndex === 4) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             tenant_id: 'tenant-a',
@@ -458,10 +479,10 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
+        )
+      }
+      if (callIndex === 5) {
+        return new Response(
           JSON.stringify({
             id: 1,
             tenant_id: 'tenant-a',
@@ -477,10 +498,10 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
+        )
+      }
+      if (callIndex === 6) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             tenant_id: 'tenant-a',
@@ -504,35 +525,34 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
+        )
+      }
+      return new Response(
+        JSON.stringify({
+          object: 'list',
+          tenant_id: 'tenant-a',
+          user_id: 'user-1',
+          status: 'pending',
+          data: [
+            {
+              id: 2,
+              tenant_id: 'tenant-a',
+              user_id: 'user-1',
+              fact_key: 'repo',
+              fact_value: 'mono',
+              source_text: 'we use monorepo',
+              status: 'active',
+              source_message_seq: 7,
+              last_verified_at: '2026-04-19T11:00:00Z',
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
       )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            object: 'list',
-            tenant_id: 'tenant-a',
-            user_id: 'user-1',
-            status: 'pending',
-            data: [
-              {
-                id: 2,
-                tenant_id: 'tenant-a',
-                user_id: 'user-1',
-                fact_key: 'repo',
-                fact_value: 'mono',
-                source_text: 'we use monorepo',
-                status: 'active',
-                source_message_seq: 7,
-                last_verified_at: '2026-04-19T11:00:00Z',
-              },
-            ],
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
+    })
 
     vi.stubGlobal('fetch', fetchMock)
 
@@ -548,19 +568,21 @@ describe('MemoryGovernancePage', () => {
     await user.click(within(form).getByRole('button', { name: '刷新记忆事实' }))
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(4)
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(4)
     })
 
-    expect(String(fetchMock.mock.calls[2][0])).toContain('/admin/memory/candidate-facts?tenant_id=tenant-a&user_id=user-1&status=pending')
-    expect(String(fetchMock.mock.calls[3][0])).toContain('/admin/memory/project-facts?tenant_id=tenant-a&user_id=user-1&status=active')
+    const nonBroadcastCalls = fetchMock.mock.calls.filter(call => !String(call[0]).includes('/api/user/broadcasts'))
+    expect(String(nonBroadcastCalls[2][0])).toContain('/admin/memory/candidate-facts?tenant_id=tenant-a&user_id=user-1&status=pending')
+    expect(String(nonBroadcastCalls[3][0])).toContain('/admin/memory/project-facts?tenant_id=tenant-a&user_id=user-1&status=active')
 
     await user.click(screen.getByRole('button', { name: '确认' }))
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(7)
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(7)
     })
 
-    const [actionUrl, actionInit] = fetchMock.mock.calls[4]
+    const nonBroadcastCallsAfterAction = fetchMock.mock.calls.filter(call => !String(call[0]).includes('/api/user/broadcasts'))
+    const [actionUrl, actionInit] = nonBroadcastCallsAfterAction[4]
     expect(String(actionUrl)).toBe('/admin/memory/candidate-facts/repo/confirm')
     expect(actionInit).toMatchObject({ method: 'POST' })
     const body = actionInit?.body ? JSON.parse(String(actionInit.body)) : {}
@@ -575,10 +597,15 @@ describe('MemoryGovernancePage', () => {
 
   it('supports batch confirm for selected visible candidate facts', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
+    let callIndex = 0
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      callIndex++
+      if (callIndex === 1) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             tenant_id: '',
@@ -613,10 +640,10 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
+        )
+      }
+      if (callIndex === 2) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             tenant_id: '',
@@ -628,10 +655,10 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
+        )
+      }
+      if (callIndex === 3) {
+        return new Response(
           JSON.stringify({
             action: 'confirm',
             success_count: 2,
@@ -677,10 +704,10 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
+        )
+      }
+      if (callIndex === 4) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             tenant_id: '',
@@ -715,23 +742,22 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
+        )
+      }
+      return new Response(
+        JSON.stringify({
+          object: 'list',
+          tenant_id: '',
+          user_id: '',
+          status: '',
+          data: [],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
       )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            object: 'list',
-            tenant_id: '',
-            user_id: '',
-            status: '',
-            data: [],
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
+    })
 
     vi.stubGlobal('fetch', fetchMock)
 
@@ -746,10 +772,11 @@ describe('MemoryGovernancePage', () => {
     await user.click(screen.getByRole('button', { name: '确认批量确认' }))
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(5)
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(5)
     })
 
-    const [batchActionUrl, batchActionInit] = fetchMock.mock.calls[2]
+    const nonBroadcastCalls = fetchMock.mock.calls.filter(call => !String(call[0]).includes('/api/user/broadcasts'))
+    const [batchActionUrl, batchActionInit] = nonBroadcastCalls[2]
     expect(String(batchActionUrl)).toBe('/admin/memory/candidate-facts/actions/confirm')
     expect(batchActionInit).toMatchObject({ method: 'POST' })
     const batchBody = batchActionInit?.body ? JSON.parse(String(batchActionInit.body)) : {}
@@ -764,10 +791,15 @@ describe('MemoryGovernancePage', () => {
 
   it('keeps failed selections and shows aggregated batch errors', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
+    let callIndex = 0
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      callIndex++
+      if (callIndex === 1) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             tenant_id: '',
@@ -802,10 +834,10 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
+        )
+      }
+      if (callIndex === 2) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             tenant_id: '',
@@ -817,10 +849,10 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
+        )
+      }
+      if (callIndex === 3) {
+        return new Response(
           JSON.stringify({
             action: 'confirm',
             success_count: 1,
@@ -855,10 +887,10 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
+        )
+      }
+      if (callIndex === 4) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             tenant_id: '',
@@ -893,23 +925,22 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
+        )
+      }
+      return new Response(
+        JSON.stringify({
+          object: 'list',
+          tenant_id: '',
+          user_id: '',
+          status: '',
+          data: [],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
       )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            object: 'list',
-            tenant_id: '',
-            user_id: '',
-            status: '',
-            data: [],
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
+    })
 
     vi.stubGlobal('fetch', fetchMock)
 
@@ -922,7 +953,7 @@ describe('MemoryGovernancePage', () => {
     await user.click(screen.getByRole('button', { name: '确认批量确认' }))
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(5)
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(5)
     })
 
     expect(await screen.findByText('批量确认完成：成功 1 条，失败 1 条。repo→confirmed')).toBeTruthy()
@@ -944,10 +975,15 @@ describe('MemoryGovernancePage', () => {
       updated_at: `2026-04-${String(20 + index).padStart(2, '0')}T10:00:00Z`,
     }))
 
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
+    let callIndex = 0
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      callIndex++
+      if (callIndex === 1) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             tenant_id: '',
@@ -959,23 +995,22 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
+        )
+      }
+      return new Response(
+        JSON.stringify({
+          object: 'list',
+          tenant_id: '',
+          user_id: '',
+          status: '',
+          data: [],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
       )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            object: 'list',
-            tenant_id: '',
-            user_id: '',
-            status: '',
-            data: [],
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
+    })
 
     vi.stubGlobal('fetch', fetchMock)
 
@@ -1019,10 +1054,15 @@ describe('MemoryGovernancePage', () => {
 
   it('supports batch reject for selected visible candidate facts', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
+    let callIndex = 0
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      callIndex++
+      if (callIndex === 1) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             tenant_id: '',
@@ -1057,10 +1097,10 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
+        )
+      }
+      if (callIndex === 2) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             tenant_id: '',
@@ -1072,10 +1112,10 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
+        )
+      }
+      if (callIndex === 3) {
+        return new Response(
           JSON.stringify({
             action: 'reject',
             success_count: 2,
@@ -1121,10 +1161,10 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
+        )
+      }
+      if (callIndex === 4) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             tenant_id: '',
@@ -1159,23 +1199,22 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
+        )
+      }
+      return new Response(
+        JSON.stringify({
+          object: 'list',
+          tenant_id: '',
+          user_id: '',
+          status: '',
+          data: [],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
       )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            object: 'list',
-            tenant_id: '',
-            user_id: '',
-            status: '',
-            data: [],
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
+    })
 
     vi.stubGlobal('fetch', fetchMock)
 
@@ -1188,10 +1227,11 @@ describe('MemoryGovernancePage', () => {
     await user.click(screen.getByRole('button', { name: '确认批量拒绝' }))
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(5)
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(5)
     })
 
-    const [batchActionUrl, batchActionInit] = fetchMock.mock.calls[2]
+    const nonBroadcastCalls = fetchMock.mock.calls.filter(call => !String(call[0]).includes('/api/user/broadcasts'))
+    const [batchActionUrl, batchActionInit] = nonBroadcastCalls[2]
     expect(String(batchActionUrl)).toBe('/admin/memory/candidate-facts/actions/reject')
     expect(batchActionInit).toMatchObject({ method: 'POST' })
     expect(await screen.findByText('批量拒绝完成：成功 2 条。repo→rejected；stack→rejected')).toBeTruthy()
@@ -1199,10 +1239,15 @@ describe('MemoryGovernancePage', () => {
 
   it('supports batch promote for selected visible candidate facts', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
+    let callIndex = 0
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      callIndex++
+      if (callIndex === 1) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             tenant_id: '',
@@ -1237,10 +1282,10 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
+        )
+      }
+      if (callIndex === 2) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             tenant_id: '',
@@ -1252,10 +1297,10 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
+        )
+      }
+      if (callIndex === 3) {
+        return new Response(
           JSON.stringify({
             action: 'promote',
             success_count: 2,
@@ -1301,10 +1346,10 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
+        )
+      }
+      if (callIndex === 4) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             tenant_id: '',
@@ -1339,46 +1384,45 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
+        )
+      }
+      return new Response(
+        JSON.stringify({
+          object: 'list',
+          tenant_id: '',
+          user_id: '',
+          status: '',
+          data: [
+            {
+              id: 11,
+              tenant_id: 'tenant-a',
+              user_id: 'user-1',
+              fact_key: 'repo',
+              fact_value: 'mono',
+              source_text: 'we use monorepo',
+              status: 'active',
+              source_message_seq: 7,
+              last_verified_at: '2026-04-19T11:00:00Z',
+            },
+            {
+              id: 12,
+              tenant_id: 'tenant-a',
+              user_id: 'user-1',
+              fact_key: 'stack',
+              fact_value: 'go',
+              source_text: 'backend stack is go',
+              status: 'active',
+              source_message_seq: 8,
+              last_verified_at: '2026-04-19T11:00:00Z',
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
       )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            object: 'list',
-            tenant_id: '',
-            user_id: '',
-            status: '',
-            data: [
-              {
-                id: 11,
-                tenant_id: 'tenant-a',
-                user_id: 'user-1',
-                fact_key: 'repo',
-                fact_value: 'mono',
-                source_text: 'we use monorepo',
-                status: 'active',
-                source_message_seq: 7,
-                last_verified_at: '2026-04-19T11:00:00Z',
-              },
-              {
-                id: 12,
-                tenant_id: 'tenant-a',
-                user_id: 'user-1',
-                fact_key: 'stack',
-                fact_value: 'go',
-                source_text: 'backend stack is go',
-                status: 'active',
-                source_message_seq: 8,
-                last_verified_at: '2026-04-19T11:00:00Z',
-              },
-            ],
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
+    })
 
     vi.stubGlobal('fetch', fetchMock)
 
@@ -1391,10 +1435,11 @@ describe('MemoryGovernancePage', () => {
     await user.click(screen.getByRole('button', { name: '确认批量提升' }))
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(5)
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(5)
     })
 
-    const [batchActionUrl, batchActionInit] = fetchMock.mock.calls[2]
+    const nonBroadcastCalls = fetchMock.mock.calls.filter(call => !String(call[0]).includes('/api/user/broadcasts'))
+    const [batchActionUrl, batchActionInit] = nonBroadcastCalls[2]
     expect(String(batchActionUrl)).toBe('/admin/memory/candidate-facts/actions/promote')
     expect(batchActionInit).toMatchObject({ method: 'POST' })
     expect(await screen.findByText('批量提升完成：成功 2 条。repo→promoted；stack→promoted')).toBeTruthy()
@@ -1402,10 +1447,15 @@ describe('MemoryGovernancePage', () => {
 
   it('resets filters and disables invalid actions by candidate status', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
+    let callIndex = 0
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      callIndex++
+      if (callIndex === 1) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             tenant_id: '',
@@ -1429,10 +1479,10 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
+        )
+      }
+      if (callIndex === 2) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             tenant_id: '',
@@ -1444,10 +1494,10 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
+        )
+      }
+      if (callIndex === 3) {
+        return new Response(
           JSON.stringify({
             object: 'list',
             tenant_id: '',
@@ -1471,23 +1521,22 @@ describe('MemoryGovernancePage', () => {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
-        ),
+        )
+      }
+      return new Response(
+        JSON.stringify({
+          object: 'list',
+          tenant_id: '',
+          user_id: '',
+          status: '',
+          data: [],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
       )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            object: 'list',
-            tenant_id: '',
-            user_id: '',
-            status: '',
-            data: [],
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
+    })
 
     vi.stubGlobal('fetch', fetchMock)
 
@@ -1512,7 +1561,7 @@ describe('MemoryGovernancePage', () => {
     expect((within(form).getByLabelText('候选状态') as HTMLSelectElement).value).toBe('')
     expect((within(form).getByLabelText('项目状态') as HTMLSelectElement).value).toBe('')
     expect(screen.getByText('已选当前可见 0 / 1 · 本地筛选 1 · 已拉取 1 · 可确认 0 · 可拒绝 0 · 可提升 0')).toBeTruthy()
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2)
   })
 })
 

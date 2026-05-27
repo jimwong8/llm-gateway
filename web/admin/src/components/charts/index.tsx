@@ -253,6 +253,8 @@ function ChartEmptyState({ label }: { label: string }) {
   )
 }
 
+export { LatencyChart } from './LatencyChart'
+export { ErrorRateChart } from './ErrorRateChart'
 export { COLORS, CHART_COLORS }
 export type {
   TokenUsageData,

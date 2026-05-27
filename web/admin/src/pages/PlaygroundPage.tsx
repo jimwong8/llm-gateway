@@ -1,4 +1,5 @@
 import { FormEvent, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { AppShell } from '../components/layout/AppShell'
 import { sendPlaygroundRequest, type PlaygroundResult } from '../lib/playground'
 import type { PlaygroundMessage, PlaygroundRequest } from '../types/playground'
@@ -27,6 +28,7 @@ type RecentRequest = {
 }
 
 export function PlaygroundPage() {
+  const { t } = useTranslation()
   const [requestState, setRequestState] = useState<RequestState>(initialRequestState)
   const [result, setResult] = useState<PlaygroundResult | null>(null)
   const [recentRequests, setRecentRequests] = useState<RecentRequest[]>([])
@@ -47,7 +49,7 @@ export function PlaygroundPage() {
     event.preventDefault()
 
     if (!requestState.model.trim() || !requestState.tenantID.trim() || requestPreview.messages.length === 0) {
-      setError('请填写 model、tenant_id，并至少提供一条消息')
+      setError(t('playground.fillRequired'))
       return
     }
 
@@ -69,7 +71,7 @@ export function PlaygroundPage() {
         ...previous,
       ].slice(0, 5))
     } catch (unknownError) {
-      setError(unknownError instanceof Error ? unknownError.message : '请求发送失败')
+      setError(unknownError instanceof Error ? unknownError.message : t('playground.requestFailed'))
     } finally {
       setSubmitting(false)
     }
@@ -93,34 +95,34 @@ export function PlaygroundPage() {
 
   return (
     <AppShell
-      title="在线测试"
-      description="直接在浏览器里发起 /v1/chat/completions 请求，查看响应内容、状态码、耗时与关键元信息。"
+      title={t('playground.pageTitle')}
+      description={t('playground.pageDescription')}
     >
       <div className="playground-page">
         <form className="playground-form" onSubmit={handleSubmit}>
           <div className="playground-form__header">
             <div>
-              <h2>请求编辑器</h2>
-              <p>在浏览器中直接调试网关请求，无需切换至 curl 或 verify 脚本。</p>
+              <h2>{t('playground.requestEditor')}</h2>
+              <p>{t('playground.requestEditorDesc')}</p>
             </div>
             <div className="playground-form__actions">
-              <button type="button" onClick={addMessage}>添加消息</button>
-              <button type="submit" disabled={submitting}>{submitting ? '发送中…' : '发送请求'}</button>
+              <button type="button" onClick={addMessage}>{t('playground.addMessage')}</button>
+              <button type="submit" disabled={submitting}>{submitting ? t('playground.sending') : t('playground.sendRequest')}</button>
             </div>
           </div>
 
           <div className="playground-form__grid">
             <label>
-              模型
+              {t('playground.model')}
               <input value={requestState.model} onChange={(event) => setRequestState((prev) => ({ ...prev, model: event.target.value }))} />
             </label>
             <label>
-              租户 ID
+              {t('playground.tenantId')}
               <input value={requestState.tenantID} onChange={(event) => setRequestState((prev) => ({ ...prev, tenantID: event.target.value }))} />
             </label>
             <label>
-              任务提示
-              <input value={requestState.taskHint} onChange={(event) => setRequestState((prev) => ({ ...prev, taskHint: event.target.value }))} placeholder="analysis / code / chat" />
+              {t('playground.taskHint')}
+              <input value={requestState.taskHint} onChange={(event) => setRequestState((prev) => ({ ...prev, taskHint: event.target.value }))} placeholder={t('playground.taskHintPlaceholder')} />
             </label>
           </div>
 
@@ -128,13 +130,13 @@ export function PlaygroundPage() {
             {requestState.messages.map((message, index) => (
               <div key={index} className="playground-message-row">
                   <label>
-                    角色
+                    {t('playground.role')}
                     <input value={message.role} onChange={(event) => updateMessage(index, 'role', event.target.value)} />
                   </label>
                   <label className="playground-message-row__content">
-                    内容
+                    {t('playground.content')}
                     <textarea value={message.content} rows={4} onChange={(event) => updateMessage(index, 'content', event.target.value)} />
-                </label>
+                  </label>
               </div>
             ))}
           </div>
@@ -145,8 +147,8 @@ export function PlaygroundPage() {
         <section className="playground-response">
           <div className="playground-response__header">
             <div>
-              <h2>响应面板</h2>
-              <p>查看响应正文、状态码、耗时与关键响应头。</p>
+              <h2>{t('playground.responsePanel')}</h2>
+              <p>{t('playground.responsePanelDesc')}</p>
             </div>
           </div>
 
@@ -154,11 +156,11 @@ export function PlaygroundPage() {
             <>
               <div className="summary-card-grid playground-summary-grid">
                 <div className="summary-card">
-                  <span>状态码</span>
+                  <span>{t('playground.statusCode')}</span>
                   <strong>{result.status}</strong>
                 </div>
                 <div className="summary-card">
-                  <span>耗时</span>
+                  <span>{t('playground.elapsed')}</span>
                   <strong>{result.elapsedMs} ms</strong>
                 </div>
                 <div className="summary-card">
@@ -173,15 +175,15 @@ export function PlaygroundPage() {
 
               <div className="playground-panels">
                 <div className="playground-panel-card">
-                  <h3>响应 JSON</h3>
+                  <h3>{t('playground.responseJson')}</h3>
                   <pre>{JSON.stringify(result.body, null, 2)}</pre>
                 </div>
                 <div className="playground-panel-card">
-                  <h3>请求预览</h3>
+                  <h3>{t('playground.requestPreview')}</h3>
                   <pre>{JSON.stringify(requestPreview, null, 2)}</pre>
                 </div>
                 <div className="playground-panel-card">
-                  <h3>最近请求</h3>
+                  <h3>{t('playground.recentRequests')}</h3>
                   {recentRequests.length > 0 ? (
                     <div className="playground-history">
                       {recentRequests.map((item) => (
@@ -198,19 +200,19 @@ export function PlaygroundPage() {
                           }}
                         >
                           <strong>{item.model} / {item.tenantID}</strong>
-                          <span>Status {item.status} · {item.elapsedMs} ms</span>
+                          <span>{t('playground.status')} {item.status} · {item.elapsedMs} ms</span>
                           <small>{item.messagePreview}</small>
                         </button>
                       ))}
                     </div>
                   ) : (
-                    <div className="event-state">发送过的请求会出现在这里，支持快速回填基础字段。</div>
+                    <div className="event-state">{t('playground.noRecentRequests')}</div>
                   )}
                 </div>
               </div>
             </>
           ) : (
-            <div className="event-state">发送请求后，这里会显示返回内容、响应头和关键元信息。</div>
+            <div className="event-state">{t('playground.noResponse')}</div>
           )}
         </section>
       </div>
