@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-//go:embed adminui/*
+//go:embed all:adminui
 var adminUIFS embed.FS
 
 func (s *Server) adminUI(w http.ResponseWriter, r *http.Request) {

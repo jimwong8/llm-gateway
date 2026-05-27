@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -23,7 +22,6 @@ type presetStore interface {
 	ListMaskRules(ctx context.Context, userID int64, tenantID string) ([]memory.MaskRule, error)
 	DeleteMaskRule(ctx context.Context, ruleID, userID int64, tenantID string) error
 	UpdateMaskRule(ctx context.Context, ruleID, userID int64, tenantID, name, pattern, replace string, enabled bool) error
-	ApplyMasks(ctx context.Context, userID int64, tenantID, text string) (string, error)
 }
 
 func (s *Server) WithPresetStore(store presetStore) *Server {
@@ -31,16 +29,10 @@ func (s *Server) WithPresetStore(store presetStore) *Server {
 	return s
 }
 
-func (s *Server) WithMaskEnabled(enabled bool) *Server {
-	s.maskEnabled = enabled
-	return s
-}
-
 func (s *Server) mountPresetRoutes(mux *http.ServeMux) {
 	if s.presetStore == nil {
 		return
 	}
-	mux.HandleFunc("/api/memory/masks/settings", s.requireUser(s.maskSettings))
 	mux.HandleFunc("/api/memory/presets", s.requireUser(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -378,40 +370,84 @@ func (s *Server) maskDelete(w http.ResponseWriter, r *http.Request, id int64) {
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
-func (s *Server) maskSettings(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		writeJSON(w, http.StatusOK, map[string]any{"enabled": s.maskEnabled})
-	case http.MethodPut:
-		var body struct {
-			Enabled bool `json:"enabled"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			badRequest(w, "invalid JSON")
-			return
-		}
-		s.maskEnabled = body.Enabled
-		s.writeAuditAsync(audit.Event{
-			RequestPayload: map[string]any{
-				"action":  "mask_settings_updated",
-				"enabled": body.Enabled,
-			},
-		})
-		writeJSON(w, http.StatusOK, map[string]any{"enabled": s.maskEnabled})
-	default:
-		methodNotAllowed(w, r)
+func (s *Server) mountMemorySearchRoutes(mux *http.ServeMux) {
+	if s.memory == nil {
+		return
 	}
+	mux.HandleFunc("/api/memory/search", s.requireUser(s.memorySearchHandler))
 }
 
-// ApplyMaskToText applies all active mask rules to the given text.
-func (s *Server) ApplyMaskToText(ctx context.Context, userID int64, tenantID, text string) string {
-	if !s.maskEnabled || s.presetStore == nil || text == "" {
-		return text
+type memorySearchRequest struct {
+	Query    string `json:"query"`
+	TenantID string `json:"tenant_id"`
+	UserID   string `json:"user_id"`
+	Limit    int    `json:"limit"`
+}
+
+type memorySearchResponse struct {
+	Query   string             `json:"query"`
+	Results []memorySearchItem `json:"results"`
+}
+
+type memorySearchItem struct {
+	Content  string `json:"content"`
+	Score    int    `json:"score"`
+	Source   string `json:"source"`
+	Rank     int    `json:"rank"`
+	FactKey  string `json:"fact_key"`
+	TenantID string `json:"tenant_id"`
+	UserID   string `json:"user_id"`
+}
+
+func (s *Server) memorySearchHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, r)
+		return
 	}
-	masked, err := s.presetStore.ApplyMasks(ctx, userID, tenantID, text)
+	if s.memory == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "memory service not available"})
+		return
+	}
+
+	var req memorySearchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		badRequest(w, "invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.Query) == "" {
+		badRequest(w, "query is required")
+		return
+	}
+	if req.Limit <= 0 {
+		req.Limit = 20
+	}
+	if req.Limit > 100 {
+		req.Limit = 100
+	}
+
+	results, err := s.memory.SearchMessages(r.Context(), req.TenantID, req.Query, req.Limit, 0)
 	if err != nil {
-		slog.Warn("mask application failed", "err", err)
-		return text
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"error": map[string]any{
+				"message": fmt.Sprintf("search failed: %v", err),
+				"type":    "internal_server_error",
+			},
+		})
+		return
 	}
-	return masked
+
+	items := make([]memorySearchItem, 0, len(results))
+	for i, r := range results {
+		items = append(items, memorySearchItem{
+			Content: r.Snippet,
+			Score:   0,
+			Source:  "message",
+			Rank:    i + 1,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, memorySearchResponse{
+		Query:   req.Query,
+		Results: items,
+	})
 }
