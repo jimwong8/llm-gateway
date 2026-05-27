@@ -12,10 +12,13 @@ import (
 	"time"
 
 	"llm-gateway/gateway/internal/admin"
+	"llm-gateway/gateway/internal/adminconfig"
 	"llm-gateway/gateway/internal/audit"
 	"llm-gateway/gateway/internal/auth"
 	"llm-gateway/gateway/internal/billing"
+	"llm-gateway/gateway/internal/broadcast"
 	"llm-gateway/gateway/internal/cache"
+	"llm-gateway/gateway/internal/chat"
 	"llm-gateway/gateway/internal/config"
 	"llm-gateway/gateway/internal/controlplane"
 	"llm-gateway/gateway/internal/governance"
@@ -195,12 +198,15 @@ func main() {
 	var akRateLimiter *httpserver.APIKeyRateLimiter
 	var akUsageStore *auth.APIKeyUsageStore
 	var authStore *auth.Store
+	var chatStore *chat.PostgresStore
+	broadcastStore := broadcast.NewMemoryStore()
 	if db, err := sql.Open("postgres", cfg.PostgresDSN); err != nil {
 		slog.Warn("auth db init failed", "err", err)
 	} else {
 		authStore = auth.NewStore(db)
 		akUsageStore = auth.NewAPIKeyUsageStore(db)
 		akRateLimiter = httpserver.NewAPIKeyRateLimiter(cfg.RedisAddr, cfg.DefaultAPIKeyRPM)
+		chatStore, _ = chat.NewStore(cfg.PostgresDSN)
 	}
 
 	srv := httpserver.New(cfg, registry, redisCache, modelRouter, auditStore, semanticCache, memoryStore, billingStore, limiter, adminStore, policyStore).
@@ -211,7 +217,16 @@ func main() {
 	}
 	if authStore != nil && akUsageStore != nil {
 		srv = srv.WithUserStore(authStore).WithAPIKeyUsageStore(akUsageStore)
+		srv = srv.WithOAuthStore(authStore)
 	}
+	if chatStore != nil {
+		srv = srv.WithChatStore(chatStore)
+	}
+	srv = srv.WithBroadcastAdminHandler(httpserver.NewBroadcastAdminHandler(broadcastStore))
+	srv = srv.WithBroadcastUserHandler(httpserver.NewBroadcastUserHandler(broadcastStore))
+
+	adminConfigStore := adminconfig.NewStore()
+	srv = srv.WithAdminConfigHandler(httpserver.NewAdminConfigHandler(adminConfigStore))
 	if akRateLimiter != nil {
 		srv = srv.WithAPIKeyRateLimiter(akRateLimiter, cfg.DefaultAPIKeyRPM)
 	}
@@ -222,7 +237,6 @@ func main() {
 		} else {
 			srv = srv.WithPresetStore(memory.NewPresetStore(db))
 			srv = srv.WithUsageLogStore(httpserver.NewSQLUsageLogStore(db))
-			srv = srv.WithMaskEnabled(cfg.MaskEnabled)
 		}
 	}
 	if cfg.ModelGovernanceEnabled && governanceStore != nil {

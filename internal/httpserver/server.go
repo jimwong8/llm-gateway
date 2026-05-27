@@ -80,7 +80,6 @@ type Server struct {
 	usageLogStore                 usageLogStore
 	chatStore                     chatStore
 	presetStore                   presetStore
-	maskEnabled                   bool
 	webhookRegistry               *webhook.WebhookRegistry
 	apiKeyRateLimiter             *APIKeyRateLimiter
 	defaultAPIKeyRPM              int
@@ -234,7 +233,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/admin/channels/batch-delete", s.requireAdmin(s.adminChannelsBatchDelete))
 	mux.HandleFunc("/admin/channels/batch-status", s.requireAdmin(s.adminChannelsBatchStatus))
 	mux.HandleFunc("/admin/dashboard", s.requireAdmin(s.adminDashboard))
-	mux.HandleFunc("/admin/channels/fetch-models", s.requireAdmin(s.adminFetchProviderModels))
 	mux.HandleFunc("/admin/assets", s.requireAdmin(s.adminAssets))
 	mux.HandleFunc("/admin/assets/", s.requireAdmin(s.adminAssetByID))
 	mux.HandleFunc("/admin/assets/stats", s.requireAdmin(s.adminAssetStats))
@@ -260,6 +258,7 @@ func (s *Server) Handler() http.Handler {
 	s.mountBroadcastAdminRoutes(mux)
 	s.mountBroadcastUserRoutes(mux)
 	s.mountPresetRoutes(mux)
+	s.mountMemorySearchRoutes(mux)
 	s.mountConfigVersionRoutes(mux)
 	s.mountWebhookRoutes(mux)
 	s.mountFileParserRoutes(mux)
@@ -1820,79 +1819,6 @@ func (s *Server) models(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
 }
 
-func (s *Server) adminFetchProviderModels(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		methodNotAllowed(w, r)
-		return
-	}
-	var body struct {
-		Provider string `json:"provider"`
-		BaseURL  string `json:"base_url"`
-		APIKey   string `json:"api_key"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		badRequest(w, "invalid JSON body")
-		return
-	}
-	body.Provider = strings.TrimSpace(body.Provider)
-	body.BaseURL = strings.TrimSpace(body.BaseURL)
-	body.APIKey = strings.TrimSpace(body.APIKey)
-	if body.BaseURL == "" {
-		badRequest(w, "base_url is required")
-		return
-	}
-
-	// Build request URL: append /v1/models if not already present
-	url := strings.TrimRight(body.BaseURL, "/")
-	if !strings.HasSuffix(url, "/v1") && !strings.HasSuffix(url, "/v1/models") {
-		url += "/v1/models"
-	} else if strings.HasSuffix(url, "/v1") {
-		url += "/models"
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid URL", "type": "invalid_request_error"}})
-		return
-	}
-	if body.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+body.APIKey)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]any{"error": map[string]any{"message": fmt.Sprintf("failed to fetch models: %v", err), "type": "provider_error"}})
-		return
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Object string `json:"object"`
-		Data   []struct {
-			ID      string `json:"id"`
-			Object  string `json:"object"`
-			OwnedBy string `json:"owned_by"`
-		} `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]any{"error": map[string]any{"message": fmt.Sprintf("failed to parse models response: %v", err), "type": "provider_error"}})
-		return
-	}
-
-	modelIDs := make([]string, 0, len(result.Data))
-	for _, m := range result.Data {
-		if m.ID != "" {
-			modelIDs = append(modelIDs, m.ID)
-		}
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": modelIDs})
-}
-
 func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w, r)
@@ -1919,24 +1845,6 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	req, sessionSource := normalizeRequestIdentity(req, r)
 	w.Header().Set(sessionIDHeader, req.SessionID)
 	slog.Info("session_id resolved", "source", sessionSource, "session_id", req.SessionID)
-
-	// Apply mask rules to user messages if enabled
-	if s.maskEnabled && s.presetStore != nil {
-		claims := getUserClaims(r.Context())
-		if claims != nil {
-			maskCtx, maskCancel := context.WithTimeout(context.Background(), 1*time.Second)
-			for i := range req.Messages {
-				if strings.EqualFold(req.Messages[i].Role, "user") && req.Messages[i].Content != "" {
-					masked, err := s.presetStore.ApplyMasks(maskCtx, claims.UserID, req.TenantID, req.Messages[i].Content)
-					if err == nil && masked != req.Messages[i].Content {
-						req.Messages[i].Content = masked
-						w.Header().Set("X-Mask-Applied", "true")
-					}
-				}
-			}
-			maskCancel()
-		}
-	}
 
 	if s.policy != nil && req.TenantID != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -2161,23 +2069,6 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		if err == nil && hit {
 			cacheStatus = "HIT"
 			w.Header().Set("X-Cache", cacheStatus)
-			// Apply mask rules to cached response
-			if s.maskEnabled && s.presetStore != nil && len(cached.Choices) > 0 {
-				claims := getUserClaims(r.Context())
-				if claims != nil {
-					maskCtx, maskCancel := context.WithTimeout(context.Background(), 1*time.Second)
-					for i := range cached.Choices {
-						if cached.Choices[i].Message.Content != "" {
-							masked, err := s.presetStore.ApplyMasks(maskCtx, claims.UserID, req.TenantID, cached.Choices[i].Message.Content)
-							if err == nil && masked != cached.Choices[i].Message.Content {
-								cached.Choices[i].Message.Content = masked
-								w.Header().Set("X-Mask-Applied", "true")
-							}
-						}
-					}
-					maskCancel()
-				}
-			}
 			s.writeAuditAsync(audit.Event{RequestID: requestID, RouteMode: decision.RouteMode, RouteTask: decision.Task, RouteModel: decision.Model, RouteProvider: decision.Provider, RouteReason: decision.Reason, RouteScore: routeScore, CacheStatus: cacheStatus, FallbackUsed: false, RequestPayload: requestToMap(req), ResponsePayload: responseToMap(*cached)})
 			be := buildUsageEvent(requestID, req, decision, decision.Provider, "HIT", "l1_exact", false, true, "", "", time.Since(startedAt), *cached)
 			s.writeBillingAsync(be)
@@ -2198,23 +2089,6 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			cacheStatus = "SEMANTIC_HIT"
 			w.Header().Set("X-Cache", cacheStatus)
 			w.Header().Set("X-Semantic-Score", fmt.Sprintf("%.4f", hit.Score))
-			// Apply mask rules to semantic cached response
-			if s.maskEnabled && s.presetStore != nil && len(hit.Response.Choices) > 0 {
-				claims := getUserClaims(r.Context())
-				if claims != nil {
-					maskCtx, maskCancel := context.WithTimeout(context.Background(), 1*time.Second)
-					for i := range hit.Response.Choices {
-						if hit.Response.Choices[i].Message.Content != "" {
-							masked, err := s.presetStore.ApplyMasks(maskCtx, claims.UserID, req.TenantID, hit.Response.Choices[i].Message.Content)
-							if err == nil && masked != hit.Response.Choices[i].Message.Content {
-								hit.Response.Choices[i].Message.Content = masked
-								w.Header().Set("X-Mask-Applied", "true")
-							}
-						}
-					}
-					maskCancel()
-				}
-			}
 			s.writeAuditAsync(audit.Event{RequestID: requestID, RouteMode: decision.RouteMode, RouteTask: decision.Task, RouteModel: decision.Model, RouteProvider: decision.Provider, RouteReason: decision.Reason, RouteScore: routeScore, CacheStatus: cacheStatus, FallbackUsed: false, RequestPayload: requestToMap(req), ResponsePayload: responseToMap(hit.Response)})
 			be := buildUsageEvent(requestID, req, decision, decision.Provider, "SEMANTIC_HIT", "l2_semantic", false, true, "", "", time.Since(startedAt), hit.Response)
 			s.writeBillingAsync(be)
@@ -2316,25 +2190,6 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	cacheStatus = "MISS"
 	w.Header().Set("X-Cache", cacheStatus)
-
-	// Apply mask rules to assistant response before returning to client
-	if s.maskEnabled && s.presetStore != nil && len(resp.Choices) > 0 {
-		claims := getUserClaims(r.Context())
-		if claims != nil {
-			maskCtx, maskCancel := context.WithTimeout(context.Background(), 1*time.Second)
-			for i := range resp.Choices {
-				if resp.Choices[i].Message.Content != "" {
-					masked, err := s.presetStore.ApplyMasks(maskCtx, claims.UserID, req.TenantID, resp.Choices[i].Message.Content)
-					if err == nil && masked != resp.Choices[i].Message.Content {
-						resp.Choices[i].Message.Content = masked
-						w.Header().Set("X-Mask-Applied", "true")
-					}
-				}
-			}
-			maskCancel()
-		}
-	}
-
 	s.writeAuditAsync(audit.Event{RequestID: requestID, RouteMode: decision.RouteMode, RouteTask: decision.Task, RouteModel: decision.Model, RouteProvider: decision.Provider, RouteReason: decision.Reason, RouteScore: routeScore, CacheStatus: cacheStatus, FallbackUsed: fallbackUsed, RequestPayload: requestToMap(req), ResponsePayload: responseToMap(resp)})
 	be := buildUsageEvent(requestID, req, decision, decision.Provider, "MISS", "none", fallbackUsed, true, "", "", time.Since(startedAt), resp)
 	s.writeBillingAsync(be)
