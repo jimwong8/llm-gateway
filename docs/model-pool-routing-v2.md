@@ -94,6 +94,27 @@ RecordFeedback 的评分窗口在进程内存，重启后丢失，AUTO 路由从
 - 二进制: llm-gateway.bak-before-persist-20260830
 - 源码: patch_persist1/2/3.py 在 ~/scripts/（回滚见 patch_classify.py 模式）
 
+## 直连加分接线（v2.2 — 2026-08-30 20:32）
+### 问题
+`MarkDirectModel` 定义了但全仓零调用，`directModels` 只写不读——skill 声称的"直连通道 +0.05 评分加成"从未生效（死代码）。
+
+### 修复
+- `router.Channel` 增加 `Tags []string` 字段
+- `SetChannels` 检测 tags 含 direct/直连/domestic-direct → 调 `MarkDirectModel(model)`
+- `scoreCandidates` 拆出 `scoreCandidatesWithDirect`，直连模型 +0.05
+- main.go 两处 channel 构建带上 `ch.Tags`
+- **同分随机轮询**：`selectBestChannelAware` 同分组内有 channel 的候选中随机选（原按注册顺序取第一个 → glm-5.2 垄断）
+
+### 验证
+- 30/30 请求 reason 显示 "direct-channel boost"，直连加分生效
+- glm-5.2 因持久化健康分(0.65)高于 deepseek-flash(0.58)而持续胜出（0.9356 vs 0.905）
+- 用户选择"保持现状，让自适应反馈自然调整"——glm 健康分高就用它，数据积累后自动平衡
+- 随机 tie-break 已部署，未来若出现真同分场景会随机轮转
+
+### 回滚
+- 二进制: llm-gateway.bak-before-directwire-20260830
+- 源码: patch_directwire.py + patch_tiebreak_random.py（~/scripts/）
+
 ## 遗留观察
 - kimi-k3 (非 AUTO 池) 72h 成功率仅 37%，未入池，不影响 AUTO
 - hy3 / deepseek-v4-flash-0731:free 成功率 0%（非池内），如需使用需先验证
