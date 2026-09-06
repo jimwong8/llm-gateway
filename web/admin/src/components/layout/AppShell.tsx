@@ -1,6 +1,7 @@
 import { PropsWithChildren, useState } from 'react'
 import { useInRouterContext, useLocation, useNavigate } from 'react-router-dom'
 import { PageHeader } from '../common/PageHeader'
+import { Breadcrumb } from '../common/Breadcrumb'
 import { navItems, Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 
@@ -34,11 +35,21 @@ function AppShellLayout({
 
   return (
     <div className="app-shell">
+      {/* 跳过链接 (WCAG 2.4.1) */}
+      <a href="#main-content" className="skip-link">
+        跳转到主要内容
+      </a>
+      
       <Sidebar currentPath={currentPath} onNavigate={onNavigate} />
       <Sidebar mobile open={mobileOpen} onClose={() => setMobileOpen(false)} currentPath={currentPath} onNavigate={onNavigate} />
       <div className="app-shell__content">
         <Topbar onToggleNavigation={() => setMobileOpen((value) => !value)} />
-        <div className="app-quick-nav" aria-label="快速导航">
+        
+        {/* 面包屑导航 */}
+        <Breadcrumb />
+        
+        {/* 快捷导航 */}
+        <div className="app-quick-nav" aria-label="快速导航" role="navigation">
           {navItems
             .filter((item) => item.path)
             .map((item) => {
@@ -49,13 +60,15 @@ function AppShellLayout({
                   type="button"
                   className={active ? 'quick-nav-item active' : 'quick-nav-item'}
                   onClick={() => onNavigate(item.path!)}
+                  aria-current={active ? 'page' : undefined}
                 >
                   {item.label}
                 </button>
               )
             })}
         </div>
-        <main className="app-shell__main">
+        
+        <main className="app-shell__main" id="main-content" role="main">
           <PageHeader title={title} description={description} />
           <section className="page-surface">{children}</section>
         </main>

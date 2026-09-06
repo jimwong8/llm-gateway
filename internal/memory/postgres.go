@@ -132,8 +132,9 @@ type conversationCache interface {
 }
 
 type Store struct {
-	db    *sql.DB
-	cache conversationCache
+	db              *sql.DB
+	cache           conversationCache
+	hybridSearcher  *HybridSearcher // optional; set when embedder is injected
 }
 
 var (
@@ -142,14 +143,24 @@ var (
 )
 
 func NewStore(dsn string, rc *cache.RedisCache) (*Store, error) {
+	return NewStoreWithEmbedder(dsn, rc, nil)
+}
+
+// NewStoreWithEmbedder creates a Store with an optional EmbeddingClient for
+// real semantic vector search.  When embedder is nil the hybrid searcher
+// degrades gracefully to BM25-only mode.
+func NewStoreWithEmbedder(dsn string, rc *cache.RedisCache, embedder *providers.EmbeddingClient) (*Store, error) {
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		return nil, err
 	}
 	s := &Store{db: db}
-	// Avoid typed-nil interface trap: only assign when concrete value is non-nil.
 	if rc != nil {
 		s.cache = rc
+	}
+	if embedder != nil {
+		s.hybridSearcher = NewHybridSearcher(db)
+		s.hybridSearcher.SetEmbedder(embedder)
 	}
 	if err := s.ensureSchema(context.Background()); err != nil {
 		return nil, err
@@ -2500,6 +2511,10 @@ func isTentativeCandidateFactSignal(content string) bool {
 }
 
 func (s *Store) HybridSearch(ctx context.Context, userID int64, query string, limit int) ([]HybridSearchResult, error) {
+	// Use the embedded hybrid searcher (with embedder if injected), or fall back to creating a new one.
+	if s.hybridSearcher != nil {
+		return s.hybridSearcher.Search(ctx, userID, query, limit)
+	}
 	searcher := NewHybridSearcher(s.db)
 	return searcher.Search(ctx, userID, query, limit)
 }

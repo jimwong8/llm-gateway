@@ -59,6 +59,12 @@ type CacheBreakdownRow struct {
 	Requests    int64  `json:"requests"`
 }
 
+type DailyCacheHitRateRow struct {
+	Date     string  `json:"date"`
+	HitRate  float64 `json:"hitRate"`
+	Requests int64   `json:"requests"`
+}
+
 type ProviderBreakdownRow struct {
 	Provider          string  `json:"provider"`
 	Requests          int64   `json:"requests"`
@@ -234,6 +240,44 @@ FROM usage_events
 		var item CacheBreakdownRow
 		if err := rows.Scan(&item.CacheStatus, &item.CacheLayer, &item.Requests); err != nil {
 			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+// CacheHitRateByDay returns per-day cache hit rate (HIT / (HIT+MISS)) for the last N days.
+func (s *Store) CacheHitRateByDay(ctx context.Context, days int) ([]DailyCacheHitRateRow, error) {
+	if days <= 0 || days > 30 {
+		days = 7
+	}
+	query := `
+SELECT
+	TO_CHAR(DATE(created_at), 'MM/DD') AS d,
+	COUNT(*) AS requests,
+	COUNT(*) FILTER (WHERE cache_status = 'HIT') AS hits,
+	COUNT(*) FILTER (WHERE cache_status = 'MISS') AS misses
+FROM usage_events
+WHERE created_at >= $1
+GROUP BY DATE(created_at)
+ORDER BY DATE(created_at) ASC`
+	cutoff := time.Now().UTC().AddDate(0, 0, -(days - 1))
+	cutoff = time.Date(cutoff.Year(), cutoff.Month(), cutoff.Day(), 0, 0, 0, 0, time.UTC)
+	rows, err := s.db.QueryContext(ctx, query, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []DailyCacheHitRateRow{}
+	for rows.Next() {
+		var item DailyCacheHitRateRow
+		var requests, hits, misses int64
+		if err := rows.Scan(&item.Date, &requests, &hits, &misses); err != nil {
+			return nil, err
+		}
+		item.Requests = requests
+		if hits+misses > 0 {
+			item.HitRate = float64(hits) / float64(hits+misses) * 100
 		}
 		out = append(out, item)
 	}

@@ -30,17 +30,7 @@ type Cache struct {
 	vectorSize int
 	threshold  float64
 	client     *http.Client
-	embedder   EmbeddingClient // 可选的真嵌入客户端
-}
-
-type SearchHit struct {
-	Score     float64
-	Response  providers.ChatCompletionResponse
-	Prompt    string
-	Model     string
-	TenantID  string
-	UserID    string
-	SessionID string
+	embedder   EmbeddingClient
 }
 
 func New(baseURL, apiKey, collection string, vectorSize int, threshold float64) *Cache {
@@ -60,6 +50,9 @@ func (c *Cache) SetEmbedder(embedder EmbeddingClient) {
 		c.vectorSize = embedder.Dimensions()
 	}
 }
+
+// SetPersistence is a no-op for Qdrant (Qdrant handles its own persistence).
+func (c *Cache) SetPersistence(path string) {}
 
 func (c *Cache) EnsureCollection(ctx context.Context) error {
 	body := map[string]any{"vectors": map[string]any{"size": c.vectorSize, "distance": "Cosine"}}
@@ -90,21 +83,16 @@ func (c *Cache) EnsureCollection(ctx context.Context) error {
 
 func (c *Cache) Search(ctx context.Context, reqPayload providers.ChatCompletionRequest) (*SearchHit, error) {
 	prompt := flattenPrompt(reqPayload)
-	
 	var vector []float64
 	if c.embedder != nil {
-		// 使用真嵌入
 		var err error
 		vector, err = c.embedder.Embed(ctx, prompt)
 		if err != nil {
-			// 降级到 FNV 伪嵌入
 			vector = embed(prompt, c.vectorSize)
 		}
 	} else {
-		// 使用 FNV 伪嵌入
 		vector = embed(prompt, c.vectorSize)
 	}
-	
 	body := map[string]any{"vector": vector, "limit": 1, "with_payload": true, "filter": buildFilter(reqPayload)}
 	raw, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/collections/"+c.collection+"/points/search", bytes.NewReader(raw))
@@ -127,7 +115,6 @@ func (c *Cache) Search(ctx context.Context, reqPayload providers.ChatCompletionR
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("semantic search failed: %s", strings.TrimSpace(string(data)))
 	}
-
 	var out struct {
 		Result []struct {
 			Score   float64        `json:"score"`
@@ -140,7 +127,6 @@ func (c *Cache) Search(ctx context.Context, reqPayload providers.ChatCompletionR
 	if len(out.Result) == 0 || out.Result[0].Score < c.threshold {
 		return nil, nil
 	}
-
 	payload := out.Result[0].Payload
 	respJSON, _ := json.Marshal(payload["response"])
 	var completion providers.ChatCompletionResponse
@@ -150,7 +136,6 @@ func (c *Cache) Search(ctx context.Context, reqPayload providers.ChatCompletionR
 
 func (c *Cache) Upsert(ctx context.Context, reqPayload providers.ChatCompletionRequest, respPayload providers.ChatCompletionResponse) error {
 	prompt := flattenPrompt(reqPayload)
-	
 	var vector []float64
 	if c.embedder != nil {
 		var err error
@@ -161,7 +146,6 @@ func (c *Cache) Upsert(ctx context.Context, reqPayload providers.ChatCompletionR
 	} else {
 		vector = embed(prompt, c.vectorSize)
 	}
-	
 	id := pointID(reqPayload.TenantID + "|" + reqPayload.UserID + "|" + reqPayload.SessionID + "|" + prompt + "|" + reqPayload.Model)
 	body := map[string]any{"points": []map[string]any{{"id": id, "vector": vector, "payload": map[string]any{"tenant_id": reqPayload.TenantID, "user_id": reqPayload.UserID, "session_id": reqPayload.SessionID, "prompt": prompt, "model": reqPayload.Model, "response": respPayload, "created_at": time.Now().UTC().Format(time.RFC3339)}}}}
 	raw, _ := json.Marshal(body)
@@ -221,7 +205,6 @@ func flattenPrompt(req providers.ChatCompletionRequest) string {
 
 var wordRe = regexp.MustCompile(`[\p{L}\p{N}_]+`)
 
-// embed FNV 伪嵌入（降级方案）
 func embed(text string, size int) []float64 {
 	vec := make([]float64, size)
 	tokens := wordRe.FindAllString(strings.ToLower(text), -1)

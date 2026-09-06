@@ -97,7 +97,12 @@ func main() {
 
 	var memoryStore *memory.Store
 	if cfg.MemoryEnabled {
-		if store, err := memory.NewStore(cfg.PostgresDSN, redisCache); err != nil {
+		var embedClient *providers.EmbeddingClient
+		if strings.TrimSpace(cfg.EmbeddingBaseURL) != "" && strings.TrimSpace(cfg.EmbeddingAPIKey) != "" {
+			embedClient = providers.NewEmbeddingClient(cfg.EmbeddingBaseURL, cfg.EmbeddingAPIKey, cfg.EmbeddingModel, cfg.EmbeddingDimensions)
+			log.Printf("embedding client initialized: model=%s dims=%d", cfg.EmbeddingModel, cfg.EmbeddingDimensions)
+		}
+		if store, err := memory.NewStoreWithEmbedder(cfg.PostgresDSN, redisCache, embedClient); err != nil {
 			log.Printf("memory init failed: %v", err)
 		} else {
 			memoryStore = store

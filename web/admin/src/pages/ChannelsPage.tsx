@@ -9,6 +9,7 @@ import { TableSkeleton } from '../components/ui/Skeleton'
 import { ChannelFormModal } from './ChannelFormModal'
 import { listChannels, deleteChannel, testChannel, batchDeleteChannels, batchUpdateChannelsStatus } from '../lib/channels'
 import type { Channel, ChannelStatus } from '../types/channel'
+import './channels.css'
 
 const statusBadgeVariant: Record<string, 'success' | 'warning' | 'danger' | 'info'> = {
   active: 'success',
@@ -99,12 +100,21 @@ export function ChannelsPage() {
               placeholder={t('channels.searchPlaceholder')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="channels-search"
+              style={{
+                flex: 1, maxWidth: 320, height: 40, padding: '0 0.875rem',
+                border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8,
+                background: '#1a1a1a', color: '#fff', fontSize: '0.875rem', outline: 'none'
+              }}
             />
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as ChannelStatus | 'all')}
-              className="channels-filter"
+              style={{
+                height: 40, padding: '0 2rem 0 0.875rem',
+                border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8,
+                background: '#1a1a1a', color: '#fff', fontSize: '0.875rem',
+                cursor: 'pointer', outline: 'none', appearance: 'none'
+              }}
             >
               <option value="all">{t('channels.statusAll')}</option>
               <option value="active">{t('channels.statusActive')}</option>

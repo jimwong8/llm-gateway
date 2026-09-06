@@ -7,10 +7,19 @@ import (
 	"math"
 	"sort"
 	"strings"
+
+	"llm-gateway/gateway/internal/providers"
 )
 
 type HybridSearcher struct {
-	db *sql.DB
+	db       *sql.DB
+	embedder *providers.EmbeddingClient // optional; if nil, BM25-only mode
+}
+
+// SetEmbedder injects a real providers.EmbeddingClient into the HybridSearcher.
+// After calling this, Search() will use real vector similarity.
+func (s *HybridSearcher) SetEmbedder(e *providers.EmbeddingClient) {
+	s.embedder = e
 }
 
 func NewHybridSearcher(db *sql.DB) *HybridSearcher {
@@ -88,6 +97,19 @@ func (s *HybridSearcher) vectorSearch(ctx context.Context, userID int64, query s
 	embedding, err := s.getEmbedding(ctx, query)
 	if err != nil {
 		return nil, err
+	}
+
+	// If the embedding is all zeros (placeholder / BM25-only fallback),
+	// skip the vector query entirely to avoid meaningless similarity scores.
+	allZero := true
+	for _, v := range embedding {
+		if v != 0 {
+			allZero = false
+			break
+		}
+	}
+	if allZero {
+		return nil, nil // BM25-only mode: no vector results
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
@@ -173,10 +195,21 @@ func (s *HybridSearcher) reciprocalRankFusion(bm25Docs, vectorDocs []hybridDoc, 
 }
 
 func (s *HybridSearcher) getEmbedding(ctx context.Context, text string) ([]float32, error) {
-	placeholder := make([]float32, 384)
-	for i := range placeholder {
-		placeholder[i] = float32(len(text)%100) / 100.0
+	// If a real embedder has been injected, use it.
+	if s.embedder != nil {
+		vec64, err := s.embedder.Embed(ctx, text)
+		if err == nil && len(vec64) > 0 {
+			// Convert []float64 → []float32 for pg_vector compatibility.
+			vec32 := make([]float32, len(vec64))
+			for i, v := range vec64 {
+				vec32[i] = float32(v)
+			}
+			return vec32, nil
+		}
+		// Embedding failed: fall through to BM25-only mode.
 	}
+	// Placeholder: zero-vector signals BM25-only fallback to vectorSearch().
+	placeholder := make([]float32, 384)
 	return placeholder, nil
 }
 

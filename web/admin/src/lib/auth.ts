@@ -4,22 +4,22 @@ export function getToken(): string {
   if (typeof window === 'undefined') {
     return ''
   }
-  return window.sessionStorage.getItem(ADMIN_TOKEN_KEY) ?? ''
+  return window.sessionStorage.getItem(ADMIN_TOKEN_KEY) ?? window.sessionStorage.getItem('llm_gateway_user_token') ?? ''
 }
 
 export function setToken(token: string) {
   if (typeof window === 'undefined') {
     return
   }
-  window.sessionStorage.setItem(ADMIN_TOKEN_KEY, token)
+  window.localStorage.setItem(ADMIN_TOKEN_KEY, token)
 }
 
 export function clearToken() {
   if (typeof window === 'undefined') {
     return
   }
-  window.sessionStorage.removeItem(ADMIN_TOKEN_KEY)
-  window.sessionStorage.removeItem('llm_gateway_user_token')
+  window.localStorage.removeItem(ADMIN_TOKEN_KEY)
+  window.localStorage.removeItem('llm_gateway_user_token')
 }
 
 export function hasToken(): boolean {

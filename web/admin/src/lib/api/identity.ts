@@ -5,18 +5,18 @@ const USER_TOKEN_KEY = 'llm_gateway_user_token'
 
 export function getUserToken(): string {
   if (typeof window === 'undefined') return ''
-  return window.sessionStorage.getItem(USER_TOKEN_KEY) ?? ''
+  return window.localStorage.getItem(USER_TOKEN_KEY) ?? ''
 }
 
 export function setUserToken(token: string) {
   if (typeof window === 'undefined') return
-  window.sessionStorage.setItem(USER_TOKEN_KEY, token)
+  window.localStorage.setItem(USER_TOKEN_KEY, token)
 }
 
 export function clearUserToken() {
   if (typeof window === 'undefined') return
-  window.sessionStorage.removeItem(USER_TOKEN_KEY)
-  window.sessionStorage.removeItem('llm_gateway_admin_token')
+  window.localStorage.removeItem(USER_TOKEN_KEY)
+  window.localStorage.removeItem('llm_gateway_admin_token')
 }
 
 export function hasUserToken(): boolean {

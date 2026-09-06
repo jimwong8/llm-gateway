@@ -3,6 +3,8 @@ package router
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -41,6 +43,69 @@ type RetryResult struct {
 }
 
 type ExecuteWithKeyFunc[T any] func(ctx context.Context, key ProviderKey) (T, error)
+
+// extractRetryAfter attempts to extract the Retry-After header value from an error.
+// Returns the duration to wait, or 0 if not available.
+func extractRetryAfter(err error) time.Duration {
+	if err == nil {
+		return 0
+	}
+	// Try to extract HTTP response headers from the error
+	type headerAccessor interface {
+		HTTPResponseHeaders() map[string]string
+	}
+	if ha, ok := err.(headerAccessor); ok {
+		headers := ha.HTTPResponseHeaders()
+		for k, v := range headers {
+			if http.CanonicalHeaderKey(k) == "Retry-After" {
+				if secs, parseErr := strconv.Atoi(v); parseErr == nil {
+					return time.Duration(secs+2) * time.Second // +2s buffer
+				}
+			}
+		}
+	}
+	return 0
+}
+
+// isRateLimitError checks if the error is a 429 rate limit error.
+func isRateLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	type statusCoder interface {
+		HTTPStatusCode() int
+	}
+	if sc, ok := err.(statusCoder); ok {
+		return sc.HTTPStatusCode() == http.StatusTooManyRequests
+	}
+	lower := fmt.Sprintf("%v", err)
+	return containsLower(lower, "rate limit") || containsLower(lower, "too many requests")
+}
+
+func containsLower(s, substr string) bool {
+	return len(s) >= len(substr) && containsStr(lower(s), substr)
+}
+
+func lower(s string) string {
+	result := make([]byte, len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			c = c + 32
+		}
+		result[i] = c
+	}
+	return string(result)
+}
+
+func containsStr(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
 
 func ExecuteWithRetries[T any](
 	ctx context.Context,
@@ -121,13 +186,17 @@ func ExecuteWithRetries[T any](
 		}
 
 		if attempt < maxAttempts {
-			delay := baseDelay
-			if maxDelay > 0 {
-				d := time.Duration(attempt) * baseDelay
-				if d > maxDelay {
-					d = maxDelay
+			// P0-1: Use Retry-After header for rate limit errors
+			var delay time.Duration
+			if isRateLimitError(err) {
+				retryAfter := extractRetryAfter(err)
+				if retryAfter > 0 {
+					delay = retryAfter
+				} else {
+					delay = min(time.Duration(attempt)*baseDelay, maxDelay)
 				}
-				delay = d
+			} else {
+				delay = min(time.Duration(attempt)*baseDelay, maxDelay)
 			}
 			if delay > 0 {
 				select {
@@ -140,4 +209,11 @@ func ExecuteWithRetries[T any](
 	}
 
 	return zero, result, lastErr
+}
+
+func min(a, b time.Duration) time.Duration {
+	if a < b {
+		return a
+	}
+	return b
 }

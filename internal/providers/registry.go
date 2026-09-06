@@ -94,6 +94,19 @@ func (r *Registry) ChatCompletion(ctx context.Context, providerName string, req 
 		resp, err := provider.ChatCompletion(ctx, req)
 		latency := time.Since(started)
 		if err == nil {
+			// Check for empty/truncated response (NIM sometimes returns 200 with no content)
+			if valErr := ValidateResponse(req.Model, &resp); valErr != nil {
+				lastErr = valErr
+				r.recordFailure(name, latency, valErr)
+				if attempt == attempts || ctx.Err() != nil {
+					break
+				}
+				time.Sleep(time.Duration(attempt) * 200 * time.Millisecond)
+				if err := r.beforeCall(name); err != nil {
+					return ChatCompletionResponse{}, err
+				}
+				continue
+			}
 			r.recordSuccess(name, latency)
 			return resp, nil
 		}
@@ -267,6 +280,20 @@ func (r *Registry) ChatCompletionWithFallback(ctx context.Context, chain []Fallb
 			resp, err := provider.ChatCompletion(ctx, req)
 			latency := time.Since(started)
 			if err == nil {
+				// Check for empty/truncated response
+				if valErr := ValidateResponse(req.Model, &resp); valErr != nil {
+					lastErr = valErr
+					r.recordFailure(name, latency, valErr)
+					if attempt == attempts || ctx.Err() != nil {
+						break
+					}
+					time.Sleep(time.Duration(attempt) * 200 * time.Millisecond)
+					if err := r.beforeCall(name); err != nil {
+						lastErr = err
+						break
+					}
+					continue
+				}
 				r.recordSuccess(name, latency)
 				result.Attempts = i + 1
 				result.FinalProvider = provider.Name()

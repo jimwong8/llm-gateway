@@ -19,9 +19,12 @@ type Config struct {
 	QdrantURL                string
 	QdrantAPIKey             string
 	QdrantCollection         string
-	SemanticCacheEnabled     bool
-	SemanticCacheThreshold   float64
-	SemanticVectorSize       int
+	SemanticCacheEnabled                  bool
+	SemanticCacheThreshold                float64
+	SemanticVectorSize                    int
+	EmbeddingServiceURL                    string
+	EmbeddingServiceModel                  string
+	EmbeddingServiceDimensions             int
 	MemoryEnabled            bool
 	MemoryMaxItems           int
 	DefaultProvider          string
@@ -56,6 +59,10 @@ type Config struct {
 	AuditRetentionDays       int
 	DefaultAPIKeyRPM         int
 	MaskEnabled              bool
+	EmbeddingBaseURL         string
+	EmbeddingAPIKey          string
+	EmbeddingModel           string
+	EmbeddingDimensions      int
 	GitHubClientID           string
 	GitHubClientSecret       string
 	SMTPHost                 string
@@ -63,6 +70,22 @@ type Config struct {
 	SMTPUser                 string
 	SMTPPassword             string
 	SMTPFrom                 string
+	LongContextEnabled                    bool
+	LongContextMaxInputBytes              int
+	LongContextWorkers                    int
+	LongContextWorkerChannel              string
+	LongContextWorkerModel                string
+	LongContextWorkerReaderChannel        string
+	LongContextWorkerReaderModel          string
+	LongContextWorkerReaderTopK           int
+	LongContextEmbeddingURL               string
+	LongContextEmbeddingKey               string
+	LongContextEmbeddingModel             string
+	LongContextEmbeddingDimensions        int
+	LongContextPostgresDSN                string
+	LongContextDBMaxOpenConns             int
+	LongContextDBMaxIdleConns             int
+	PrefixFamilyAffinityEnabled           bool
 }
 
 func Load() Config {
@@ -79,9 +102,9 @@ func Load() Config {
 		QdrantURL:                getenv("QDRANT_URL", "http://127.0.0.1:6333"),
 		QdrantAPIKey:             getenv("QDRANT_API_KEY", "CHANGE_ME"),
 		QdrantCollection:         getenv("QDRANT_COLLECTION", "semantic_cache_v1"),
-		SemanticCacheEnabled:     getenvBool("SEMANTIC_CACHE_ENABLED", true),
-		SemanticCacheThreshold:   getenvFloat("SEMANTIC_CACHE_THRESHOLD", 0.80),
-		SemanticVectorSize:       getenvInt("SEMANTIC_VECTOR_SIZE", 64),
+		EmbeddingServiceURL:                   getenv("EMBEDDING_SERVICE_URL", "http://127.0.0.1:9002"),
+		EmbeddingServiceModel:                  getenv("EMBEDDING_SERVICE_MODEL", "BAAI/bge-small-zh-v1.5"),
+		EmbeddingServiceDimensions:             getenvInt("EMBEDDING_SERVICE_DIMENSIONS", 512),
 		MemoryEnabled:            getenvBool("MEMORY_ENABLED", true),
 		MemoryMaxItems:           getenvInt("MEMORY_MAX_ITEMS", 3),
 		DefaultProvider:          getenv("DEFAULT_PROVIDER", "openai"),
@@ -116,6 +139,10 @@ func Load() Config {
 		AuditRetentionDays:           getenvInt("AUDIT_RETENTION_DAYS", 90),
 		DefaultAPIKeyRPM:             getenvInt("DEFAULT_API_KEY_RPM", 60),
 		MaskEnabled:                  getenvBool("MASK_ENABLED", false),
+		EmbeddingBaseURL:             strings.TrimRight(getenv("EMBEDDING_BASE_URL", ""), "/"),
+		EmbeddingAPIKey:              getenv("EMBEDDING_API_KEY", ""),
+		EmbeddingModel:               getenv("EMBEDDING_MODEL", "text-embedding-3-small"),
+		EmbeddingDimensions:          getenvInt("EMBEDDING_DIMENSIONS", 384),
 		GitHubClientID:               getenv("GITHUB_CLIENT_ID", ""),
 		GitHubClientSecret:           getenv("GITHUB_CLIENT_SECRET", ""),
 		SMTPHost:                     getenv("SMTP_HOST", ""),
@@ -123,6 +150,22 @@ func Load() Config {
 		SMTPUser:                     getenv("SMTP_USER", ""),
 		SMTPPassword:                 getenv("SMTP_PASSWORD", ""),
 		SMTPFrom:                     getenv("SMTP_FROM", ""),
+		LongContextEnabled:                    getenvBool("LONG_CONTEXT_ENABLED", false),
+		LongContextMaxInputBytes:              getenvInt("LONG_CONTEXT_MAX_INPUT_BYTES", 32<<20),
+		LongContextWorkers:                    getenvInt("LONG_CONTEXT_WORKERS", 0),
+		LongContextWorkerChannel:              getenv("LONG_CONTEXT_WORKER_CHANNEL", ""),
+		LongContextWorkerModel:                getenv("LONG_CONTEXT_WORKER_MODEL", ""),
+		LongContextWorkerReaderChannel:        getenv("LONG_CONTEXT_WORKER_READER_CHANNEL", ""),
+		LongContextWorkerReaderModel:          getenv("LONG_CONTEXT_WORKER_READER_MODEL", ""),
+		LongContextWorkerReaderTopK:           getenvInt("LONG_CONTEXT_WORKER_READER_TOP_K", 8),
+		LongContextEmbeddingURL:               getenv("LONG_CONTEXT_EMBEDDING_URL", ""),
+		LongContextEmbeddingKey:               getenv("LONG_CONTEXT_EMBEDDING_KEY", ""),
+		LongContextEmbeddingModel:             getenv("LONG_CONTEXT_EMBEDDING_MODEL", ""),
+		LongContextEmbeddingDimensions:        getenvInt("LONG_CONTEXT_EMBEDDING_DIMENSIONS", 768),
+		LongContextPostgresDSN:                getenv("LONG_CONTEXT_POSTGRES_DSN", ""),
+		LongContextDBMaxOpenConns:             getenvInt("LONG_CONTEXT_DB_MAX_OPEN_CONNS", 10),
+		LongContextDBMaxIdleConns:             getenvInt("LONG_CONTEXT_DB_MAX_IDLE_CONNS", 5),
+		PrefixFamilyAffinityEnabled:           getenvBool("PREFIX_FAMILY_AFFINITY_ENABLED", false),
 	}
 	return cfg
 }
@@ -130,10 +173,11 @@ func Load() Config {
 func (c Config) Addr() string { return fmt.Sprintf(":%s", c.AppPort) }
 
 func getenv(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" || value == "***" || value == "CHANGE_ME" || value == "YOUR_API_KEY" {
+		return fallback
 	}
-	return fallback
+	return value
 }
 
 func getenvBool(key string, fallback bool) bool {

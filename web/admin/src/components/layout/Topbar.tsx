@@ -7,9 +7,9 @@ import { clearUserToken } from '../../lib/api/identity'
 import type { Broadcast, BroadcastType } from '../../types/broadcast'
 
 const TYPE_STYLES: Record<BroadcastType, string> = {
-  info: '#1890ff',
-  warning: '#faad14',
-  critical: '#ff4d4f',
+  info: '#3b82f6',
+  warning: '#f59e0b',
+  critical: '#ef4444',
 }
 const TYPE_LABELS: Record<BroadcastType, string> = {
   info: '信息',
@@ -40,7 +40,6 @@ export function Topbar({ onToggleNavigation }: { onToggleNavigation: () => void 
   const [dismissed, setDismissed] = useState<Set<number>>(getDismissed)
   const [showUserMenu, setShowUserMenu] = useState(false)
 
-  // Get user email from JWT token payload
   const getUserEmail = useCallback(() => {
     const token = getToken()
     if (!token) return ''
@@ -84,20 +83,22 @@ export function Topbar({ onToggleNavigation }: { onToggleNavigation: () => void 
 
   return (
     <header className="topbar">
+      {/* Broadcast banners */}
       {banners.length > 0 && (
-        <div className="broadcast-banners" style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 100 }}>
+        <div className="broadcast-banners">
           {banners.map(b => (
             <div
               key={b.id}
               className={`broadcast-banner broadcast-banner--${b.type}`}
-              style={{ background: TYPE_STYLES[b.type] || TYPE_STYLES.info, color: '#fff', padding: '6px 16px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}
+              style={{ background: TYPE_STYLES[b.type] || TYPE_STYLES.info }}
             >
-              <strong>[{TYPE_LABELS[b.type] || b.type}] {b.title}</strong>
-              <span style={{ flex: 1 }}>{b.content}</span>
+              <span className="broadcast-banner__type">[{TYPE_LABELS[b.type] || b.type}]</span>
+              <strong className="broadcast-banner__title">{b.title}</strong>
+              <span className="broadcast-banner__content">{b.content}</span>
               <button
                 type="button"
+                className="broadcast-banner__dismiss"
                 onClick={() => handleDismiss(b.id)}
-                style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', fontWeight: 'bold', padding: '0 4px' }}
                 aria-label="关闭"
               >
                 ✕
@@ -106,41 +107,46 @@ export function Topbar({ onToggleNavigation }: { onToggleNavigation: () => void 
           ))}
         </div>
       )}
+
       <div className="topbar__left">
-        <button type="button" aria-label="切换导航" onClick={onToggleNavigation}>
-          菜单
+        <button type="button" className="topbar__menu-btn" aria-label="切换导航" onClick={onToggleNavigation}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+          </svg>
         </button>
-        <div>
+        <div className="topbar__title">
           <strong>LLM Gateway Console</strong>
-          <p>管理控制台与在线测试台</p>
+          <span>管理控制台与在线测试台</span>
         </div>
       </div>
+
       <div className="topbar__right">
-        <span className="env-badge">环境: Local</span>
-        <button
-          type="button"
-          onClick={handleLogout}
-          style={{ background: 'transparent', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '4px 10px', cursor: 'pointer', fontSize: '13px', color: 'var(--text-primary)', marginLeft: '12px' }}
-          aria-label="退出登录"
-        >
-          退出
-        </button>
-        <div className="topbar__user" style={{ position: 'relative', marginLeft: '12px' }}>
+        <span className="env-badge">Local</span>
+
+        {/* User menu */}
+        <div className="topbar__user">
           <button
             type="button"
+            className="topbar__user-btn"
             onClick={() => setShowUserMenu(!showUserMenu)}
-            style={{ background: 'transparent', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '4px 10px', cursor: 'pointer', fontSize: '13px', color: 'var(--text-primary)' }}
           >
-            {getUserEmail() || t('common.user')}
+            <span className="topbar__user-avatar">
+              {getUserEmail()?.charAt(0)?.toUpperCase() || 'U'}
+            </span>
+            <span className="topbar__user-email">{getUserEmail() || t('common.user')}</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
           </button>
+
           {showUserMenu && (
-            <div style={{ position: 'absolute', top: '100%', right: 0, background: 'var(--surface-color)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '4px 0', minWidth: '120px', zIndex: 1000 }}>
-              <button
-                type="button"
-                onClick={handleLogout}
-                style={{ display: 'block', width: '100%', padding: '6px 12px', background: 'transparent', border: 'none', textAlign: 'left', cursor: 'pointer', fontSize: '13px', color: 'var(--text-primary)' }}
-              >
-                {t('common.logout')}
+            <div className="topbar__dropdown">
+              <button type="button" className="topbar__dropdown-item" onClick={() => navigate('/account')}>
+                <span>👤</span> 账户设置
+              </button>
+              <div className="topbar__dropdown-sep" />
+              <button type="button" className="topbar__dropdown-item topbar__dropdown-item--danger" onClick={handleLogout}>
+                <span>🚪</span> {t('common.logout')}
               </button>
             </div>
           )}

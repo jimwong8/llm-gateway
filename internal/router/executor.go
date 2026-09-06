@@ -2,7 +2,9 @@ package router
 
 import (
 	"context"
+	"fmt"
 	"strings"
+	"time"
 )
 
 type RouteTarget struct {
@@ -32,12 +34,15 @@ func TargetsFromDecision(decision Decision) []RouteTarget {
 	return targets
 }
 
-func ExecuteDecision[T any](
+// ExecuteDecisionWithCooldown wraps ExecuteDecision with per-model cooldown and circuit breaking.
+func ExecuteDecisionWithCooldown[T any](
 	ctx context.Context,
 	decision Decision,
 	cfg RetryConfig,
 	pool KeyPool,
 	fn ExecuteRouteFunc[T],
+	modelCooldown *ModelCooldown,
+	circuitBreaker *ModelCircuitBreaker,
 ) (T, RetryResult, error) {
 	targets := TargetsFromDecision(decision)
 	var zero T
@@ -45,6 +50,17 @@ func ExecuteDecision[T any](
 	combined := RetryResult{}
 
 	for _, target := range targets {
+		// P0-2: Skip models on cooldown
+		if modelCooldown.IsCooling(target.Model) {
+			lastErr = fmt.Errorf("model %s on cooldown (remaining %s)", target.Model, modelCooldown.Remaining(target.Model))
+			continue
+		}
+		// P2-2: Skip models with open circuit
+		if circuitBreaker.IsCircuitOpen(target.Model) {
+			lastErr = fmt.Errorf("model %s circuit open", target.Model)
+			continue
+		}
+
 		keyProvider := target.Provider
 		if keyProvider == "" {
 			keyProvider = decision.Provider
@@ -57,6 +73,9 @@ func ExecuteDecision[T any](
 		combined.FinalModel = target.Model
 		combined.FinalKeyID = trace.FinalKeyID
 		if err == nil {
+			// Success: clear cooldown and circuit breaker
+			modelCooldown.Clear(target.Model)
+			circuitBreaker.RecordSuccess(target.Model)
 			return resp, combined, nil
 		}
 		lastErr = err
@@ -64,7 +83,25 @@ func ExecuteDecision[T any](
 		if classified.Class == ErrorClassAuth || classified.Class == ErrorClassBadRequest || classified.Class == ErrorClassClientCancelled {
 			return zero, combined, err
 		}
+		// P0-2: Set cooldown on 429
+		if classified.Class == ErrorClassRateLimit {
+			modelCooldown.SetCooldown(target.Model, 7200*time.Second)
+			circuitBreaker.RecordFailure(target.Model)
+		}
 	}
 
 	return zero, combined, lastErr
+}
+
+func ExecuteDecision[T any](
+	ctx context.Context,
+	decision Decision,
+	cfg RetryConfig,
+	pool KeyPool,
+	fn ExecuteRouteFunc[T],
+) (T, RetryResult, error) {
+	// Use the new cooldown-aware executor with default instances
+	modelCooldown := NewModelCooldown()
+	circuitBreaker := NewModelCircuitBreaker()
+	return ExecuteDecisionWithCooldown(ctx, decision, cfg, pool, fn, modelCooldown, circuitBreaker)
 }

@@ -14,3 +14,13 @@ MISS: cache_status
 自进化混合认知架构：私有逻辑资产中心.md
 自进化混合认知架构：私有逻辑资产中心-完整方案文档（Version 2.1）.html
 vscode-gui-bridge.sh
+
+# local build binaries & backups (never commit)
+/llm-gateway
+/llm-gateway-new
+/llm-gateway-dev
+/llm-gateway.bak-*
+/httpserver.test
+/server_main
+/cli
+*.bak-before-*

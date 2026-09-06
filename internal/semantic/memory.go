@@ -2,7 +2,10 @@ package semantic
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"math"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -10,25 +13,26 @@ import (
 	"llm-gateway/gateway/internal/providers"
 )
 
-// MemoryL2Cache 提供了一个用于本地测试或无 Qdrant 依赖时的简单内存 L2 缓存
-// 其内部向量检索采用极其暴力的全量遍历算余弦相似度，不适用于生产环境的大量数据。
+// MemoryL2Cache provides an in-memory L2 semantic cache with disk persistence.
 type MemoryL2Cache struct {
-	vectorSize int
-	threshold  float64
-	points     []memoryPoint
-	mu         sync.RWMutex
+	vectorSize  int
+	threshold   float64
+	points      []memoryPoint
+	mu          sync.RWMutex
+	embedder    EmbeddingClient
+	persistPath string
+	maxPoints   int
+	ttl         time.Duration
 }
 
 type memoryPoint struct {
-	id        uint64
-	vector    []float64
-	tenantID  string
-	userID    string
-	sessionID string
-	prompt    string
-	model     string
-	response  providers.ChatCompletionResponse
-	createdAt time.Time
+	ID        uint64                           `json:"id"`
+	Vector    []float64                        `json:"vector"`
+	TenantID  string                           `json:"tenant_id"`
+	Prompt    string                           `json:"prompt"`
+	Model     string                           `json:"model"`
+	Response  providers.ChatCompletionResponse `json:"response"`
+	CreatedAt time.Time                        `json:"created_at"`
 }
 
 func NewMemoryL2Cache(vectorSize int, threshold float64) *MemoryL2Cache {
@@ -41,12 +45,64 @@ func NewMemoryL2Cache(vectorSize int, threshold float64) *MemoryL2Cache {
 	return &MemoryL2Cache{
 		vectorSize: vectorSize,
 		threshold:  threshold,
+		maxPoints:  10000,
+		ttl:        24 * time.Hour,
 	}
 }
 
+// SetPersistence configures disk persistence for restart recovery.
+func (c *MemoryL2Cache) SetPersistence(path string) {
+	c.persistPath = path
+}
+
+// SetEmbedder sets the real embedding client.
+func (c *MemoryL2Cache) SetEmbedder(embedder EmbeddingClient) {
+	c.embedder = embedder
+	if embedder != nil {
+		c.vectorSize = embedder.Dimensions()
+	}
+}
+
+// EnsureCollection loads persisted data if available.
 func (c *MemoryL2Cache) EnsureCollection(ctx context.Context) error {
-	// 内存版无需建表
+	if c.persistPath != "" {
+		if err := c.Load(); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("load cache: %w", err)
+		}
+	}
 	return nil
+}
+
+// Save persists cache to disk atomically.
+func (c *MemoryL2Cache) Save() error {
+	if c.persistPath == "" {
+		return nil
+	}
+	c.mu.RLock()
+	data, err := json.Marshal(c.points)
+	c.mu.RUnlock()
+	if err != nil {
+		return err
+	}
+	tmpPath := c.persistPath + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, c.persistPath)
+}
+
+// Load restores cache from disk.
+func (c *MemoryL2Cache) Load() error {
+	if c.persistPath == "" {
+		return nil
+	}
+	data, err := os.ReadFile(c.persistPath)
+	if err != nil {
+		return err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return json.Unmarshal(data, &c.points)
 }
 
 func (c *MemoryL2Cache) Search(ctx context.Context, reqPayload providers.ChatCompletionRequest) (*SearchHit, error) {
@@ -54,35 +110,33 @@ func (c *MemoryL2Cache) Search(ctx context.Context, reqPayload providers.ChatCom
 	defer c.mu.RUnlock()
 
 	prompt := flattenPrompt(reqPayload)
-	vector := embed(prompt, c.vectorSize)
+	var vector []float64
+	if c.embedder != nil {
+		var err error
+		vector, err = c.embedder.Embed(ctx, prompt)
+		if err != nil {
+			vector = embed(prompt, c.vectorSize)
+		}
+	} else {
+		vector = embed(prompt, c.vectorSize)
+	}
 
 	var bestHit *SearchHit
 	var bestScore float64 = -1.0
 
 	for _, p := range c.points {
-		// 1. Filter match (must)
-		if reqPayload.TenantID != "" && p.tenantID != reqPayload.TenantID {
+		if reqPayload.TenantID != "" && p.TenantID != reqPayload.TenantID {
 			continue
 		}
-		if reqPayload.UserID != "" && p.userID != reqPayload.UserID {
-			continue
-		}
-		if reqPayload.SessionID != "" && p.sessionID != reqPayload.SessionID {
-			continue
-		}
-
-		// 2. Score
-		score := cosineSimilarity(vector, p.vector)
+		score := cosineSimilarity(vector, p.Vector)
 		if score >= c.threshold && score > bestScore {
 			bestScore = score
 			bestHit = &SearchHit{
-				Score:     score,
-				Response:  p.response,
-				Prompt:    p.prompt,
-				Model:     p.model,
-				TenantID:  p.tenantID,
-				UserID:    p.userID,
-				SessionID: p.sessionID,
+				Score:    score,
+				Response: p.Response,
+				Prompt:   p.Prompt,
+				Model:    p.Model,
+				TenantID: p.TenantID,
 			}
 		}
 	}
@@ -94,34 +148,63 @@ func (c *MemoryL2Cache) Upsert(ctx context.Context, reqPayload providers.ChatCom
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	prompt := flattenPrompt(reqPayload)
-	vector := embed(prompt, c.vectorSize)
-	id := pointID(reqPayload.TenantID + "|" + reqPayload.UserID + "|" + reqPayload.SessionID + "|" + prompt + "|" + reqPayload.Model)
+	if len(c.points)%100 == 0 {
+		c.evictExpired()
+	}
 
-	// Check if exists to update, else append
-	found := false
+	prompt := flattenPrompt(reqPayload)
+	var vector []float64
+	if c.embedder != nil {
+		var err error
+		vector, err = c.embedder.Embed(ctx, prompt)
+		if err != nil {
+			vector = embed(prompt, c.vectorSize)
+		}
+	} else {
+		vector = embed(prompt, c.vectorSize)
+	}
+	id := pointID(reqPayload.TenantID + "|" + prompt + "|" + reqPayload.Model)
+
 	for i, p := range c.points {
-		if p.id == id {
-			c.points[i].response = respPayload
-			found = true
-			break
+		if p.ID == id {
+			c.points[i].Response = respPayload
+			return nil
 		}
 	}
 
-	if !found {
-		c.points = append(c.points, memoryPoint{
-			id:        id,
-			vector:    vector,
-			tenantID:  strings.TrimSpace(reqPayload.TenantID),
-			userID:    strings.TrimSpace(reqPayload.UserID),
-			sessionID: strings.TrimSpace(reqPayload.SessionID),
-			prompt:    prompt,
-			model:     strings.TrimSpace(reqPayload.Model),
-			response:  respPayload,
-			createdAt: time.Now().UTC(),
-		})
-	}
+	c.points = append(c.points, memoryPoint{
+		ID:        id,
+		Vector:    vector,
+		TenantID:  strings.TrimSpace(reqPayload.TenantID),
+		Prompt:    prompt,
+		Model:     strings.TrimSpace(reqPayload.Model),
+		Response:  respPayload,
+		CreatedAt: time.Now().UTC(),
+	})
+
+	c.evictOldest()
 	return nil
+}
+
+func (c *MemoryL2Cache) evictExpired() {
+	if c.ttl <= 0 {
+		return
+	}
+	cutoff := time.Now().UTC().Add(-c.ttl)
+	filtered := c.points[:0]
+	for _, p := range c.points {
+		if p.CreatedAt.After(cutoff) {
+			filtered = append(filtered, p)
+		}
+	}
+	c.points = filtered
+}
+
+func (c *MemoryL2Cache) evictOldest() {
+	if c.maxPoints <= 0 || len(c.points) <= c.maxPoints {
+		return
+	}
+	c.points = c.points[len(c.points)-c.maxPoints:]
 }
 
 func cosineSimilarity(a, b []float64) float64 {
@@ -140,5 +223,4 @@ func cosineSimilarity(a, b []float64) float64 {
 	return dotProduct / (math.Sqrt(normA) * math.Sqrt(normB))
 }
 
-// 保证 MemoryL2Cache 实现了 L2Cache
 var _ L2Cache = (*MemoryL2Cache)(nil)

@@ -3,11 +3,15 @@ package httpserver
 import (
 	"context"
 	"crypto/subtle"
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"expvar"
 	"fmt"
+	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"runtime/debug"
 	"sort"
@@ -16,11 +20,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"llm-gateway/gateway/internal/abtest"
 	"llm-gateway/gateway/internal/admin"
-	"llm-gateway/gateway/internal/auth"
 	"llm-gateway/gateway/internal/audit"
+	"llm-gateway/gateway/internal/auth"
 	"llm-gateway/gateway/internal/billing"
 	"llm-gateway/gateway/internal/cache"
 	"llm-gateway/gateway/internal/config"
@@ -28,8 +33,11 @@ import (
 	"llm-gateway/gateway/internal/controlplane"
 	"llm-gateway/gateway/internal/health"
 	"llm-gateway/gateway/internal/i18n"
+	"llm-gateway/gateway/internal/limits"
+	"llm-gateway/gateway/internal/longcontext"
 	"llm-gateway/gateway/internal/memory"
 	"llm-gateway/gateway/internal/policy"
+	"llm-gateway/gateway/internal/preprocess"
 	"llm-gateway/gateway/internal/providers"
 	"llm-gateway/gateway/internal/quota"
 	"llm-gateway/gateway/internal/router"
@@ -58,6 +66,7 @@ type Server struct {
 	billing                       *billing.Store
 	billingService                *billing.Service
 	quota                         *quota.Limiter
+	modelLimits                   *limits.Limiter
 	admin                         *admin.Store
 	policy                        *policy.Store
 	runtimeCompensationReader     runtimeCompensationReader
@@ -80,7 +89,6 @@ type Server struct {
 	usageLogStore                 usageLogStore
 	chatStore                     chatStore
 	presetStore                   presetStore
-	maskEnabled                   bool
 	webhookRegistry               *webhook.WebhookRegistry
 	apiKeyRateLimiter             *APIKeyRateLimiter
 	defaultAPIKeyRPM              int
@@ -89,6 +97,7 @@ type Server struct {
 	healthChecker                 *health.HealthChecker
 	healthHandler                 *health.Handler
 	configVersionHandler          *configstore.Handler
+	longContextHandler            *LongContextHandler
 }
 
 func New(cfg config.Config, registry *providers.Registry, redisCache cache.L1Cache, rt *router.Router, auditStore *audit.Store, semanticCache semantic.L2Cache, memoryStore *memory.Store, billingStore *billing.Store, limiter *quota.Limiter, adminStore *admin.Store, policyStore *policy.Store) *Server {
@@ -175,6 +184,11 @@ func (s *Server) WithBroadcastUserHandler(handler *BroadcastUserHandler) *Server
 	return s
 }
 
+func (s *Server) WithModelLimits(l *limits.Limiter) *Server {
+	s.modelLimits = l
+	return s
+}
+
 func (s *Server) WithBillingService(svc *billing.Service) *Server {
 	s.billingService = svc
 	return s
@@ -207,17 +221,32 @@ func (s *Server) WithConfigVersionHandler(handler *configstore.Handler) *Server 
 	return s
 }
 
+func (s *Server) WithLongContextHandler(handler *LongContextHandler) *Server {
+	s.longContextHandler = handler
+	return s
+}
+
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle("/debug/vars", expvar.Handler())
 	mux.HandleFunc("/healthz", s.healthz)
+	mux.HandleFunc("/metrics", s.metricsHandler)
 	mux.HandleFunc("/healthz/detailed", s.healthzDetailed)
 	mux.HandleFunc("/v1/models", s.models)
 	mux.HandleFunc("/v1/chat/completions", s.withOptionalUserAPIKey(s.apiKeyRateLimitMiddleware(s.chatCompletions)))
+	if s.longContextHandler != nil {
+		mux.HandleFunc("/v1/long-context/tasks", s.requireAdmin(s.longContextHandler.ServeHTTP))
+		mux.HandleFunc("/v1/long-context/tasks/", s.requireAdmin(s.longContextHandler.ServeHTTP))
+		mux.HandleFunc("/admin/long-context/run", s.requireAdmin(s.adminLongContextRun))
+		mux.HandleFunc("/admin/long-context/tasks/stuck", s.requireAdmin(s.adminLongContextStuckTasks))
+		mux.HandleFunc("/admin/long-context/health", s.requireAdmin(s.adminLongContextHealth))
+	}
 	mux.HandleFunc("/admin/health", s.requireAdmin(s.adminHealth))
 	mux.HandleFunc("/admin/usage", s.requireAdmin(s.adminUsage))
 	mux.HandleFunc("/admin/audit", s.requireAdmin(s.adminAudit))
 	mux.HandleFunc("/admin/observability/summary", s.requireAdmin(s.adminObservabilitySummary))
 	mux.HandleFunc("/admin/observability/cache", s.requireAdmin(s.adminObservabilityCache))
+	mux.HandleFunc("/admin/observability/prefix-families", s.requireAdmin(s.adminObservabilityPrefixFamilies))
 	mux.HandleFunc("/admin/observability/providers", s.requireAdmin(s.adminObservabilityProviders))
 	mux.HandleFunc("/admin/observability/hotspots", s.requireAdmin(s.adminObservabilityHotspots))
 	mux.HandleFunc("/admin/observability/quota", s.requireAdmin(s.adminObservabilityQuota))
@@ -233,12 +262,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/admin/channels/", s.requireAdmin(s.adminChannelByID))
 	mux.HandleFunc("/admin/channels/batch-delete", s.requireAdmin(s.adminChannelsBatchDelete))
 	mux.HandleFunc("/admin/channels/batch-status", s.requireAdmin(s.adminChannelsBatchStatus))
-	mux.HandleFunc("/admin/runtime/recent-routes", s.requireAdmin(s.adminRuntimeRecentRoutes))
-	mux.HandleFunc("/admin/runtime/route-trace", s.requireAdmin(s.adminRuntimeRouteTrace))
-	mux.HandleFunc("/admin/channels/circuit-status", s.requireAdmin(s.adminChannelsCircuitStatus))
-	mux.HandleFunc("/admin/channels/circuit-history", s.requireAdmin(s.adminChannelsCircuitHistory))
 	mux.HandleFunc("/admin/dashboard", s.requireAdmin(s.adminDashboard))
-	mux.HandleFunc("/admin/channels/fetch-models", s.requireAdmin(s.adminFetchProviderModels))
 	mux.HandleFunc("/admin/assets", s.requireAdmin(s.adminAssets))
 	mux.HandleFunc("/admin/assets/", s.requireAdmin(s.adminAssetByID))
 	mux.HandleFunc("/admin/assets/stats", s.requireAdmin(s.adminAssetStats))
@@ -264,13 +288,16 @@ func (s *Server) Handler() http.Handler {
 	s.mountBroadcastAdminRoutes(mux)
 	s.mountBroadcastUserRoutes(mux)
 	s.mountPresetRoutes(mux)
+	s.mountMemorySearchRoutes(mux)
 	s.mountConfigVersionRoutes(mux)
 	s.mountWebhookRoutes(mux)
 	s.mountFileParserRoutes(mux)
 	s.mountOpenAPIRoutes(mux)
 	mux.HandleFunc("/admin/ui", s.adminUI)
 	mux.HandleFunc("/admin/ui/", s.adminUI)
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/admin/ui", http.StatusTemporaryRedirect) })
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/admin/ui", http.StatusTemporaryRedirect)
+	})
 	securityCfg := DefaultSecurityConfig()
 	return panicRecoveryMiddleware(applySecurityMiddlewares(
 		requestIDMiddleware(loggingMiddleware(i18n.Middleware(mux))),
@@ -509,6 +536,7 @@ func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 				token = strings.TrimSpace(auth[7:])
 			}
 		}
+		fmt.Printf("DEBUG requireAdmin: tokenlen=%d adminkeylen=%d equal=%v\n", len(token), len(s.cfg.AdminAPIKey), token == s.cfg.AdminAPIKey)
 		if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(s.cfg.AdminAPIKey)) != 1 {
 			lang := i18n.LangFromContext(r.Context())
 			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]any{"message": i18n.T(lang, "authentication_required"), "type": "authentication_error"}})
@@ -801,10 +829,10 @@ func (s *Server) adminDashboardTokenUsage(w http.ResponseWriter, r *http.Request
 		prompt := 100000 + int64(i)*15000 + int64(i%3)*5000
 		completion := 70000 + int64(i)*10000 + int64(i%4)*3000
 		data[i] = map[string]interface{}{
-			"date":      date.Format("01/02"),
-			"prompt":    prompt,
+			"date":       date.Format("01/02"),
+			"prompt":     prompt,
 			"completion": completion,
-			"total":     prompt + completion,
+			"total":      prompt + completion,
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
@@ -836,17 +864,28 @@ func (s *Server) adminDashboardCacheHitRate(w http.ResponseWriter, r *http.Reque
 			days = parsed
 		}
 	}
-	data := make([]map[string]interface{}, days)
-	now := time.Now().UTC()
-	for i := 0; i < days; i++ {
-		date := now.AddDate(0, 0, -days+i+1)
-		hitRate := 70 + (i*3)%20
-		requests := 15000 + int64(i)*2000
-		data[i] = map[string]interface{}{
-			"date":     date.Format("01/02"),
-			"hitRate":  hitRate,
-			"requests": requests,
+	if s.billing == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "billing store unavailable"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	rows, err := s.billing.CacheHitRateByDay(ctx, days)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	data := make([]map[string]interface{}, 0, len(rows))
+	for _, row := range rows {
+		hitRate := row.HitRate
+		if hitRate > 100 {
+			hitRate = 100
 		}
+		data = append(data, map[string]interface{}{
+			"date":     row.Date,
+			"hitRate":  math.Round(hitRate*10) / 10,
+			"requests": row.Requests,
+		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
 }
@@ -952,6 +991,36 @@ func (s *Server) adminObservabilityCache(w http.ResponseWriter, r *http.Request)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	rows, err := s.billing.CacheBreakdown(ctx, parseBillingFilter(r))
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": rows})
+}
+
+// adminObservabilityPrefixFamilies aggregates usage by stable prefix fingerprint
+// so operators can quantify how often the same prompt prefix is reused — the
+// precondition for provider prompt-cache hits and sticky routing.
+func (s *Server) adminObservabilityPrefixFamilies(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	if s.billing == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "billing store unavailable"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	limit := 20
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 200 {
+			limit = n
+		}
+	}
+	filter := parseBillingFilter(r)
+	filter.Limit = limit
+	rows, err := s.billing.PrefixFamilyStats(ctx, filter)
 	if err != nil {
 		internalError(w, err)
 		return
@@ -1425,8 +1494,8 @@ func (s *Server) adminDashboard(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"overall_status": "healthy",
 		"health": map[string]any{
-			"status":    "ok",
-			"uptime":    "running",
+			"status": "ok",
+			"uptime": "running",
 		},
 		"dedup": map[string]any{
 			"group_count": 0,
@@ -1824,79 +1893,6 @@ func (s *Server) models(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
 }
 
-func (s *Server) adminFetchProviderModels(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		methodNotAllowed(w, r)
-		return
-	}
-	var body struct {
-		Provider string `json:"provider"`
-		BaseURL  string `json:"base_url"`
-		APIKey   string `json:"api_key"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		badRequest(w, "invalid JSON body")
-		return
-	}
-	body.Provider = strings.TrimSpace(body.Provider)
-	body.BaseURL = strings.TrimSpace(body.BaseURL)
-	body.APIKey = strings.TrimSpace(body.APIKey)
-	if body.BaseURL == "" {
-		badRequest(w, "base_url is required")
-		return
-	}
-
-	// Build request URL: append /v1/models if not already present
-	url := strings.TrimRight(body.BaseURL, "/")
-	if !strings.HasSuffix(url, "/v1") && !strings.HasSuffix(url, "/v1/models") {
-		url += "/v1/models"
-	} else if strings.HasSuffix(url, "/v1") {
-		url += "/models"
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid URL", "type": "invalid_request_error"}})
-		return
-	}
-	if body.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+body.APIKey)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]any{"error": map[string]any{"message": fmt.Sprintf("failed to fetch models: %v", err), "type": "provider_error"}})
-		return
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Object string `json:"object"`
-		Data   []struct {
-			ID      string `json:"id"`
-			Object  string `json:"object"`
-			OwnedBy string `json:"owned_by"`
-		} `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]any{"error": map[string]any{"message": fmt.Sprintf("failed to parse models response: %v", err), "type": "provider_error"}})
-		return
-	}
-
-	modelIDs := make([]string, 0, len(result.Data))
-	for _, m := range result.Data {
-		if m.ID != "" {
-			modelIDs = append(modelIDs, m.ID)
-		}
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": modelIDs})
-}
-
 func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w, r)
@@ -1919,28 +1915,41 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "messages is required")
 		return
 	}
+	// Reject oversized ordinary-chat requests before memory and asset injection.
+	// This keeps AUTO from spending time processing a request that no default
+	// model can safely accept.
+	requestedModel := strings.ToLower(strings.TrimSpace(req.Model))
+	requestedTokens := estimateRequestTokens(req)
+	window := 0
+	if requestedModel != "" && requestedModel != "auto" {
+		// Explicit models retain their own safety guard. AUTO has no global
+		// context ceiling; its candidate pool is homogeneous 1M and the
+		// router performs the per-candidate fit check.
+		window = s.router.EffectiveContextWindow(requestedModel)
+	}
+	if window > 0 && requestedTokens >= int(float64(window)*s.cfg.ContextSafetyRatio) {
+		compressedOK := false
+		if requestedModel != "" && requestedModel != "auto" {
+			var compressed providers.ChatCompletionRequest
+			compressed, compressedOK = s.compressExplicitRequest(req, window)
+			if compressedOK {
+				req = compressed
+				requestedTokens = estimateRequestTokens(req)
+				w.Header().Set("X-Context-Compressed", "1")
+				w.Header().Set("X-Context-Compression-Attempts", "1")
+			}
+		}
+		if !compressedOK {
+			w.Header().Set("X-Route-Mode", "long_context_required")
+			w.Header().Set("X-Route-Reason", "request exceeds model context safety window")
+			writeJSON(w, http.StatusRequestEntityTooLarge, map[string]any{"error": map[string]any{"message": "request exceeds model context safety window", "type": "long_context_required", "estimated_tokens": requestedTokens, "safe_window": int(float64(window) * s.cfg.ContextSafetyRatio)}})
+			return
+		}
+	}
 
 	req, sessionSource := normalizeRequestIdentity(req, r)
 	w.Header().Set(sessionIDHeader, req.SessionID)
 	slog.Info("session_id resolved", "source", sessionSource, "session_id", req.SessionID)
-
-	// Apply mask rules to user messages if enabled
-	if s.maskEnabled && s.presetStore != nil {
-		claims := getUserClaims(r.Context())
-		if claims != nil {
-			maskCtx, maskCancel := context.WithTimeout(context.Background(), 1*time.Second)
-			for i := range req.Messages {
-				if strings.EqualFold(req.Messages[i].Role, "user") && req.Messages[i].Content != "" {
-					masked, err := s.presetStore.ApplyMasks(maskCtx, claims.UserID, req.TenantID, req.Messages[i].Content)
-					if err == nil && masked != req.Messages[i].Content {
-						req.Messages[i].Content = masked
-						w.Header().Set("X-Mask-Applied", "true")
-					}
-				}
-			}
-			maskCancel()
-		}
-	}
 
 	if s.policy != nil && req.TenantID != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -2101,8 +2110,62 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		req = injectAfterLeadingSystemMessages(req, injectedMemoryMessages)
 	}
 
+	// Compute the stable prefix fingerprint before routing so the router can
+	// apply prefix-family affinity (sticky routing) when enabled. This does not
+	// mutate the request sent upstream (BuildPrefixFamily is pure/read-only).
+	req.PrefixFamily = cache.BuildPrefixFamily(req)
+	req.PromptCacheKey = req.PrefixFamily
+
 	decision := s.router.Decide(req)
+	if decision.RouteMode == "context_limit" {
+		w.Header().Set("X-Route-Mode", decision.RouteMode)
+		w.Header().Set("X-Route-Reason", decision.Reason)
+		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]any{"error": map[string]any{"message": decision.Reason, "type": "context_limit_error"}})
+		return
+	}
+	// An explicit OpenAI model is an execution contract. Re-assert it after
+	// policy routing so global AUTO policies cannot silently replace it with a
+	// same-named model from another provider. Channel selection remains the
+	// shared per-model round-robin pool.
+	explicitModel := strings.TrimSpace(req.Model)
+	if explicitModel != "" && !strings.EqualFold(explicitModel, "AUTO") {
+		decision.Model = explicitModel
+		decision.RouteMode = "hybrid"
+		decision.FallbackChain = nil
+		decision.FallbackModel = ""
+	}
+	if s.providers != nil && decision.Channel == "" {
+		if channelID, ok := s.providers.PreferredChannelForModel(decision.Model); ok {
+			decision.Channel = channelID
+			decision.Provider = "custom"
+		} else if channelID, ok := s.providers.ChannelForModelAt(decision.Model, 0); ok {
+			// Preserve an explicitly registered channel even if its health state
+			// temporarily has no preferred candidate.
+			decision.Channel = channelID
+			decision.Provider = "custom"
+		}
+	}
+	// route_channel is an explicit execution contract. Re-assert it after
+	// model/policy normalization so same-named SenseNova and B.AI models
+	// cannot overwrite one another during provider selection.
+	if routeChannel := strings.TrimSpace(req.RouteChannel); routeChannel != "" {
+		decision.Channel = routeChannel
+		decision.Provider = "custom"
+	}
+	slog.Info("resolved execution route", "requested_model", explicitModel, "model", decision.Model, "provider", decision.Provider, "channel", decision.Channel, "mode", decision.RouteMode)
 	req.Model = decision.Model
+	// AUTO reasoning models default to no-think unless the client asks for it.
+	// Reasoning-only responses (no answer token for >90s) make streaming clients
+	// (e.g. Hermes) show "waiting on AUTO -- Ns with no output yet". Disabling
+	// thinking on these models keeps first-answer token under a few seconds.
+	if strings.TrimSpace(req.ReasoningEffort) == "" {
+		switch strings.ToLower(req.Model) {
+		case "deepseek-v4-flash", "glm-5.2", "minimaxai/minimax-m3", "deepseek-ai/deepseek-v4-pro-0813":
+			req.ReasoningEffort = "none"
+			slog.Info("auto-disabled reasoning for thinking model", "model", req.Model)
+		}
+	}
+
 
 	claims := getUserClaims(r.Context())
 	var billingUserID string
@@ -2130,6 +2193,8 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			s.writeAssetReuseAuditAsync(requestID, req, decision.Model, decision.Task, injectedAsset.ID, "l4_postgres")
 		}
 	}
+	prefixFamily := cache.BuildPrefixFamily(req)
+	w.Header().Set("X-Prefix-Family", prefixFamily)
 	w.Header().Set("X-Request-Id", requestID)
 	w.Header().Set("X-Route-Mode", decision.RouteMode)
 	w.Header().Set("X-Route-Task", decision.Task)
@@ -2151,6 +2216,13 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Route-Score", routeScore)
 	}
 
+	// Stream requests must use the provider SSE path. They cannot use the
+	// normal JSON response cache or ChatCompletion decoder.
+	if req.Stream {
+		s.streamChatCompletion(w, r, req, decision)
+		return
+	}
+
 	cacheStatus := "BYPASS"
 	fallbackUsed := false
 	var resp providers.ChatCompletionResponse
@@ -2165,25 +2237,8 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		if err == nil && hit {
 			cacheStatus = "HIT"
 			w.Header().Set("X-Cache", cacheStatus)
-			// Apply mask rules to cached response
-			if s.maskEnabled && s.presetStore != nil && len(cached.Choices) > 0 {
-				claims := getUserClaims(r.Context())
-				if claims != nil {
-					maskCtx, maskCancel := context.WithTimeout(context.Background(), 1*time.Second)
-					for i := range cached.Choices {
-						if cached.Choices[i].Message.Content != "" {
-							masked, err := s.presetStore.ApplyMasks(maskCtx, claims.UserID, req.TenantID, cached.Choices[i].Message.Content)
-							if err == nil && masked != cached.Choices[i].Message.Content {
-								cached.Choices[i].Message.Content = masked
-								w.Header().Set("X-Mask-Applied", "true")
-							}
-						}
-					}
-					maskCancel()
-				}
-			}
 			s.writeAuditAsync(audit.Event{RequestID: requestID, RouteMode: decision.RouteMode, RouteTask: decision.Task, RouteModel: decision.Model, RouteProvider: decision.Provider, RouteReason: decision.Reason, RouteScore: routeScore, CacheStatus: cacheStatus, FallbackUsed: false, RequestPayload: requestToMap(req), ResponsePayload: responseToMap(*cached)})
-			be := buildUsageEvent(requestID, req, decision, decision.Provider, "HIT", "l1_exact", false, true, "", "", time.Since(startedAt), *cached)
+			be := buildUsageEvent(requestID, req, decision, decision.Provider, "HIT", "l1_exact", false, true, "", "", time.Since(startedAt), *cached, cache.BuildPrefixFamily(req), "")
 			s.writeBillingAsync(be)
 			s.recordAPIKeyUsage(apiKeyID, apiUserID, be.RequestID, be.Model, be.Provider, be.PromptTokens, be.CompletionTokens, be.TotalTokens, be.EstimatedCost, be.LatencyMs, true)
 			writeJSON(w, http.StatusOK, cached)
@@ -2202,25 +2257,8 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			cacheStatus = "SEMANTIC_HIT"
 			w.Header().Set("X-Cache", cacheStatus)
 			w.Header().Set("X-Semantic-Score", fmt.Sprintf("%.4f", hit.Score))
-			// Apply mask rules to semantic cached response
-			if s.maskEnabled && s.presetStore != nil && len(hit.Response.Choices) > 0 {
-				claims := getUserClaims(r.Context())
-				if claims != nil {
-					maskCtx, maskCancel := context.WithTimeout(context.Background(), 1*time.Second)
-					for i := range hit.Response.Choices {
-						if hit.Response.Choices[i].Message.Content != "" {
-							masked, err := s.presetStore.ApplyMasks(maskCtx, claims.UserID, req.TenantID, hit.Response.Choices[i].Message.Content)
-							if err == nil && masked != hit.Response.Choices[i].Message.Content {
-								hit.Response.Choices[i].Message.Content = masked
-								w.Header().Set("X-Mask-Applied", "true")
-							}
-						}
-					}
-					maskCancel()
-				}
-			}
 			s.writeAuditAsync(audit.Event{RequestID: requestID, RouteMode: decision.RouteMode, RouteTask: decision.Task, RouteModel: decision.Model, RouteProvider: decision.Provider, RouteReason: decision.Reason, RouteScore: routeScore, CacheStatus: cacheStatus, FallbackUsed: false, RequestPayload: requestToMap(req), ResponsePayload: responseToMap(hit.Response)})
-			be := buildUsageEvent(requestID, req, decision, decision.Provider, "SEMANTIC_HIT", "l2_semantic", false, true, "", "", time.Since(startedAt), hit.Response)
+			be := buildUsageEvent(requestID, req, decision, decision.Provider, "SEMANTIC_HIT", "l2_semantic", false, true, "", "", time.Since(startedAt), hit.Response, cache.BuildPrefixFamily(req), "")
 			s.writeBillingAsync(be)
 			s.recordAPIKeyUsage(apiKeyID, apiUserID, be.RequestID, be.Model, be.Provider, be.PromptTokens, be.CompletionTokens, be.TotalTokens, be.EstimatedCost, be.LatencyMs, true)
 			writeJSON(w, http.StatusOK, hit.Response)
@@ -2232,9 +2270,19 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	var fbResult providers.FallbackResult
 	if len(decision.FallbackChain) > 0 {
 		fbChain := make([]providers.FallbackRoute, 0, len(decision.FallbackChain)+1)
-		fbChain = append(fbChain, providers.FallbackRoute{Model: decision.Model, Provider: decision.Provider, Reason: "primary"})
-		for _, r := range decision.FallbackChain {
-			fbChain = append(fbChain, providers.FallbackRoute{Model: r.Model, Provider: r.Provider, Reason: r.Reason})
+		fbChain = append(fbChain, providers.FallbackRoute{Model: decision.Model, Provider: decision.Provider, Channel: decision.Channel, Reason: "primary"})
+		for fallbackIndex, r := range decision.FallbackChain {
+			route := providers.FallbackRoute{Model: r.Model, Provider: r.Provider, Reason: r.Reason}
+			if s.providers != nil {
+				if channelID, ok := s.providers.ChannelForModelAt(r.Model, fallbackIndex+1); ok {
+					route.Channel = channelID
+					route.Provider = "custom"
+				} else if channelID, ok := s.providers.PreferredChannelForModel(r.Model); ok {
+					route.Channel = channelID
+					route.Provider = "custom"
+				}
+			}
+			fbChain = append(fbChain, route)
 		}
 		resp, fbResult, err = s.providers.ChatCompletionWithFallback(r.Context(), fbChain, req)
 		if err == nil && fbResult.UsedFallback {
@@ -2248,10 +2296,21 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			decision.Reason = "primary route failed, fallback model used"
 		}
 	} else {
-		resp, err = s.providers.ChatCompletion(r.Context(), decision.Provider, req)
+		if decision.Channel != "" {
+			resp, err = s.providers.ChatCompletionOnChannel(r.Context(), decision.Channel, req)
+		} else if decision.Model != "" && s.providers != nil {
+			var channel string
+			resp, channel, err = s.providers.ChatCompletionOnModel(r.Context(), decision.Model, req)
+			if err == nil {
+				decision.Channel = channel
+				decision.Provider = "custom"
+			}
+		} else {
+			resp, err = s.providers.ChatCompletion(r.Context(), decision.Provider, req)
+		}
 	}
 	if err != nil {
-		be := buildUsageEvent(requestID, req, decision, decision.Provider, cacheStatus, "none", fallbackUsed, false, "provider_error", err.Error(), time.Since(startedAt), resp)
+		be := buildUsageEvent(requestID, req, decision, decision.Provider, cacheStatus, "none", fallbackUsed, false, "provider_error", err.Error(), time.Since(startedAt), resp, cache.BuildPrefixFamily(req), "request_failed")
 		s.writeBillingAsync(be)
 		s.recordAPIKeyUsage(apiKeyID, apiUserID, be.RequestID, be.Model, be.Provider, be.PromptTokens, be.CompletionTokens, be.TotalTokens, be.EstimatedCost, be.LatencyMs, false)
 		internalError(w, err)
@@ -2320,27 +2379,12 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	cacheStatus = "MISS"
 	w.Header().Set("X-Cache", cacheStatus)
-
-	// Apply mask rules to assistant response before returning to client
-	if s.maskEnabled && s.presetStore != nil && len(resp.Choices) > 0 {
-		claims := getUserClaims(r.Context())
-		if claims != nil {
-			maskCtx, maskCancel := context.WithTimeout(context.Background(), 1*time.Second)
-			for i := range resp.Choices {
-				if resp.Choices[i].Message.Content != "" {
-					masked, err := s.presetStore.ApplyMasks(maskCtx, claims.UserID, req.TenantID, resp.Choices[i].Message.Content)
-					if err == nil && masked != resp.Choices[i].Message.Content {
-						resp.Choices[i].Message.Content = masked
-						w.Header().Set("X-Mask-Applied", "true")
-					}
-				}
-			}
-			maskCancel()
-		}
-	}
-
 	s.writeAuditAsync(audit.Event{RequestID: requestID, RouteMode: decision.RouteMode, RouteTask: decision.Task, RouteModel: decision.Model, RouteProvider: decision.Provider, RouteReason: decision.Reason, RouteScore: routeScore, CacheStatus: cacheStatus, FallbackUsed: fallbackUsed, RequestPayload: requestToMap(req), ResponsePayload: responseToMap(resp)})
-	be := buildUsageEvent(requestID, req, decision, decision.Provider, "MISS", "none", fallbackUsed, true, "", "", time.Since(startedAt), resp)
+	missReason := ""
+	if deriveCacheLayer("MISS", "none", resp) == "provider_prefix_miss" {
+		missReason = "prefix_changed"
+	}
+	be := buildUsageEvent(requestID, req, decision, decision.Provider, "MISS", deriveCacheLayer("MISS", "none", resp), fallbackUsed, true, "", "", time.Since(startedAt), resp, cache.BuildPrefixFamily(req), missReason)
 	s.writeBillingAsync(be)
 	s.recordAPIKeyUsage(apiKeyID, apiUserID, be.RequestID, be.Model, be.Provider, be.PromptTokens, be.CompletionTokens, be.TotalTokens, be.EstimatedCost, be.LatencyMs, true)
 	writeJSON(w, http.StatusOK, resp)
@@ -2355,6 +2399,129 @@ func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, err := s.billingService.Settle(r.Context(), billingUserID, billingRefID, decision.Provider, decision.Model, actualPromptTokens, actualCompletionTokens); err != nil {
 			slog.Warn("billing settle failed", "user_id", billingUserID, "ref", billingRefID, "err", err)
+		}
+	}
+}
+
+// verifyStreamHasData reads the first chunk of a freshly opened SSE stream with a
+// bounded timeout. Some upstream providers answer the HTTP request successfully
+// (status 200) but then send an empty body ("empty or truncated provider
+// response"). We detect that here, before any SSE headers are written to the
+// client, so the caller can fail over to the next candidate model instead of
+// delivering a dead stream that the client sees as an interrupted response.
+func verifyStreamHasData(body io.ReadCloser, timeout time.Duration) (io.Reader, bool) {
+	type readResult struct {
+		n   int
+		err error
+	}
+	ch := make(chan readResult, 1)
+	buf := make([]byte, 32*1024)
+	go func() {
+		n, err := body.Read(buf)
+		ch <- readResult{n, err}
+	}()
+	select {
+	case res := <-ch:
+		if res.n == 0 && res.err == io.EOF {
+			return nil, false
+		}
+		parts := []io.Reader{bytes.NewReader(buf[:res.n])}
+		if res.err == nil {
+			parts = append(parts, body)
+		}
+		return io.MultiReader(parts...), true
+	case <-time.After(timeout):
+		body.Close()
+		return nil, false
+	}
+}
+
+func (s *Server) streamChatCompletion(w http.ResponseWriter, r *http.Request, req providers.ChatCompletionRequest, decision router.Decision) {
+	// Build the candidate chain: primary model first, then the AUTO FallbackChain.
+	// ChatCompletionStreamOnModel already fails over across all channels of a given
+	// model (including transient "channel rate gate" limits), so each candidate here
+	// resolves to a healthy channel when one exists. If the primary model's channels
+	// are all exhausted (rate-limited), we move on to the next candidate instead of
+	// returning a hard 500 that breaks the SSE stream for the caller.
+	type cand struct {
+		model    string
+		provider string
+		reason   string
+	}
+	candidates := make([]cand, 0, 1+len(decision.FallbackChain))
+	candidates = append(candidates, cand{model: decision.Model, provider: decision.Provider, reason: "primary"})
+	for _, fb := range decision.FallbackChain {
+		if fb.Model == "" {
+			continue
+		}
+		candidates = append(candidates, cand{model: fb.Model, provider: fb.Provider, reason: fb.Reason})
+	}
+
+	var body io.ReadCloser
+	var err error
+	var usedModel string
+	for i, c := range candidates {
+		if c.model == "" {
+			continue
+		}
+		var ch string
+		var modelErr error
+		body, ch, modelErr = s.providers.ChatCompletionStreamOnModel(r.Context(), c.model, req)
+		if modelErr != nil {
+			slog.Warn("stream candidate failed, trying next",
+				"attempt", i, "model", c.model, "reason", c.reason, "err", modelErr)
+			err = modelErr
+			continue
+		}
+		decision.Model = c.model
+		decision.Channel = ch
+		decision.Provider = "custom"
+		usedModel = c.model
+		// Verify the upstream actually sends data. A 200 with an empty body must
+		// not be delivered to the client as a dead stream; fail over instead.
+		verified, ok := verifyStreamHasData(body, 8*time.Second)
+		if !ok {
+			slog.Warn("stream candidate returned empty body, trying next",
+				"attempt", i, "model", c.model, "reason", c.reason)
+			body.Close()
+			err = fmt.Errorf("empty upstream response from %s", c.model)
+			continue
+		}
+		body = io.NopCloser(verified)
+		break
+	}
+	if body == nil {
+		if err == nil {
+			err = fmt.Errorf("no model candidate available")
+		}
+		internalError(w, err)
+		return
+	}
+	if usedModel != "" {
+		w.Header().Set("X-Route-Model", usedModel)
+	}
+	defer body.Close()
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		internalError(w, fmt.Errorf("streaming is not supported by response writer"))
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	buf := make([]byte, 32*1024)
+	for {
+		n, readErr := body.Read(buf)
+		if n > 0 {
+			if _, err := w.Write(buf[:n]); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+		if readErr != nil {
+			return
 		}
 	}
 }
@@ -2551,6 +2718,60 @@ func assetMessageCount(req providers.ChatCompletionRequest) int {
 		}
 	}
 	return count
+}
+
+func estimateRequestTokens(req providers.ChatCompletionRequest) int {
+	tools, _ := json.Marshal(req.Tools)
+	total := len([]byte(string(tools))) / 4
+	for _, msg := range req.Messages {
+		total += len([]byte(msg.Content))/4 + 4
+	}
+	if req.MaxTokens > 0 {
+		total += req.MaxTokens
+	}
+	return total
+}
+
+// compressExplicitRequest performs a single bounded summarization of the
+// conversation history when the explicit model cannot fit the full request.
+// It only runs when CONTEXT_AUTO_COMPRESS_ENABLED=true, only uses a model with
+// a larger known window, and returns ok=false whenever compression cannot
+// bring the request under the target window (so the caller returns 413).
+func (s *Server) compressExplicitRequest(req providers.ChatCompletionRequest, targetWindow int) (providers.ChatCompletionRequest, bool) {
+	if !s.cfg.ContextAutoCompressEnabled || s.providers == nil {
+		return req, false
+	}
+	compressModel := strings.TrimSpace(s.cfg.ContextCompressModel)
+	if compressModel == "" {
+		return req, false
+	}
+	channelID, ok := s.providers.PreferredChannelForModel(compressModel)
+	if !ok {
+		return req, false
+	}
+	compressWindow := s.router.EffectiveContextWindow(compressModel)
+	if compressWindow <= 0 {
+		return req, false
+	}
+	tokens := estimateRequestTokens(req)
+	if tokens >= int(float64(compressWindow)*s.cfg.ContextSafetyRatio) {
+		return req, false
+	}
+	provider := s.providers.ResolveChannel(channelID)
+	if provider == nil {
+		return req, false
+	}
+	summarizer := preprocess.NewModelBackedSummarizer(provider, compressModel, 4, s.cfg.ContextCompressMaxRecentTurns, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	processed, meta, err := summarizer.Apply(ctx, req)
+	if err != nil || !meta.Applied {
+		return req, false
+	}
+	if estimateRequestTokens(processed) < int(float64(targetWindow)*s.cfg.ContextSafetyRatio) {
+		return processed, true
+	}
+	return req, false
 }
 
 func sessionSummaryHasContent(summary *memory.SessionSummary) bool {
@@ -3213,6 +3434,9 @@ func (s *Server) writeAuditAsync(event audit.Event) {
 }
 
 func (s *Server) writeBillingAsync(event billing.UsageEvent) {
+	if s.router != nil && event.RouteModel != "" {
+		s.router.RecordFeedback(event.RouteTask, event.RouteModel, float64(event.LatencyMs), event.EstimatedCost, event.Success)
+	}
 	if s.billing == nil || !s.cfg.BillingEnabled {
 		return
 	}
@@ -3233,7 +3457,20 @@ func (s *Server) writeBillingAsync(event billing.UsageEvent) {
 	}()
 }
 
-func buildUsageEvent(requestID string, req providers.ChatCompletionRequest, decision router.Decision, provider string, cacheStatus string, cacheLayer string, fallbackUsed bool, success bool, errorType string, errorMessage string, latency time.Duration, resp providers.ChatCompletionResponse) billing.UsageEvent {
+// deriveCacheLayer maps the cache status/layer reported by the gateway and the
+// provider's usage into a single cache_layer label. A MISS at the gateway level
+// may still be served from the provider's prompt/prefix cache when cached_tokens > 0.
+func deriveCacheLayer(cacheStatus, cacheLayer string, resp providers.ChatCompletionResponse) string {
+	if cacheStatus == "HIT" || cacheStatus == "SEMANTIC_HIT" {
+		return cacheLayer
+	}
+	if resp.Usage.PromptTokensDetails.CachedTokens > 0 {
+		return "provider_prefix"
+	}
+	return "provider_prefix_miss"
+}
+
+func buildUsageEvent(requestID string, req providers.ChatCompletionRequest, decision router.Decision, provider string, cacheStatus string, cacheLayer string, fallbackUsed bool, success bool, errorType string, errorMessage string, latency time.Duration, resp providers.ChatCompletionResponse, prefixFamily string, missReason string) billing.UsageEvent {
 	routeProvider := decision.Provider
 	if routeProvider == "" {
 		routeProvider = provider
@@ -3255,10 +3492,15 @@ func buildUsageEvent(requestID string, req providers.ChatCompletionRequest, deci
 		PromptTokens:     resp.Usage.PromptTokens,
 		CompletionTokens: resp.Usage.CompletionTokens,
 		TotalTokens:      resp.Usage.TotalTokens,
+		CachedTokens:     resp.Usage.PromptTokensDetails.CachedTokens,
+		CacheWriteTokens: resp.Usage.CacheWriteTokens,
 		EstimatedCost:    estimateCost(resp.Usage.TotalTokens),
 		CacheStatus:      cacheStatus,
 		CacheLayer:       cacheLayer,
+		PrefixFamily:     prefixFamily,
+		CacheMissReason:  missReason,
 		RouteMode:        decision.RouteMode,
+		RouteTask:        decision.Task,
 		RouteProvider:    routeProvider,
 		RouteModel:       routeModel,
 		FallbackUsed:     fallbackUsed,
@@ -3419,4 +3661,309 @@ func (s *Server) broadcastUserRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.broadcastUser.ServeHTTP(w, r)
+}
+
+// adminLongContextStuckTasks returns tasks that are stuck (non-terminal status
+// with no recent progress). Useful for operator dashboards and alerting.
+func (s *Server) adminLongContextStuckTasks(w http.ResponseWriter, r *http.Request) {
+	if s.longContextHandler == nil || !s.longContextHandler.enabled {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"message": "long context is disabled", "type": "long_context_disabled"}})
+		return
+	}
+	p, ok := s.longContextHandler.Repo().(*longcontext.PostgresRepository)
+	if !ok {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": map[string]any{"message": "repository unavailable", "type": "service_unavailable"}})
+		return
+	}
+	stuck, err := p.ListStuckTasks(r.Context(), 50)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": map[string]any{"message": err.Error(), "type": "db_error"}})
+		return
+	}
+	tasks := make([]map[string]any, 0, len(stuck))
+	for _, t := range stuck {
+		tasks = append(tasks, map[string]any{
+			"id": t.ID, "tenant_id": t.TenantID, "status": t.Status, "phase": t.Phase,
+			"completed_chunks": t.CompletedChunks, "chunk_count": t.ChunkCount,
+			"pending_chunks": t.PendingChunks, "failed_chunks": t.FailedChunks,
+			"lease_owner": t.LeaseOwner, "lease_until": t.LeaseUntil,
+			"last_error": t.LastError, "updated_at": t.UpdatedAt.Format(time.RFC3339),
+			"minutes_since_update": int(time.Since(t.UpdatedAt).Minutes()),
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tasks": tasks, "count": len(tasks)})
+}
+
+// adminLongContextRun advances a virtual-long-1m task through the Map phase:
+// it transitions the task to ingesting/mapping and processes every pending
+// chunk via the real provider registry, persisting verified evidence. It is a
+// controlled admin entry; the constant worker loop stays disabled by default.
+// Returns per-run chunk statistics.
+func (s *Server) adminLongContextHealth(w http.ResponseWriter, r *http.Request) {
+	if s.longContextHandler == nil {
+		http.Error(w, `{"error":"long context disabled"}`, http.StatusServiceUnavailable)
+		return
+	}
+	ctx := r.Context()
+	pr, ok := s.longContextHandler.Repo().(*longcontext.PostgresRepository)
+	if !ok {
+		http.Error(w, `{"error":"repository not available"}`, http.StatusServiceUnavailable)
+		return
+	}
+	if err := pr.HealthCheck(ctx); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte(`{"status":"unhealthy","db":"` + err.Error() + `"}`))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"status":"healthy","db":"ok"}`))
+}
+
+func (s *Server) adminLongContextRun(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, r)
+		return
+	}
+	if s.longContextHandler == nil || !s.longContextHandler.enabled {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"message": "long context is disabled", "type": "long_context_disabled"}})
+		return
+	}
+	var body struct {
+		TaskID        string `json:"task_id"`
+		TenantID      string `json:"tenant_id"`
+		Channel       string `json:"channel"`
+		Model         string `json:"model"`
+		MaxChunks     int    `json:"max_chunks"`
+		ReaderModel   string `json:"reader_model"`
+		ReaderChannel string `json:"reader_channel"`
+		ReaderTopK    int    `json:"reader_top_k"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		badRequest(w, "invalid JSON body")
+		return
+	}
+	body.TaskID = strings.TrimSpace(body.TaskID)
+	body.TenantID = strings.TrimSpace(body.TenantID)
+	body.Channel = strings.TrimSpace(body.Channel)
+	body.Model = strings.TrimSpace(body.Model)
+	body.ReaderModel = strings.TrimSpace(body.ReaderModel)
+	body.ReaderChannel = strings.TrimSpace(body.ReaderChannel)
+	if body.TaskID == "" || body.TenantID == "" || body.Channel == "" || body.Model == "" {
+		badRequest(w, "task_id, tenant_id, channel and model are required")
+		return
+	}
+	if s.longContextHandler.repo == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": map[string]any{"message": "long context repository unavailable", "type": "service_unavailable"}})
+		return
+	}
+	task, err := s.longContextHandler.repo.GetTask(r.Context(), body.TaskID, body.TenantID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"message": "task not found", "type": "not_found"}})
+		return
+	}
+	if task.Status.Terminal() {
+		writeJSON(w, http.StatusConflict, map[string]any{"error": map[string]any{"message": "task is already terminal", "type": "terminal_task"}})
+		return
+	}
+	pr, ok := s.longContextHandler.repo.(*longcontext.PostgresRepository)
+	if !ok {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": map[string]any{"message": "long context repository is not a postgres repository", "type": "service_unavailable"}})
+		return
+	}
+	// ── Map phase ──────────────────────────────────────────────────────
+	if task.Status == longcontext.StatusQueued {
+		if err := pr.TransitionTask(r.Context(), task.ID, longcontext.StatusQueued, longcontext.StatusIngesting, longcontext.PhaseIngesting); err != nil {
+			writeJSON(w, http.StatusConflict, map[string]any{"error": map[string]any{"message": err.Error(), "type": "transition_error"}})
+			return
+		}
+		task.Status = longcontext.StatusIngesting
+		task.Phase = longcontext.PhaseIngesting
+	}
+	if task.Status == longcontext.StatusIngesting {
+		if err := pr.TransitionTask(r.Context(), task.ID, longcontext.StatusIngesting, longcontext.StatusMapping, longcontext.PhaseMapping); err != nil {
+			writeJSON(w, http.StatusConflict, map[string]any{"error": map[string]any{"message": err.Error(), "type": "transition_error"}})
+			return
+		}
+		task.Status = longcontext.StatusMapping
+		task.Phase = longcontext.PhaseMapping
+	}
+	selector := longcontext.NewChannelSelector([]string{body.Channel}, 5*time.Second)
+	processor := longcontext.MapTaskProcessor{
+		Claimer:            pr,
+		Selector:           selector,
+		BlockingSelector:   selector,
+		Caller:             longcontext.RegistryMapCaller{Registry: s.providers, Model: body.Model, MaxTokens: 8192, ReasoningEffort: "none", ResponseFormat: map[string]any{"type": "json_object"}}, 
+		Results:            pr,
+		Attempts:           pr,
+		Completed:          pr,
+		WorkerID:           "admin-run",
+		Lease:              time.Minute,
+		Model:              body.Model,
+		ChannelPickTimeout: 60 * time.Second,
+		MaxRetries:          3,
+	}
+	limit := body.MaxChunks
+	if limit <= 0 {
+		limit = 1000000
+	}
+	processed := 0
+	successes := 0
+	var mapErr error
+	for processed < limit {
+		err := processor.ProcessTask(r.Context(), task)
+		if err != nil {
+			mapErr = err
+			processed++
+			if !hasPendingChunk(r.Context(), pr, task.ID) {
+				break
+			}
+			continue
+		}
+		processed++
+		successes++
+		if !hasPendingChunk(r.Context(), pr, task.ID) {
+			break
+		}
+	}
+	// If all chunks were successfully mapped, clear any transient map error
+	// so synthesis can proceed.
+	if successes > 0 && !hasPendingChunk(r.Context(), pr, task.ID) {
+		mapErr = nil
+	}
+	resp := map[string]any{"task_id": task.ID, "status": task.Status, "phase": task.Phase, "channel": body.Channel, "model": body.Model, "processed_chunks": processed, "successes": successes, "last_error": errString(mapErr)}
+	// ── Synthesis phase (optional) ─────────────────────────────────────
+	// If reader_model is provided and all chunks are mapped, run hybrid
+	// retrieval + final reader and store the grounded answer.
+	needsSynth := body.ReaderModel != "" && task.Status == longcontext.StatusMapping
+	if needsSynth && mapErr == nil {
+		synErr := s.synthesizeLongContext(r.Context(), pr, task, body.ReaderModel, body.Channel, body.ReaderTopK, resp)
+		if synErr != nil {
+			resp["last_error"] = errString(synErr)
+			resp["synthesis_error"] = synErr.Error()
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// synthesizeLongContext runs retrieval + final reader for a mapped task.
+// mapChannel is used as fallback for the reader channel when readerChannel is empty.
+func (s *Server) synthesizeLongContext(ctx context.Context, pr *longcontext.PostgresRepository, task *longcontext.Task, readerModel, readerChannel string, topK int, resp map[string]any) error {
+	// Bound the entire synthesis pipeline to avoid hung upstream calls.
+	synthTimeout := 5 * time.Minute
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithTimeout(ctx, synthTimeout)
+	defer cancel()
+	if topK <= 0 {
+		topK = 8
+	}
+	if readerChannel == "" {
+		readerChannel = resp["channel"].(string)
+	}
+	// Transition mapping → indexing → retrieving → synthesizing
+	phases := []struct {
+		from, to longcontext.Status
+		ph       longcontext.Phase
+	}{
+		{longcontext.StatusMapping, longcontext.StatusIndexing, longcontext.PhaseIndexing},
+		{longcontext.StatusIndexing, longcontext.StatusRetrieving, longcontext.PhaseRetrieving},
+		{longcontext.StatusRetrieving, longcontext.StatusSynthesizing, longcontext.PhaseSynthesizing},
+	}
+	for _, p := range phases {
+		if err := pr.TransitionTask(ctx, task.ID, p.from, p.to, p.ph); err != nil {
+			return fmt.Errorf("transition to %s: %w", p.to, err)
+		}
+		task.Status = p.to
+		task.Phase = p.ph
+	}
+	resp["status"] = task.Status
+	resp["phase"] = task.Phase
+	// 1. Fetch all evidence for this task.
+	evidence, err := pr.GetEvidenceByTask(ctx, task.ID)
+	if err != nil {
+		return fmt.Errorf("fetch evidence: %w", err)
+	}
+	resp["evidence_count"] = len(evidence)
+	if len(evidence) == 0 {
+		if err := pr.TransitionTask(ctx, task.ID, longcontext.StatusSynthesizing, longcontext.StatusSucceeded, longcontext.PhaseSynthesizing); err != nil {
+			return fmt.Errorf("transition to succeeded: %w", err)
+		}
+		task.Status = longcontext.StatusSucceeded
+		resp["status"] = task.Status
+		resp["answer"] = "No evidence available for this query."
+		return nil
+	}
+	// 2. Hybrid retrieval — select top-K evidence by relevance.
+	selected := longcontext.HybridRetrieval(task.Query, evidence, topK)
+	resp["retrieved_count"] = len(selected)
+	// 3. Fetch source chunks for the final reader context.
+	chunkIDs := map[string]bool{}
+	for _, ev := range selected {
+		chunkIDs[ev.ChunkID] = true
+	}
+	var chunks []string
+	for cid := range chunkIDs {
+		c, cerr := pr.GetChunkContent(ctx, cid)
+		if cerr != nil {
+			continue
+		}
+		chunks = append(chunks, c)
+	}
+	// 4. Final reader — call the model to synthesize a grounded answer.
+	reader := longcontext.RegistryFinalReader{
+		Registry:  s.providers,
+		Model:     readerModel,
+		Channel:   readerChannel,
+		MaxTokens: 4096, ReasoningEffort: "none", ResponseFormat: map[string]any{"type": "json_object"},
+	}
+	answer, err := reader.SynthesizeGroundedAnswer(ctx, task.Query, selected, chunks)
+	if err != nil {
+		return fmt.Errorf("final reader: %w", err)
+	}
+	resp["answer"] = answer
+	// 5. Reduce — deduplicate and check for conflicts.
+	reducedClaims := make([]longcontext.ReducedClaim, len(selected))
+	for i, ev := range selected {
+		reducedClaims[i] = longcontext.ReducedClaim{
+			Claim: ev.Claim, Quote: ev.Quote, ChunkID: ev.ChunkID,
+			StartChar: ev.StartChar, EndChar: ev.EndChar, Confidence: ev.Confidence,
+		}
+	}
+	reduced, _ := longcontext.ReduceClaims(reducedClaims)
+	finalResult := longcontext.MapToFinalResult(task.Query, answer, reduced)
+	resultJSON := longcontext.FinalReadResultJSON(finalResult)
+	if err := pr.StoreResult(ctx, task.ID, resultJSON); err != nil {
+		return fmt.Errorf("store result: %w", err)
+	}
+	resp["conflict_count"] = len(reduced.Conflicts)
+	resp["citation_coverage"] = reduced.CitationCoverage
+	// 6. Transition synthesizing -> verifying -> succeeded.
+	if err := pr.TransitionTask(ctx, task.ID, longcontext.StatusSynthesizing, longcontext.StatusVerifying, longcontext.PhaseVerifying); err != nil {
+		return fmt.Errorf("transition to verifying: %w", err)
+	}
+	task.Status = longcontext.StatusVerifying
+	task.Phase = longcontext.PhaseVerifying
+	if err := pr.TransitionTask(ctx, task.ID, longcontext.StatusVerifying, longcontext.StatusSucceeded, longcontext.PhaseVerifying); err != nil {
+		return fmt.Errorf("transition to succeeded: %w", err)
+	}
+	task.Status = longcontext.StatusSucceeded
+	resp["status"] = task.Status
+	return nil
+}
+
+func hasPendingChunk(ctx context.Context, pr *longcontext.PostgresRepository, taskID string) bool {
+	var n int
+	err := pr.CountPendingChunks(ctx, taskID, &n)
+	return err == nil && n > 0
+}
+
+func errString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+func (s *Server) metricsHandler(w http.ResponseWriter, r *http.Request) {
+	promhttp.Handler().ServeHTTP(w, r)
 }

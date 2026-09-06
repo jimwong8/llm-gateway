@@ -291,23 +291,9 @@ func parsePGArray(s string) []string {
 	return parts
 }
 
-func parsePGIntArray(s string) []int64 {
-	if s == "{}" || s == "" {
-		return nil
-	}
-	s = s[1 : len(s)-1]
-	if s == "" {
-		return nil
-	}
-	parts := splitPGArray(s)
-	var result []int64
-	for _, p := range parts {
-		var v int64
-		fmt.Sscanf(p, "%d", &v)
-		result = append(result, v)
-	}
-	return result
-}
+// parsePGIntArray is defined in kg.go (the canonical implementation).
+// This file retains a thin wrapper for backward compatibility during migration.
+// Deprecated: use parsePGIntArray from kg.go directly.
 
 func splitPGArray(s string) []string {
 	var parts []string

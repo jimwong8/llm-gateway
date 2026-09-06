@@ -7,11 +7,14 @@ import (
 
 func TestContextBudgetAllocateRespectsRatiosAndCaps(t *testing.T) {
 	cb := ContextBudget{
-		MaxTokens:     100,
-		ReserveTokens: 10,
-		MemoryRatio:   0.5,
-		SystemRatio:   0.2,
-		HistoryRatio:  0.5,
+		MaxTokens:          100,
+		ReserveTokens:      10,
+		MemoryRatio:        0.5,
+		SystemRatio:        0.2,
+		HistoryRatio:       0.5,
+		StretchedThreshold: 0.6,
+		CriticalThreshold:  0.8,
+		StallThreshold:     0.95,
 	}
 
 	alloc := cb.Allocate(100, 50)
@@ -35,11 +38,14 @@ func TestContextBudgetAllocateRespectsRatiosAndCaps(t *testing.T) {
 
 func TestContextBudgetAllocateHandlesNoAvailableTokens(t *testing.T) {
 	cb := ContextBudget{
-		MaxTokens:     10,
-		ReserveTokens: 10,
-		MemoryRatio:   0.2,
-		SystemRatio:   0.1,
-		HistoryRatio:  0.5,
+		MaxTokens:          10,
+		ReserveTokens:      10,
+		MemoryRatio:        0.2,
+		SystemRatio:        0.1,
+		HistoryRatio:       0.5,
+		StretchedThreshold: 0.6,
+		CriticalThreshold:  0.8,
+		StallThreshold:     0.95,
 	}
 
 	alloc := cb.Allocate(50, 20)
@@ -53,6 +59,129 @@ func TestContextBudgetAllocateHandlesNoAvailableTokens(t *testing.T) {
 		t.Fatalf("expected available tokens 0, got %d", alloc.AvailableTokens)
 	}
 }
+
+// ---- Context Budget State Machine Tests ----
+
+func TestContextBudgetStateTransitions(t *testing.T) {
+	cb := DefaultContextBudget() // thresholds: 0.6 / 0.8 / 0.95
+
+	tests := []struct {
+		name            string
+		recentTokens    int
+		systemTokens    int
+		memoryTokens    int
+		graphTokens     int
+		summaryTokens   int
+		wantState       BudgetState
+		wantUtilization float64
+	}{
+		{
+			name:         "normal: low utilization",
+			recentTokens: 100, systemTokens: 50, memoryTokens: 0, graphTokens: 0, summaryTokens: 0,
+			wantState:       BudgetStateNormal,
+			wantUtilization: 0.0183,
+		},
+		{
+			name:         "stretched: above 60%",
+			recentTokens: 4000, systemTokens: 1000, memoryTokens: 500, graphTokens: 0, summaryTokens: 0,
+			wantState:       BudgetStateStretched,
+			wantUtilization: 0.6719,
+		},
+		{
+			name:         "critical: above 80%",
+			recentTokens: 5000, systemTokens: 1500, memoryTokens: 500, graphTokens: 0, summaryTokens: 0,
+			wantState:       BudgetStateCritical,
+			wantUtilization: 0.8594,
+		},
+		{
+			name:         "stall: above 95%",
+			recentTokens: 6000, systemTokens: 1500, memoryTokens: 500, graphTokens: 0, summaryTokens: 500,
+			wantState:       BudgetStateStall,
+			wantUtilization: 1.0391,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stats := cb.ComputeStats(tt.recentTokens, tt.systemTokens, tt.memoryTokens, tt.graphTokens, tt.summaryTokens)
+			if stats.BudgetState != tt.wantState {
+				t.Fatalf("state mismatch: got=%s want=%s", stats.BudgetState, tt.wantState)
+			}
+			// Check utilization is approximately correct (within 0.01).
+			diff := stats.ContextUtilization - tt.wantUtilization
+			if diff < -0.01 || diff > 0.01 {
+				t.Fatalf("utilization mismatch: got=%f want=%f", stats.ContextUtilization, tt.wantUtilization)
+			}
+		})
+	}
+}
+
+func TestContextBudgetShouldTruncate(t *testing.T) {
+	cb := DefaultContextBudget()
+
+	normal := cb.ComputeStats(100, 50, 0, 0, 0)
+	if cb.ShouldTruncate(normal) {
+		t.Fatal("should not truncate in normal state")
+	}
+
+	stretched := cb.ComputeStats(4000, 1000, 500, 0, 0)
+	if cb.ShouldTruncate(stretched) {
+		t.Fatal("should not truncate in stretched state")
+	}
+
+	critical := cb.ComputeStats(5000, 1500, 500, 0, 0)
+	if !cb.ShouldTruncate(critical) {
+		t.Fatal("should truncate in critical state")
+	}
+
+	stall := cb.ComputeStats(6000, 1500, 500, 0, 500)
+	if !cb.ShouldTruncate(stall) {
+		t.Fatal("should truncate in stall state")
+	}
+}
+
+func TestContextBudgetShouldSummarise(t *testing.T) {
+	cb := DefaultContextBudget()
+
+	normal := cb.ComputeStats(100, 50, 0, 0, 0)
+	if cb.ShouldSummarise(normal) {
+		t.Fatal("should not summarise in normal state")
+	}
+
+	stretched := cb.ComputeStats(4000, 1000, 500, 0, 0)
+	if !cb.ShouldSummarise(stretched) {
+		t.Fatal("should summarise in stretched state")
+	}
+}
+
+func TestContextBudgetStatsFields(t *testing.T) {
+	cb := DefaultContextBudget()
+	stats := cb.ComputeStats(2000, 500, 300, 200, 100)
+
+	if stats.ContextWindowTokens != cb.MaxTokens {
+		t.Fatalf("window tokens mismatch: got=%d want=%d", stats.ContextWindowTokens, cb.MaxTokens)
+	}
+	if stats.SummaryEnabled != true {
+		t.Fatal("summary should be enabled by default")
+	}
+	if stats.SummaryAvailable != true {
+		t.Fatal("summary should be available when summaryTokens > 0")
+	}
+	if stats.ReplyReserveTokens != cb.ReserveTokens {
+		t.Fatalf("reserve tokens mismatch: got=%d want=%d", stats.ReplyReserveTokens, cb.ReserveTokens)
+	}
+	if stats.GraphContextTokens != 200 {
+		t.Fatalf("graph tokens mismatch: got=%d want=%d", stats.GraphContextTokens, 200)
+	}
+	if stats.RetrievedTokens != 300 {
+		t.Fatalf("retrieved tokens mismatch: got=%d want=%d", stats.RetrievedTokens, 300)
+	}
+	if stats.RecentTokens != 2000 {
+		t.Fatalf("recent tokens mismatch: got=%d want=%d", stats.RecentTokens, 2000)
+	}
+}
+
+// ---- Memory Selector Tests (unchanged) ----
 
 func TestMemorySelectorSelectMemoriesByScoreWithinBudget(t *testing.T) {
 	ms := NewMemorySelector(DefaultContextBudget())

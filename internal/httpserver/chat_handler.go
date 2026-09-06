@@ -319,6 +319,11 @@ func (s *Server) chatStreamMessages(w http.ResponseWriter, r *http.Request) {
 		Messages: providerMsgs,
 	}
 
+	// Prompt 压缩（温和型：超 32K chars 才触发）
+	compressed, didCompress := CompressPrompt(&req)
+	if didCompress {
+		req = *compressed
+	}
 	decision := s.router.Decide(req)
 
 	resp, err := s.providers.ChatCompletion(r.Context(), decision.Provider, req)

@@ -32,6 +32,7 @@ const PricingPage = lazy(() => import('./pages/admin/PricingPage').then(m => ({ 
 const BroadcastPage = lazy(() => import('./pages/admin/BroadcastPage').then(m => ({ default: m.BroadcastPage })))
 const PresetsPage = lazy(() => import('./pages/PresetsPage').then(m => ({ default: m.PresetsPage })))
 const WsChatPage = lazy(() => import('./pages/WsChatPage').then(m => ({ default: m.WsChatPage })))
+const WebhooksPage = lazy(() => import('./pages/WebhooksPage').then(m => ({ default: m.WebhooksPage })))
 const OAuthCallbackPage = lazy(() => import('./pages/OAuthCallback').then(m => ({ default: m.OAuthCallbackPage })))
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPassword').then(m => ({ default: m.ForgotPasswordPage })))
 const ResetPasswordPage = lazy(() => import('./pages/ResetPassword').then(m => ({ default: m.ResetPasswordPage })))
@@ -64,122 +65,36 @@ export const router = createBrowserRouter([
   {
     element: <ProtectedRoute />,
     children: [
-      {
-        path: 'dashboard',
-        element: <DashboardPage />,
-      },
-      {
-        path: 'config-center',
-        element: <ConfigCenterPage />,
-      },
-      {
-        path: 'api-keys',
-        element: <ApiKeysPage />,
-      },
-      {
-        path: 'chat',
-        element: <ChatPage />,
-      },
-      {
-        path: 'ws-chat',
-        element: <WsChatPage />,
-      },
-      {
-        path: 'releases',
-        element: <ReleasesPage />,
-      },
-      {
-        path: 'audit-runtime',
-        element: <AuditRuntimePage />,
-      },
-      {
-        path: 'channels',
-        element: <ChannelsPage />,
-      },
-      {
-        path: 'assets',
-        element: <AssetsPage />,
-      },
-      {
-        path: 'tenant-keys',
-        element: <TenantKeysPage />,
-      },
-      {
-        path: 'audit-export',
-        element: <AuditExportPage />,
-      },
-      {
-        path: 'system',
-        element: <SystemPage />,
-      },
-      {
-        path: 'playground',
-        element: <PlaygroundPage />,
-      },
-      {
-        path: 'observability',
-        element: <ObservabilityPage />,
-      },
-      {
-        path: 'quota',
-        element: <QuotaPage />,
-      },
-      {
-        path: 'policies',
-        element: <PoliciesPage />,
-      },
-      {
-        path: 'memory-governance',
-        element: <MemoryGovernancePage />,
-      },
-      {
-        path: 'presets',
-        element: <PresetsPage />,
-      },
-      {
-        path: 'recommendations',
-        element: <RecommendationCenterPage />,
-      },
-      {
-        path: 'approvals',
-        element: <ApprovalsPage />,
-      },
-      {
-        path: 'policy-versions',
-        element: <PolicyVersionsPage />,
-      },
-      {
-        path: 'rollouts',
-        element: <RolloutsPage />,
-      },
-      {
-        path: 'runtime-observer',
-        element: <RuntimeObserverPage />,
-      },
-      {
-        path: 'drifts',
-        element: <DriftDashboardPage />,
-      },
-      {
-        path: 'billing',
-        element: <BillingPage />,
-      },
-      {
-        path: 'account',
-        element: <AccountPage />,
-      },
-      {
-        path: 'billing-pricing',
-        element: <PricingPage />,
-      },
-      {
-        path: 'broadcasts',
-        element: <BroadcastPage />,
-      },
-      {
-        path: '*',
-        element: <Navigate to="/dashboard" replace />,
-      },
+      { path: 'dashboard', element: <DashboardPage /> },
+      { path: 'config-center', element: <ConfigCenterPage /> },
+      { path: 'api-keys', element: <ApiKeysPage /> },
+      { path: 'chat', element: <ChatPage /> },
+      { path: 'ws-chat', element: <WsChatPage /> },
+      { path: 'releases', element: <ReleasesPage /> },
+      { path: 'audit-runtime', element: <AuditRuntimePage /> },
+      { path: 'channels', element: <ChannelsPage /> },
+      { path: 'assets', element: <AssetsPage /> },
+      { path: 'tenant-keys', element: <TenantKeysPage /> },
+      { path: 'audit-export', element: <AuditExportPage /> },
+      { path: 'system', element: <SystemPage /> },
+      { path: 'playground', element: <PlaygroundPage /> },
+      { path: 'observability', element: <ObservabilityPage /> },
+      { path: 'quota', element: <QuotaPage /> },
+      { path: 'policies', element: <PoliciesPage /> },
+      { path: 'memory-governance', element: <MemoryGovernancePage /> },
+      { path: 'presets', element: <PresetsPage /> },
+      { path: 'recommendations', element: <RecommendationCenterPage /> },
+      { path: 'approvals', element: <ApprovalsPage /> },
+      { path: 'policy-versions', element: <PolicyVersionsPage /> },
+      { path: 'rollouts', element: <RolloutsPage /> },
+      { path: 'runtime-observer', element: <RuntimeObserverPage /> },
+      { path: 'drifts', element: <DriftDashboardPage /> },
+      { path: 'billing', element: <BillingPage /> },
+      { path: 'account', element: <AccountPage /> },
+      { path: 'billing-pricing', element: <PricingPage /> },
+      { path: 'broadcasts', element: <BroadcastPage /> },
+      { path: 'webhooks', element: <WebhooksPage /> },
+      { path: '*', element: <Navigate to="/dashboard" replace /> },
     ],
   },
 ], {

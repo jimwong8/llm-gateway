@@ -20,6 +20,7 @@ import (
 	"llm-gateway/gateway/internal/controlplane"
 	"llm-gateway/gateway/internal/governance"
 	"llm-gateway/gateway/internal/httpserver"
+	"llm-gateway/gateway/internal/longcontext"
 	"llm-gateway/gateway/internal/memory"
 	"llm-gateway/gateway/internal/policy"
 	"llm-gateway/gateway/internal/providers"
@@ -215,12 +216,24 @@ func main() {
 	if akRateLimiter != nil {
 		srv = srv.WithAPIKeyRateLimiter(akRateLimiter, cfg.DefaultAPIKeyRPM)
 	}
+	var longContextHandler *httpserver.LongContextHandler
+	if cfg.LongContextEnabled {
+		if lcDB, lcErr := sql.Open("postgres", cfg.PostgresDSN); lcErr == nil {
+			lcRepo := longcontext.NewPostgresRepository(lcDB)
+			longContextHandler = httpserver.NewLongContextHandler(lcRepo, cfg.LongContextEnabled, cfg.LongContextMaxInputBytes)
+		} else {
+			slog.Warn("long context db init failed", "err", lcErr)
+		}
+	}
 	if memoryStore != nil {
 		srv = srv.WithMemoryAdminHandler(httpserver.NewMemoryAdminHandler(memoryStore))
 		if db, err := sql.Open("postgres", cfg.PostgresDSN); err != nil {
 			slog.Warn("preset store init failed", "err", err)
 		} else {
 			srv = srv.WithPresetStore(memory.NewPresetStore(db))
+		if longContextHandler != nil {
+			srv = srv.WithLongContextHandler(longContextHandler)
+		}
 			srv = srv.WithUsageLogStore(httpserver.NewSQLUsageLogStore(db))
 			srv = srv.WithMaskEnabled(cfg.MaskEnabled)
 		}
