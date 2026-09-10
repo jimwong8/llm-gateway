@@ -1,0 +1,21 @@
+openai	nvidia-nim-key-09	moonshotai/kimi-k3	0	0	0	rate_limited	2026-08-28 21:24:02.852079+00	429	0	0	unknown	\N	0		0	0	0	\N
+openai	nvidia-nim-key-10	deepseek-ai/deepseek-v4-pro-0813	0	0	0	probe_error	2026-08-28 21:22:35.952258+00	0	0	0	unknown	\N	0		0	0	0	\N
+openai	nvidia-nim-key-10	moonshotai/kimi-k3	0	0	0	rate_limited	2026-08-28 21:22:59.721513+00	429	0	0	unknown	\N	0		0	0	0	\N
+openai	ch-1787867784832947281	moonshotai/kimi-k3	0	0	0	probe_error	2026-08-28 21:16:34.569183+00	0	0	0	unknown	\N	0		0	0	0	\N
+openai	nvidia-nim-key-09	deepseek-ai/deepseek-v4-pro-0813	0	0	0	probe_error	2026-08-28 21:23:39.253521+00	0	0	0	unknown	\N	0		0	0	0	\N
+openai	nvidia-nim-key-06	moonshotai/kimi-k3	0	0	0	rate_limited	2026-08-28 21:26:06.967703+00	429	0	0	unknown	\N	0		0	0	0	\N
+openai	nvidia-nim-key-08	moonshotai/kimi-k3	0	0	0	rate_limited	2026-08-28 21:25:07.59093+00	429	0	0	unknown	\N	0		0	0	0	\N
+openai	nvidia-nim-key-07	deepseek-ai/deepseek-v4-pro-0813	0	0	0	unknown	2026-08-28 21:25:25.644598+00	200	0	0	unknown	\N	0		0	0	0	\N
+openai	nvidia-nim-key-07	moonshotai/kimi-k3	0	0	0	rate_limited	2026-08-28 21:25:31.640502+00	429	0	0	unknown	\N	0		0	0	0	\N
+openai	nvidia-nim-key-08	deepseek-ai/deepseek-v4-pro-0813	0	0	0	probe_error	2026-08-28 21:24:43.995301+00	0	0	0	unknown	\N	0		0	0	0	\N
+openai	nvidia-nim-key-06	deepseek-ai/deepseek-v4-pro-0813	0	0	0	unknown	2026-08-28 21:25:48.860283+00	200	0	0	unknown	\N	0		0	0	0	\N
+openai	nvidia-nim-key-03	deepseek-ai/deepseek-v4-pro-0813	0	0	0	rate_limited	2026-08-28 21:13:58.449287+00	429	0	0	unknown	\N	0		0	0	0	\N
+openai	nvidia-nim-key-03	moonshotai/kimi-k3	0	0	0	rate_limited	2026-08-28 21:14:02.156237+00	429	0	0	unknown	\N	0		0	0	0	\N
+openai	nvidia-nim-key-02	moonshotai/kimi-k3	0	0	0	rate_limited	2026-08-28 21:14:23.38991+00	429	0	0	unknown	\N	0		0	0	0	\N
+openai	nvidia-nim-key-02	deepseek-ai/deepseek-v4-pro-0813	0	0	0	rate_limited	2026-08-28 21:14:19.67553+00	429	1048576	8000	observed	2026-08-30 17:58:21.335948+00	200		8000	0	0	\N
+openai	nvidia-nim-key-05	deepseek-ai/deepseek-v4-pro-0813	0	0	0	rate_limited	2026-08-28 21:12:17.482082+00	429	0	0	unknown	\N	0		0	0	0	\N
+openai	nvidia-nim-key-05	moonshotai/kimi-k3	0	0	0	rate_limited	2026-08-28 21:12:21.179226+00	429	0	0	unknown	\N	0		0	0	0	\N
+openai	nvidia-nim-key-04	moonshotai/kimi-k3	0	0	0	unknown	2026-08-28 21:13:18.247983+00	200	0	0	unknown	\N	0		0	0	0	\N
+openai	nvidia-nim-key-04	deepseek-ai/deepseek-v4-pro-0813	0	0	0	unknown	2026-08-28 21:12:59.232518+00	200	0	0	unknown	\N	0		0	0	0	\N
+openai	nvidia-nim-key-01	deepseek-ai/deepseek-v4-pro-0813	0	0	0	rate_limited	2026-08-28 21:14:53.150201+00	429	0	0	unknown	\N	0		0	0	0	\N
+openai	nvidia-nim-key-01	moonshotai/kimi-k3	0	0	0	rate_limited	2026-08-28 21:15:01.83512+00	429	0	0	unknown	\N	0		0	0	0	\N

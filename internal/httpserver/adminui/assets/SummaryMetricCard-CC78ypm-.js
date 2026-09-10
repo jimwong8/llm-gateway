@@ -1,0 +1,1 @@
+import{a as m,j as r}from"./vendor-query-C-ewo9kA.js";const t=m.memo(function({label:a,value:s}){return r.jsxs("section",{className:"summary-metric-card",children:[r.jsx("span",{className:"summary-metric-card__label",children:a}),r.jsx("strong",{className:"summary-metric-card__value",children:s})]})});export{t as S};

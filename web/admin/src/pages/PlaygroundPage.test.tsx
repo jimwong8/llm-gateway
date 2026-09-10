@@ -1,0 +1,102 @@
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { clearToken, setToken } from '../lib/auth'
+import { PlaygroundPage } from './PlaygroundPage'
+
+describe('PlaygroundPage', () => {
+  beforeEach(() => {
+    setToken('demo-admin-token')
+  })
+
+  afterEach(() => {
+    clearToken()
+    vi.restoreAllMocks()
+  })
+
+  it('submits a chat completion request and renders response metadata', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(
+        JSON.stringify({
+          id: 'chatcmpl-1',
+          object: 'chat.completion',
+          model: 'gpt-4o-mini',
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: 'assistant',
+                content: '这是一个测试响应。',
+              },
+              finish_reason: 'stop',
+            },
+          ],
+          usage: {
+            prompt_tokens: 10,
+            completion_tokens: 20,
+            total_tokens: 30,
+          },
+        }),
+        {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Cache': 'HIT',
+            'X-Semantic-Score': '0.92',
+          },
+        },
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<PlaygroundPage />)
+
+    await user.clear(screen.getByLabelText('模型'))
+    await user.type(screen.getByLabelText('模型'), 'gpt-4o-mini')
+    await user.click(screen.getByRole('button', { name: '发送请求' }))
+
+    expect(await screen.findByText('响应 JSON')).toBeInTheDocument()
+    expect(screen.getByText('请求预览')).toBeInTheDocument()
+    expect(screen.getByText('HIT')).toBeInTheDocument()
+    expect(screen.getByText('0.92')).toBeInTheDocument()
+    expect(screen.getByText('200')).toBeInTheDocument()
+    // Verify the URL includes the chat completions endpoint
+    const chatCall = fetchMock.mock.calls.find(
+      (call) => String(call[0]).includes('/v1/chat/completions'),
+    )
+    expect(chatCall).toBeDefined()
+    expect(String(chatCall![0])).toContain('/v1/chat/completions')
+  })
+
+  it('adds a new message row', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/broadcasts')) {
+        return new Response(JSON.stringify({ object: 'list', data: [], read_ids: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(JSON.stringify({}), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<PlaygroundPage />)
+
+    expect(screen.getAllByLabelText('角色')).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: '添加消息' }))
+    expect(screen.getAllByLabelText('角色')).toHaveLength(2)
+  })
+})

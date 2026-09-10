@@ -1,0 +1,2 @@
+{"id":"ch-1787748760039170644","provider":"custom","base_url":"https://api.b.ai/v1","priority":"medium","weight":1,"models":["deepseek-v4-flash","mimo-v2.5","hy3","deepseek-v4-flash-vision-exp"],"tags":["production","b-ai"],"notes":"","status":"inactive"}
+{"id":"ch-1788100404685673124","provider":"custom","base_url":"https://api.b.ai/v1","priority":"highest","weight":100,"models":["deepseek-v4-flash","hy3"],"tags":["production","b-ai","new-key","verified-text"],"notes":"New credential verified direct upstream; explicit gateway route validation in progress","status":"active"}

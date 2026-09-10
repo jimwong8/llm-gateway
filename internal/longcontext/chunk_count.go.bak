@@ -1,0 +1,13 @@
+package longcontext
+
+import "context"
+
+// CountPendingChunks returns the number of chunks for a task that are still
+// pending (not yet claimed/mapped/failed). Used by the admin multi-chunk run
+// loop to decide whether more work remains.
+func (r *PostgresRepository) CountPendingChunks(ctx context.Context, taskID string, out *int) error {
+	if out == nil {
+		return nil
+	}
+	return r.db.QueryRowContext(ctx, `SELECT count(*) FROM long_context_chunks WHERE task_id=$1 AND status='pending'`, taskID).Scan(out)
+}

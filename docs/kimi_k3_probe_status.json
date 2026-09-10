@@ -1,0 +1,23 @@
+{
+  "ts": "2026-08-31T01:30:14Z",
+  "results": [
+    {
+      "channel": "nvidia-nim-key-01",
+      "status": 200,
+      "seconds": 12,
+      "response_model": "moonshotai/kimi-k3",
+      "nonempty": true,
+      "reasoning_nonempty": true,
+      "finish_reason": "stop"
+    }
+  ],
+  "admit": {
+    "channel": "nvidia-nim-key-01",
+    "status": 200,
+    "seconds": 12,
+    "response_model": "moonshotai/kimi-k3",
+    "nonempty": true,
+    "reasoning_nonempty": true,
+    "finish_reason": "stop"
+  }
+}

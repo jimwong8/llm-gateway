@@ -1,0 +1,252 @@
+package longcontext
+
+import (
+	"encoding/json"
+	"strings"
+)
+
+func RepairMapJSON(raw []byte) ([]byte, bool) {
+	var probe map[string]json.RawMessage
+	if json.Unmarshal(raw, &probe) == nil {
+		return raw, true
+	}
+	s := strings.TrimSpace(string(raw))
+	s = stripOuterFences(s)
+	s = normalizeSingleQuoteKeys(s)
+	s = repairUnquotedKeys(s)
+	s = repairSingleQuotedStrings(s)
+	s = repairTrailingCommas(s)
+	// Progressive truncation: try parsing after each candidate truncation point.
+	if fixed, ok := repairTruncated(s); ok {
+		return []byte(fixed), true
+	}
+	return []byte(s), false
+}
+
+func stripOuterFences(s string) string {
+	s = strings.TrimSpace(s)
+	if strings.HasPrefix(s, "```") {
+		if idx := strings.Index(s, "\n"); idx >= 0 {
+			s = s[idx+1:]
+		} else {
+			s = ""
+		}
+	}
+	if strings.HasSuffix(s, "```") {
+		s = s[:len(s)-3]
+	}
+	return strings.TrimSpace(s)
+}
+
+func normalizeSingleQuoteKeys(s string) string {
+	if !strings.Contains(s, "'") {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s) + 32)
+	runes := []rune(s)
+	for i := 0; i < len(runes); i++ {
+		c := runes[i]
+		if c == '\'' && i+2 < len(runes) {
+			j := i + 1
+			for j < len(runes) && isKeyRune(runes[j]) {
+				j++
+			}
+			if j > i+1 && j+1 < len(runes) && runes[j] == '\'' {
+				k := j + 1
+				for k < len(runes) && (runes[k] == ' ' || runes[k] == '\t') {
+					k++
+				}
+				if k < len(runes) && runes[k] == ':' {
+					b.WriteRune('"')
+					b.WriteString(string(runes[i+1:j]))
+					b.WriteRune('"')
+					b.WriteRune(':')
+					i = k
+					continue
+				}
+			}
+		}
+		b.WriteRune(c)
+	}
+	return b.String()
+}
+
+func repairUnquotedKeys(s string) string {
+	var b strings.Builder
+	b.Grow(len(s) + 64)
+	runes := []rune(s)
+	for i := 0; i < len(runes); i++ {
+		c := runes[i]
+		b.WriteRune(c)
+		if c != '{' && c != ',' && c != ':' {
+			continue
+		}
+		j := i + 1
+		for j < len(runes) && (runes[j] == ' ' || runes[j] == '\t' || runes[j] == '\n' || runes[j] == '\r') {
+			j++
+		}
+		k := j
+		for k < len(runes) && isKeyRune(runes[k]) {
+			k++
+		}
+		if k > j && k < len(runes) && runes[k] == ':' {
+			b.WriteString(string(runes[i+1:j]))
+			b.WriteRune('"')
+			b.WriteString(string(runes[j:k]))
+			b.WriteRune('"')
+			i = k - 1
+			continue
+		}
+	}
+	return b.String()
+}
+
+func isKeyRune(r rune) bool {
+	return r == '_' || r == '-' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+}
+
+func repairTrailingCommas(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	runes := []rune(s)
+	for i := 0; i < len(runes); i++ {
+		if runes[i] == ',' {
+			j := i + 1
+			for j < len(runes) && (runes[j] == ' ' || runes[j] == '\t' || runes[j] == '\n' || runes[j] == '\r') {
+				j++
+			}
+			if j < len(runes) && (runes[j] == '}' || runes[j] == ']') {
+				continue
+			}
+		}
+		b.WriteRune(runes[i])
+	}
+	return b.String()
+}
+
+func repairSingleQuotedStrings(s string) string {
+	if !strings.Contains(s, "'") {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	inDouble := false
+	inSingle := false
+	runes := []rune(s)
+	for i := 0; i < len(runes); i++ {
+		c := runes[i]
+		if c == '"' && !inSingle {
+			inDouble = !inDouble
+			b.WriteRune(c)
+			continue
+		}
+		if c == '\'' && !inDouble {
+			prev := ' '
+			if i > 0 {
+				prev = runes[i-1]
+			}
+			if !inSingle {
+				if prev == ':' || prev == ',' || prev == '[' || prev == '{' || i == 0 {
+					inSingle = true
+					b.WriteRune('"')
+					continue
+				}
+			} else {
+				inSingle = false
+				b.WriteRune('"')
+				continue
+			}
+		}
+		b.WriteRune(c)
+	}
+	return b.String()
+}
+
+// repairTruncated progressively truncates at each comma/bracket and
+// closes remaining brackets until the JSON parses. This handles model
+// output cut off mid-object (e.g. confidence:0.).
+func repairTruncated(s string) (string, bool) {
+	var probe map[string]json.RawMessage
+	if json.Unmarshal([]byte(s), &probe) == nil {
+		return s, true
+	}
+	candidates := []int{}
+	inStr := false
+	esc := false
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if inStr {
+			if esc {
+				esc = false
+				continue
+			}
+			if ch == '\\' {
+				esc = true
+				continue
+			}
+			if ch == '"' {
+				inStr = false
+			}
+			continue
+		}
+		if ch == '"' {
+			inStr = true
+		} else if ch == ',' || ch == '}' || ch == ']' {
+			candidates = append(candidates, i+1)
+		}
+	}
+	for j := len(candidates) - 1; j >= 0; j-- {
+		snippet := closeBrackets(s[:candidates[j]])
+		if json.Unmarshal([]byte(snippet), &probe) == nil {
+			return snippet, true
+		}
+	}
+	return s, false
+}
+
+// closeBrackets closes unterminated strings and appends missing brackets.
+func closeBrackets(s string) string {
+	var stack []byte
+	inStr := false
+	esc := false
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if inStr {
+			if esc {
+				esc = false
+				continue
+			}
+			if ch == '\\' {
+				esc = true
+				continue
+			}
+			if ch == '"' {
+				inStr = false
+			}
+			continue
+		}
+		switch ch {
+		case '"':
+			inStr = true
+		case '{', '[':
+			stack = append(stack, ch)
+		case '}', ']':
+			if len(stack) > 0 {
+				stack = stack[:len(stack)-1]
+			}
+		}
+	}
+	if inStr {
+		s += "\""
+	}
+	for i := len(stack) - 1; i >= 0; i-- {
+		switch stack[i] {
+		case '{':
+			s += "}"
+		case '[':
+			s += "]"
+		}
+	}
+	return s
+}

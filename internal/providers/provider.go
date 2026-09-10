@@ -1,0 +1,102 @@
+package providers
+
+import "context"
+
+// ChatToolCall mirrors OpenAI's assistant tool_call object so the gateway can
+// relay agent tool-calling sequences (Hermes and other agents depend on this)
+// to upstream without stripping the tool_call_id / tool_calls that the
+// upstream requires.
+type ChatToolCall struct {
+	ID       string               `json:"id"`
+	Type     string               `json:"type,omitempty"`
+	Function ChatToolCallFunction `json:"function,omitempty"`
+}
+
+type ChatToolCallFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+type ChatMessage struct {
+	Role       string         `json:"role"`
+	Content    string         `json:"content"`
+	Reasoning  string         `json:"reasoning,omitempty"`
+	ToolCallID string         `json:"tool_call_id,omitempty"`
+	ToolCalls  []ChatToolCall `json:"tool_calls,omitempty"`
+}
+
+type ChatTool struct {
+	Type     string           `json:"type,omitempty"`
+	Function ChatToolFunction `json:"function,omitempty"`
+}
+
+type ChatToolFunction struct {
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	Parameters  any    `json:"parameters,omitempty"`
+}
+
+type ChatCompletionRequest struct {
+	// PrefixFamily is the stable prompt-prefix fingerprint computed by the gateway
+	// before routing. The router may use it for sticky routing (affinity) so that
+	// requests sharing a prefix land on the same provider and reuse the provider
+	// prompt cache. It is empty unless explicitly set by the gateway.
+	PrefixFamily         string         `json:"-"`
+	PromptCacheKey       string         `json:"prompt_cache_key,omitempty"`
+	Model                string         `json:"model"`
+	Messages             []ChatMessage  `json:"messages"`
+	Stream               bool           `json:"stream,omitempty"`
+	Tools                []ChatTool     `json:"tools,omitempty"`
+	ChatTemplateKwargs   map[string]any `json:"chat_template_kwargs,omitempty"`
+	RouteMode            string         `json:"route_mode,omitempty"`
+	RouteChannel         string         `json:"route_channel,omitempty"`
+	RouteAbilities       []string       `json:"route_abilities,omitempty"`
+	RoutePolicyKey       string         `json:"route_policy_key,omitempty"`
+	PreferredModel       string         `json:"preferred_model,omitempty"`
+	CandidateModels      []string       `json:"candidate_models,omitempty"`
+	TaskHint             string         `json:"task_hint,omitempty"`
+	SessionID            string         `json:"session_id,omitempty"`
+	UserID               string         `json:"user_id,omitempty"`
+	TenantID             string         `json:"tenant_id,omitempty"`
+	MaxTokens            int            `json:"max_tokens,omitempty"`
+	ReasoningEffort      string         `json:"reasoning_effort,omitempty"`
+	ResponseFormat       map[string]any `json:"response_format,omitempty"`
+	Complexity           string         `json:"complexity,omitempty"`
+	ComplexityConfidence float64        `json:"complexity_confidence,omitempty"`
+}
+
+type PromptTokensDetails struct {
+	CachedTokens int `json:"cached_tokens,omitempty"`
+}
+
+type CompletionUsage struct {
+	PromptTokens        int                 `json:"prompt_tokens"`
+	CompletionTokens    int                 `json:"completion_tokens"`
+	TotalTokens         int                 `json:"total_tokens"`
+	PromptTokensDetails PromptTokensDetails `json:"prompt_tokens_details,omitempty"`
+	CachedTokens        int                 `json:"cached_tokens,omitempty"`
+	CacheWriteTokens    int                 `json:"cache_write_tokens,omitempty"`
+}
+
+type ChatCompletionResponse struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	Model   string `json:"model"`
+	Choices []struct {
+		Index   int `json:"index"`
+		Message struct {
+			Role             string `json:"role"`
+			Content          string `json:"content"`
+			Reasoning        string `json:"reasoning,omitempty"`
+			ReasoningContent string `json:"reasoning_content,omitempty"`
+		} `json:"message"`
+		FinishReason string `json:"finish_reason"`
+	} `json:"choices"`
+	Usage CompletionUsage `json:"usage"`
+}
+
+type Provider interface {
+	ChatCompletion(ctx context.Context, req ChatCompletionRequest) (ChatCompletionResponse, error)
+	Name() string
+}

@@ -1,0 +1,128 @@
+package longcontext
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+)
+
+// BlockingChannelSelector is satisfied by *ChannelSelector.
+type BlockingChannelSelector interface {
+	PickWithTimeout(context.Context) string
+}
+
+type CompletedChunkRecorder interface {
+	AddCompletedChunk(context.Context, string, int, int, float64) error
+}
+type MapTaskProcessor struct {
+	Claimer           ChunkClaimer
+	Selector          *ChannelSelector
+	BlockingSelector  BlockingChannelSelector
+	Caller            ChannelMapCaller
+	Results           interface {
+		SaveMapResult(context.Context, string, string, string, string, MapResult) error
+	}
+	Attempts          AttemptRecorder
+	Completed         CompletedChunkRecorder
+	WorkerID          string
+	Lease             time.Duration
+	Model             string
+	ChannelPickTimeout time.Duration
+	MaxRetries          int
+}
+
+func (p *MapTaskProcessor) ProcessTask(ctx context.Context, task *Task) error {
+	if task == nil {
+		return fmt.Errorf("task is required")
+	}
+	if p.Claimer == nil || p.Selector == nil || p.Caller == nil || p.Results == nil {
+		return fmt.Errorf("map task processor dependencies are required")
+	}
+	lease := p.Lease
+	if lease <= 0 {
+		lease = time.Minute
+	}
+	chunk, err := p.Claimer.ClaimChunk(ctx, task.ID, p.WorkerID, lease)
+	if err != nil {
+		return err
+	}
+	if chunk == nil {
+		return nil
+	}
+	maxRetries := p.MaxRetries
+	if maxRetries <= 0 {
+		maxRetries = 3
+	}
+	if chunk.MapAttempts > maxRetries {
+		_ = p.Attempts.MarkChunkFailed(ctx, chunk.ID, task.ID, "max retries exceeded")
+		_ = p.Claimer.ReleaseChunk(ctx, chunk.ID, p.WorkerID)
+		return nil
+	}
+	var channel string
+	if p.BlockingSelector != nil && p.ChannelPickTimeout > 0 {
+		pickCtx, cancel := context.WithTimeout(ctx, p.ChannelPickTimeout)
+		channel = p.BlockingSelector.PickWithTimeout(pickCtx)
+		cancel()
+	} else {
+		channel = p.Selector.Pick(time.Now())
+	}
+	if channel == "" {
+		_ = p.Claimer.ReleaseChunk(ctx, chunk.ID, p.WorkerID)
+		return fmt.Errorf("no healthy map channel")
+	}
+	started := time.Now()
+	raw, err := p.Caller.CallMap(ctx, channel, *chunk)
+	latency := int(time.Since(started).Milliseconds())
+	if err != nil {
+		return p.fail(ctx, task, chunk, channel, latency, err)
+	}
+	var result MapResult
+	if err = json.Unmarshal([]byte(raw), &result); err != nil {
+		return p.fail(ctx, task, chunk, channel, latency, fmt.Errorf("map response is not valid JSON: %w", err))
+	}
+	if err = p.Results.SaveMapResult(ctx, chunk.ID, task.ID, p.Model, channel, result); err != nil {
+		return p.fail(ctx, task, chunk, channel, latency, err)
+	}
+	p.Selector.Success(channel)
+	if p.Attempts != nil {
+		_ = p.Attempts.RecordAttempt(ctx, Attempt{TaskID: task.ID, ChunkID: chunk.ID, Phase: "mapping", Model: p.Model, Provider: channel, Status: "succeeded", LatencyMs: latency})
+	}
+	if p.Completed != nil {
+		inputTokens := estimateTokens(chunk.Content)
+		outputTokens := estimateTokens(raw)
+		cost := estimateCost(inputTokens + outputTokens)
+		if err = p.Completed.AddCompletedChunk(ctx, task.ID, inputTokens, outputTokens, cost); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func (p *MapTaskProcessor) fail(ctx context.Context, task *Task, chunk *Chunk, channel string, latency int, err error) error {
+	p.Selector.Failure(channel, 500, time.Now())
+	maxRetries := p.MaxRetries
+	if maxRetries <= 0 {
+		maxRetries = 3
+	}
+	if p.Attempts != nil {
+		_ = p.Attempts.RecordAttempt(ctx, Attempt{TaskID: task.ID, ChunkID: chunk.ID, Phase: "mapping", Model: p.Model, Provider: channel, Status: "failed", LatencyMs: latency, ErrorType: "map_error", ErrorMessage: err.Error()})
+		if chunk.MapAttempts >= maxRetries {
+			// Exceeded retry limit: mark chunk as permanently failed.
+			_ = p.Attempts.MarkChunkFailed(ctx, chunk.ID, task.ID, err.Error())
+			_ = p.Claimer.ReleaseChunk(ctx, chunk.ID, p.WorkerID)
+			return err
+		}
+	}
+	// Retry: release chunk back to pending for re-claim.
+	_ = p.Claimer.ReleaseChunk(ctx, chunk.ID, p.WorkerID)
+	return err
+}
+
+func estimateTokens(text string) int {
+	return len([]rune(text)) / 4
+}
+
+func estimateCost(tokens int) float64 {
+	// Rough estimate: $0.01 per 1K tokens.
+	return float64(tokens) * 0.00001
+}

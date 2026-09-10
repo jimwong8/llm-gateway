@@ -1,0 +1,254 @@
+{
+  "ts": "2026-09-10T07:17:01.572753+00:00",
+  "window_hours": "72",
+  "models": [
+    {
+      "model": "nvidia/riva-translate-4b-instruct-v1.1",
+      "requests": 18797,
+      "success_rate": 0.532,
+      "avg_latency_ms": 7758,
+      "p90_latency_ms": 15272,
+      "avg_tokens": 409
+    },
+    {
+      "model": "nvidia/ising-calibration-1.5-31b",
+      "requests": 13430,
+      "success_rate": 0.816,
+      "avg_latency_ms": 7585,
+      "p90_latency_ms": 15612,
+      "avg_tokens": 798
+    },
+    {
+      "model": "sensenova-6.8-flash-lite",
+      "requests": 11097,
+      "success_rate": 0.445,
+      "avg_latency_ms": 6571,
+      "p90_latency_ms": 16151,
+      "avg_tokens": 426
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "requests": 9027,
+      "success_rate": 0.377,
+      "avg_latency_ms": 2779,
+      "p90_latency_ms": 5233,
+      "avg_tokens": 61
+    },
+    {
+      "model": "minimaxai/minimax-m3",
+      "requests": 6836,
+      "success_rate": 0.0,
+      "avg_latency_ms": 780,
+      "p90_latency_ms": 1255,
+      "avg_tokens": 0
+    },
+    {
+      "model": "glm-5.3-flash",
+      "requests": 5901,
+      "success_rate": 0.723,
+      "avg_latency_ms": 3630,
+      "p90_latency_ms": 7135,
+      "avg_tokens": 122
+    },
+    {
+      "model": "glm-5.2",
+      "requests": 1305,
+      "success_rate": 0.582,
+      "avg_latency_ms": 4174,
+      "p90_latency_ms": 12429,
+      "avg_tokens": 522
+    },
+    {
+      "model": "mimo-v2.5",
+      "requests": 868,
+      "success_rate": 0.695,
+      "avg_latency_ms": 12352,
+      "p90_latency_ms": 20006,
+      "avg_tokens": 295
+    },
+    {
+      "model": "meituan/longcat-2.0:free",
+      "requests": 813,
+      "success_rate": 0.014,
+      "avg_latency_ms": 1497,
+      "p90_latency_ms": 563,
+      "avg_tokens": 2
+    },
+    {
+      "model": "KAT-Coder-Exp-72B-1010",
+      "requests": 86,
+      "success_rate": 0.0,
+      "avg_latency_ms": 954,
+      "p90_latency_ms": 1426,
+      "avg_tokens": 0
+    },
+    {
+      "model": "qwen3.8-flash",
+      "requests": 79,
+      "success_rate": 0.747,
+      "avg_latency_ms": 6959,
+      "p90_latency_ms": 20006,
+      "avg_tokens": 35
+    },
+    {
+      "model": "minimax/minimax-m3:free",
+      "requests": 27,
+      "success_rate": 0.185,
+      "avg_latency_ms": 6412,
+      "p90_latency_ms": 20006,
+      "avg_tokens": 33
+    },
+    {
+      "model": "minimax/minimax-m2.7:free",
+      "requests": 17,
+      "success_rate": 0.176,
+      "avg_latency_ms": 7618,
+      "p90_latency_ms": 12998,
+      "avg_tokens": 10
+    },
+    {
+      "model": "upstage/solar-pro4:free",
+      "requests": 15,
+      "success_rate": 0.0,
+      "avg_latency_ms": 530,
+      "p90_latency_ms": 559,
+      "avg_tokens": 0
+    },
+    {
+      "model": "inclusionai/ling-3.0-flash-fin",
+      "requests": 15,
+      "success_rate": 0.0,
+      "avg_latency_ms": 74,
+      "p90_latency_ms": 218,
+      "avg_tokens": 0
+    },
+    {
+      "model": "poolside/laguna-s-2.1:free",
+      "requests": 15,
+      "success_rate": 0.0,
+      "avg_latency_ms": 513,
+      "p90_latency_ms": 658,
+      "avg_tokens": 0
+    },
+    {
+      "model": "poolside/laguna-xs-2.1:free",
+      "requests": 15,
+      "success_rate": 0.0,
+      "avg_latency_ms": 451,
+      "p90_latency_ms": 538,
+      "avg_tokens": 0
+    },
+    {
+      "model": "stepfun/step-3.7-flash:free",
+      "requests": 15,
+      "success_rate": 0.0,
+      "avg_latency_ms": 452,
+      "p90_latency_ms": 514,
+      "avg_tokens": 0
+    },
+    {
+      "model": "agnes-3.0-flash",
+      "requests": 15,
+      "success_rate": 0.0,
+      "avg_latency_ms": 577,
+      "p90_latency_ms": 936,
+      "avg_tokens": 0
+    },
+    {
+      "model": "MiniMax-M3",
+      "requests": 6,
+      "success_rate": 1.0,
+      "avg_latency_ms": 5828,
+      "p90_latency_ms": 11038,
+      "avg_tokens": 174
+    },
+    {
+      "model": "moonshotai/kimi-k3",
+      "requests": 5,
+      "success_rate": 0.0,
+      "avg_latency_ms": 1664,
+      "p90_latency_ms": 2317,
+      "avg_tokens": 0
+    },
+    {
+      "model": "mod1",
+      "requests": 5,
+      "success_rate": 0.0,
+      "avg_latency_ms": 37440,
+      "p90_latency_ms": 95734,
+      "avg_tokens": 0
+    },
+    {
+      "model": "nvidia/nemotron-3.5-lightning:free",
+      "requests": 2,
+      "success_rate": 0.0,
+      "avg_latency_ms": 30318,
+      "p90_latency_ms": 54234,
+      "avg_tokens": 0
+    },
+    {
+      "model": "nvidia/nemotron-3-super-120b-a12b:free",
+      "requests": 1,
+      "success_rate": 0.0,
+      "avg_latency_ms": 89993,
+      "p90_latency_ms": 89993,
+      "avg_tokens": 0
+    },
+    {
+      "model": "minimax-m3",
+      "requests": 1,
+      "success_rate": 1.0,
+      "avg_latency_ms": 6539,
+      "p90_latency_ms": 6539,
+      "avg_tokens": 348
+    },
+    {
+      "model": "cohere/north-mini-code:free",
+      "requests": 1,
+      "success_rate": 0.0,
+      "avg_latency_ms": 89992,
+      "p90_latency_ms": 89992,
+      "avg_tokens": 0
+    },
+    {
+      "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+      "requests": 1,
+      "success_rate": 0.0,
+      "avg_latency_ms": 89994,
+      "p90_latency_ms": 89994,
+      "avg_tokens": 0
+    }
+  ],
+  "tasks": [
+    {
+      "task": "general",
+      "requests": 68395
+    }
+  ],
+  "auto_pool": [
+    {
+      "model": "sensenova-6.8-flash-lite",
+      "requests": 11097,
+      "success_rate": 0.445,
+      "avg_latency_ms": 6571
+    },
+    {
+      "model": "glm-5.2",
+      "requests": 1305,
+      "success_rate": 0.582,
+      "avg_latency_ms": 4174
+    },
+    {
+      "model": "minimaxai/minimax-m3",
+      "requests": 6836,
+      "success_rate": 0.0,
+      "avg_latency_ms": 780
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "requests": 9027,
+      "success_rate": 0.377,
+      "avg_latency_ms": 2779
+    }
+  ]
+}

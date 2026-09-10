@@ -1,0 +1,355 @@
+/* ========================================
+   Panels, Tables & Charts — 补 layout.css 中缺失的类
+   ======================================== */
+
+/* 通用 panel 容器 */
+.panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.5rem;
+}
+
+/* Dashboard session ops section */
+.dashboard-session-ops {
+  margin-top: 1.5rem;
+}
+
+.dashboard-session-ops__header {
+  margin-bottom: 1rem;
+}
+
+.dashboard-session-ops__section {
+  margin-top: 1rem;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--border-color);
+  padding-top: 1rem;
+}
+
+.dashboard-session-ops__section-header {
+  margin-bottom: 0.75rem;
+}
+
+.dashboard-session-ops__section-header h3 {
+  font-size: 1rem;
+  color: var(--text-primary);
+  margin: 0 0 0.25rem;
+  font-weight: 600;
+}
+
+.dashboard-session-ops__section-header p {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.dashboard-session-ops__metrics {
+  margin-bottom: 0.75rem;
+}
+
+/* Summary card grid */
+.summary-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Event table / list */
+.event-table {
+  color: var(--text-primary);
+}
+
+.event-table ul {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.event-table ul li {
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-hover);
+  border-left: 3px solid var(--blue-500);
+  border-radius: 4px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.event-table ul li strong {
+  color: var(--text-primary);
+  font-weight: 600;
+  margin-right: 0.25rem;
+}
+
+.event-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.event-table table th,
+.event-table table td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+.event-table table th {
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: var(--bg-hover);
+}
+
+.event-table table tr:hover td {
+  background: var(--bg-hover);
+}
+
+/* Empty state */
+.event-state {
+  padding: 1rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+}
+
+.config-error {
+  padding: 0.75rem 1rem;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: var(--radius-sm);
+  color: var(--yellow-500);
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+/* Dashboard charts panel */
+.dashboard-charts-panel {
+  margin-top: 1.5rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.5rem;
+}
+
+.dashboard-charts-panel__header {
+  margin-bottom: 1rem;
+}
+
+.dashboard-charts-panel__title {
+  font-size: 1.1rem;
+  color: var(--text-primary);
+  margin: 0;
+  font-weight: 600;
+}
+
+.dashboard-charts-panel__subtitle {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin: 0.25rem 0 0;
+}
+
+.dashboard-charts-panel__tabs {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.dashboard-chart-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.75rem;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.dashboard-chart-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.dashboard-chart-tab--active {
+  background: var(--blue-600);
+  color: #fff;
+  border-color: var(--blue-600);
+}
+
+.dashboard-chart-tab__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dashboard-chart-tab__label {
+  white-space: nowrap;
+}
+
+.dashboard-charts-panel__content {
+  min-height: 320px;
+}
+
+.dashboard-chart-container {
+  width: 100%;
+}
+
+.dashboard-chart-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+  gap: 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.dashboard-chart-loading__spinner {
+  width: 28px;
+  height: 28px;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-top-color: var(--blue-500);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.dashboard-chart-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  padding: 0.75rem 1rem;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-sm);
+  color: var(--red-400);
+  font-size: 0.85rem;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Billing page */
+.billing-section-title {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.billing-amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.billing-amount--negative {
+  color: var(--red-500);
+}
+
+.billing-amount--positive {
+  color: var(--green-500);
+}
+
+/* Dashboard partial failure warning */
+.dashboard-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin: 0.5rem 0 1rem;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: var(--radius-sm);
+  color: var(--yellow-300);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.dashboard-warning__icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* UserDashboardView section headings */
+.dashboard-section-title {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* UserDashboardView search input */
+.user-dashboard-search input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.user-dashboard-search input:focus {
+  outline: none;
+  border-color: var(--blue-500);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+/* UserDashboardView pagination */
+.user-dashboard-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 1rem;
+  gap: 0.5rem;
+}
+
+.user-dashboard-pagination button {
+  padding: 0.375rem 0.75rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.user-dashboard-pagination button:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.user-dashboard-pagination button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.user-dashboard-pagination span {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}

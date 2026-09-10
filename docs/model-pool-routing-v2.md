@@ -1,0 +1,168 @@
+# LLM Gateway 模型池科学路由改造记录
+
+日期: 2026-08-31
+对象: 10.100.1.17 LLM Gateway（双实例 llm-gateway@1/2，nginx :8085）
+
+## 背景
+用户反馈 AUTO 池中的 glm-5.2 从未被选中使用。排查确认根因:
+- deepseek-v4-flash 是 DEFAULT_MODEL，router.New() 内置增强分
+  (Capability 0.82 / Cost 0.90 / Latency 0.92 / Health 0.95 → 总评 0.877)
+- 其余池模型 (glm-5.2 等) 经 RegisterProductionModel 注册，硬编码基础分
+  (0.8/0.8/0.8/0.8 → 总评 0.800)
+- 评分公式 Capability 权重最高 (0.45)，deepseek 恒胜，glm 永远落选
+
+## 改动清单（全部在 17 号机工作树）
+
+### 1. 评分公平化（internal/router/router.go RegisterProductionModel）
+- 池模型注册分从 0.8 提到与 defaultModel 相同的增强分
+  (0.82/0.90/0.92/0.95)，让 AUTO 池所有模型从公平起点竞争
+- 备份: internal/router/router.go.bak-poolscore-20260830-184139
+
+### 2. Channel-aware 同分选择（新增 selectBestChannelAware）
+- 移除临时随机 tie-break（math/rand），改为在 Decide 中:
+  同分候选优先选「有 enabled channel」的模型，无 channel 才取首个
+- 保证 prefix affinity 测试通过且路由更可靠
+- 备份: internal/router/router.go.bak-tiebreak-20260830-184638
+
+### 3. 任务识别增强（classifyTask）
+- 原只识别 code/analysis/general 三类
+- 现识别: code / math / translate / summarize / reasoning / creative / analysis / general
+- 优先级: TaskHint 头 > translate > code > math > summarize > reasoning > creative > analysis > general
+- 中英文关键词覆盖（代码/翻译/数学/摘要/推理/写作/分析）
+- 修复: translate 请求含 "hello world" 被 code 分支误判的问题（translate 提前）
+
+### 4. 模型能力画像 taskFit（scoreCandidates）
+- 同任务内未命中模型 taskBoost=0.72，命中=1.0
+- 未命中时按 targetTask 给擅长模型加 taskFit 系数:
+  - code: glm / deepseek-v4-pro +0.08
+  - math|reasoning: glm / minimax +0.06
+  - analysis: deepseek-v4-pro / glm +0.06
+  - translate: deepseek-v4-flash / sensenova +0.04
+  - creative: glm / deepseek-v4-pro +0.05
+- 实现"物尽其用": 代码任务倾向 glm，推理任务倾向 minimax/glm，翻译/摘要走快模型
+
+### 5. 自适应反馈闭环（RecordFeedback 实现）
+- 原为空实现，现维护每模型滑动窗口 (requests/successes/latency)
+- ≥5 样本后更新 registry 的 HealthScore/LatencyScore:
+  - Health = 0.3 + 0.7*成功率 (90%→1.0, 60%→0.55)
+  - Latency = 1s 内→1.0，10s→~0.5，30s+→0.25
+- 让评分自动进化: 表现好的模型自然上位，慢/失败模型降分
+- 实测验证: glm 超时后健康分下降，通用请求转向快模型
+
+### 6. 部署修正（systemd 双单元冲突）
+- 发现 llm-gateway-1/2.service（旧独立单元）与 llm-gateway@1/2.service（模板单元）
+  同时存在且互相抢占 8090/8091 端口，导致模板单元反复 bind 失败
+- 处置: 禁用独立单元 (llm-gateway-1/2)，启用模板单元 (llm-gateway@1/2)
+- 模板单元带 proxy.conf drop-in + ExecStartPre postgres 健康检查，是生产标准
+- 验证: 132 channels 注册，5 默认池模型绑定 channel，/v1/models 正常
+
+### 7. 监控（新增）
+- /usr/local/bin/model_pool_report.py: 每小时聚合 usage_events
+  输出 docs/model_pool_report.json（各模型成功率/延迟/p90/任务分布）
+- cron: "17 * * * * python3 /usr/local/bin/model_pool_report.py"
+- kimi_k3_monitor.sh 保持每 30 分钟探测（原有）
+
+## 端到端验证结果（部署后实测）
+- AUTO 通用: sensenova-6.8-flash-lite / deepseek-v4-flash 健康轮转，<4s
+- CODE 任务: glm-5.2 优先 (task-fit boost: code model)
+- MATH 任务: minimax-m3 / glm-5.2 (task-fit boost: reasoning model)
+- TRANSLATE: sensenova (task-fit boost: fast general model)
+- SUMMARIZE: sensenova (general weighted routing)
+- 全部响应 finish=stop，内容非空
+
+## 回滚方法
+- 二进制备份: llm-gateway.bak-before-v2-20260830-192715
+- 源码备份: *.bak-poolscore-* / *.bak-tiebreak-*
+- 回滚: 停实例 → 恢复备份二进制 → 启动 → 验证 /v1/models
+
+## 跨重启持久化（v2.1 — 2026-08-30 20:07）
+### 问题
+RecordFeedback 的评分窗口在进程内存，重启后丢失，AUTO 路由从 0 开始重新学习。
+
+### 方案
+- model_limits 表新增 health_score / latency_score / score_updated_at 三列
+- limits.Store 提供 ListScores / SaveScore 方法读写持久化评分
+- Router.RecordFeedback 每次更新评分后异步写库（provider='custom', channel='' 单行 upsert）
+- 启动时 ListScores 加载 → SetModelScores 注入路由注册表
+
+### 验证
+- 实测写入: DB 中 3 模型评分健康（glm-5.2 health=0.65, deepseek-flash=0.58, sensenova-lite=0.53）
+- 重启加载: 日志 "loaded persisted model scores", "count":3
+- 重启后路由: 4/6 请求正常（2 超时属上游限速，路由选择正确）
+
+### 回滚
+- 二进制: llm-gateway.bak-before-persist-20260830
+- 源码: patch_persist1/2/3.py 在 ~/scripts/（回滚见 patch_classify.py 模式）
+
+## 直连加分接线（v2.2 — 2026-08-30 20:32）
+### 问题
+`MarkDirectModel` 定义了但全仓零调用，`directModels` 只写不读——skill 声称的"直连通道 +0.05 评分加成"从未生效（死代码）。
+
+### 修复
+- `router.Channel` 增加 `Tags []string` 字段
+- `SetChannels` 检测 tags 含 direct/直连/domestic-direct → 调 `MarkDirectModel(model)`
+- `scoreCandidates` 拆出 `scoreCandidatesWithDirect`，直连模型 +0.05
+- main.go 两处 channel 构建带上 `ch.Tags`
+- **同分随机轮询**：`selectBestChannelAware` 同分组内有 channel 的候选中随机选（原按注册顺序取第一个 → glm-5.2 垄断）
+
+### 验证
+- 30/30 请求 reason 显示 "direct-channel boost"，直连加分生效
+- glm-5.2 因持久化健康分(0.65)高于 deepseek-flash(0.58)而持续胜出（0.9356 vs 0.905）
+- 用户选择"保持现状，让自适应反馈自然调整"——glm 健康分高就用它，数据积累后自动平衡
+- 随机 tie-break 已部署，未来若出现真同分场景会随机轮转
+
+### 回滚
+- 二进制: llm-gateway.bak-before-directwire-20260830
+- 源码: patch_directwire.py + patch_tiebreak_random.py（~/scripts/）
+
+## 遗留观察
+- kimi-k3 (非 AUTO 池) 72h 成功率仅 37%，未入池，不影响 AUTO
+- hy3 / deepseek-v4-flash-0731:free 成功率 0%（非池内），如需使用需先验证
+## B.AI deepseek-v4-flash 剥离生产与稳定性修复（v2.3 — 2026-08-31）
+
+### 背景
+新增 3 个 B.AI credential 时，用户指出其中 1 个重复，且 B.AI 只能经代理访问。按“不能因偶发成功就进生产 AUTO 池”的准入原则，完成以下收敛与修复。
+
+### 去重结果
+- 重复指纹：`50b680cc066e`
+- 重复 channel：`ch-17881245636780842`
+- 处理：`ch-17881245636780842` 设为 `inactive`，避免同一把 key 重复参与轮询。
+
+### 代理依赖验证
+- `https://api.b.ai/v1/models` 从 17 号机直连：超时。
+- 走既有代理 `10.100.1.110:7893`：立即返回 `401 Unauthorized`，说明网络链路已到达上游，仅缺认证。
+- 结论：B.AI credential 必须在 gateway 进程代理环境下使用；gateway 运行环境已确认带 `HTTP_PROXY/HTTPS_PROXY/ALL_PROXY/NO_PROXY`。
+
+### 根因修复
+1. **429 处理自锁死**
+   - 位置：`internal/providers/registry.go` 的 `recordFailure()`。
+   - 问题：函数进入时已 `r.mu.Lock()`，429 分支又调用 `r.mu.Lock()`，导致该 gateway 实例死锁，表现为后续请求 20s/35s/60s 超时。
+   - 修复：删除 429 分支的二次加锁，在已持锁状态下写 `coolDowns`。
+2. **B.AI `reasoning_content` 兼容**
+   - B.AI 实际响应包含 `reasoning_content`，但 gateway 只识别 `reasoning`。
+   - 修复：`ChatCompletionResponse.Choices[0].Message` 增加 `ReasoningContent`，`responseIsEmptyOrTruncated()` 同时识别 `reasoning` 与 `reasoning_content`。
+   - 同步更新匿名 struct 构造点：`anthropic.go`、`mock.go`、`registry_test.go`。
+
+### 生产准入决策
+- B.AI `hy3`：保留生产，两个 unique active channel 均显式路由验证成功，HTTP 200，带 `reasoning_content`。
+- B.AI `deepseek-v4-flash`：从生产承载中移除。
+  - 上游直连会出现快速 429。
+  - gateway 路径曾受上述死锁影响。
+  - 不满足“稳定端到端 + 不污染 AUTO 评分”的准入标准。
+
+### 数据库变更
+- `ch-1788100404685673124`：models 从 `{deepseek-v4-flash,hy3}` 改为 `{hy3}`。
+- `ch-17881245636780781`：保持 `{hy3}`。
+- `ch-17881245636780842`：保持 `{hy3}` 且 `inactive`（重复 key）。
+- active `deepseek-v4-flash` 生产 channel 数：7，全部为 SenseNova。
+
+### 端到端验证
+- `llm-gateway@1.service` / `llm-gateway@2.service`：active。
+- `hy3` 显式路由到旧 B.AI active channel：HTTP 200。
+- `hy3` 显式路由到新唯一 B.AI channel：HTTP 200。
+- 8085 普通 `deepseek-v4-flash` 连续 12 次请求：全部落到 `sensenova-file-*` / `sensenova-free`，0 次落到 B.AI。
+
+### 回滚与备份
+- channel 备份：`docs/bai_channels_backup_before_remove_ds_1756591008.txt`。
+- 二进制按部署步骤保留 `llm-gateway.bak-before-baifix*.date` 备份。
+- 如需回滚，恢复 channel 行后重启两个 gateway 实例，并重新验证 `/v1/models` 与 `X-Route-Channel`。

@@ -1,0 +1,654 @@
+package router
+
+import (
+	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
+
+	"llm-gateway/gateway/internal/contextbudget"
+	"llm-gateway/gateway/internal/providers"
+)
+
+type ModelProfile struct {
+	ID           string  `json:"id"`
+	Provider     string  `json:"provider"`
+	Task         string  `json:"task"`
+	Description  string  `json:"description"`
+	Capability   float64 `json:"capability"`
+	CostScore    float64 `json:"cost_score"`
+	LatencyScore float64 `json:"latency_score"`
+	HealthScore  float64 `json:"health_score"`
+}
+
+type CandidateScore struct {
+	Model      string  `json:"model"`
+	Provider   string  `json:"provider"`
+	Channel    string  `json:"channel,omitempty"`
+	Ability    string  `json:"ability,omitempty"`
+	Task       string  `json:"task"`
+	TotalScore float64 `json:"total_score"`
+	Reason     string  `json:"reason"`
+}
+
+type FallbackRoute struct {
+	Model    string `json:"model"`
+	Provider string `json:"provider"`
+	Reason   string `json:"reason"`
+}
+
+type Decision struct {
+	Model         string           `json:"model"`
+	Provider      string           `json:"provider"`
+	Channel       string           `json:"channel,omitempty"`
+	Ability       string           `json:"ability,omitempty"`
+	Task          string           `json:"task"`
+	RouteMode     string           `json:"route_mode"`
+	Reason        string           `json:"reason"`
+	Scores        []CandidateScore `json:"scores,omitempty"`
+	FallbackModel string           `json:"fallback_model,omitempty"`
+	FallbackChain []FallbackRoute  `json:"fallback_chain,omitempty"`
+}
+
+type Channel struct {
+	ID       string  `json:"id"`
+	Provider string  `json:"provider"`
+	Model    string  `json:"model"`
+	Task     string  `json:"task"`
+	Enabled  bool    `json:"enabled"`
+	Priority int     `json:"priority"`
+	Weight   float64 `json:"weight"`
+}
+
+type Ability struct {
+	ID             string   `json:"id"`
+	TenantID       string   `json:"tenant_id,omitempty"`
+	RequestedModel string   `json:"requested_model,omitempty"`
+	Task           string   `json:"task,omitempty"`
+	ChannelIDs     []string `json:"channel_ids"`
+	Enabled        bool     `json:"enabled"`
+	Priority       int      `json:"priority"`
+}
+
+const autoContextWindow = 1_048_576
+
+type Router struct {
+	defaultModel       string
+	defaultProv        string
+	defaultPool        map[string]bool
+	registry           []ModelProfile
+	channels           map[string]Channel
+	abilities          map[string]Ability
+	globalPolicy       Policy
+	prefixAffinity     map[string]string
+	prefixAffinityOn   bool
+	modelChannels      map[string][]string
+	directModels       map[string]bool
+	metrics            map[string]HistoricalMetrics
+	healthCheck        func(provider string) bool
+	contextWindows     map[string]int // declared/provider context window
+	safeContextWindows map[string]int // measured safe execution window
+}
+
+func New(defaultProvider, defaultModel string) *Router {
+	return &Router{
+		defaultModel:       defaultModel,
+		defaultProv:        defaultProvider,
+		defaultPool:        map[string]bool{},
+		contextWindows:     map[string]int{},
+		safeContextWindows: map[string]int{},
+		registry: []ModelProfile{
+			{ID: defaultModel, Provider: defaultProvider, Task: "general", Description: "default general model", Capability: 0.82, CostScore: 0.90, LatencyScore: 0.92, HealthScore: 0.95},
+			{ID: "gpt-4o-mini", Provider: "openai", Task: "general", Description: "fast general chat model", Capability: 0.82, CostScore: 0.90, LatencyScore: 0.92, HealthScore: 0.95},
+			{ID: "deepseek-coder", Provider: "mock-code", Task: "code", Description: "coding-focused route target", Capability: 0.97, CostScore: 0.88, LatencyScore: 0.82, HealthScore: 0.90},
+			{ID: "claude-sonnet", Provider: "mock-analysis", Task: "analysis", Description: "analysis-focused route target", Capability: 0.95, CostScore: 0.70, LatencyScore: 0.78, HealthScore: 0.94},
+			{ID: "fail-code", Provider: "mock-fail", Task: "code", Description: "failure injection model for fallback testing", Capability: 0.99, CostScore: 0.95, LatencyScore: 0.95, HealthScore: 0.10},
+		},
+	}
+}
+
+func (r *Router) initializeControlPlane() {
+	if r.channels == nil {
+		r.channels = map[string]Channel{}
+	}
+	if r.abilities == nil {
+		r.abilities = map[string]Ability{}
+	}
+}
+
+func (r *Router) SetModelContextWindows(windows map[string]int) {
+	if r.contextWindows == nil {
+		r.contextWindows = make(map[string]int)
+	}
+	for model, window := range windows {
+		if strings.TrimSpace(model) != "" && window > 0 {
+			r.contextWindows[strings.ToLower(strings.TrimSpace(model))] = window
+		}
+	}
+}
+
+func (r *Router) SetModelSafeContextWindows(windows map[string]int) {
+	if r.safeContextWindows == nil {
+		r.safeContextWindows = make(map[string]int)
+	}
+	for model, window := range windows {
+		if strings.TrimSpace(model) != "" && window > 0 {
+			r.safeContextWindows[strings.ToLower(strings.TrimSpace(model))] = window
+		}
+	}
+}
+
+func (r *Router) contextWindow(model string) int {
+	key := strings.ToLower(strings.TrimSpace(model))
+	if window := r.safeContextWindows[key]; window > 0 {
+		return window
+	}
+	return r.contextWindows[key]
+}
+
+func (r *Router) declaredContextWindow(model string) int {
+	return r.contextWindows[strings.ToLower(strings.TrimSpace(model))]
+}
+
+// EffectiveContextWindow exposes the configured/measured safety window for a
+// model so the HTTP guard and the router always agree on capacity.
+func (r *Router) EffectiveContextWindow(model string) int {
+	return r.contextWindow(model)
+}
+
+// MaxContextWindow returns the largest configured window (used as the AUTO
+// reject ceiling at the HTTP guard).
+func (r *Router) MaxContextWindow() int {
+	max := 0
+	for _, window := range r.contextWindows {
+		if window > max {
+			max = window
+		}
+	}
+	return max
+}
+
+func requestContextTokens(req providers.ChatCompletionRequest) int {
+	tools, _ := json.Marshal(req.Tools)
+	messages := make([]contextbudget.Message, 0, len(req.Messages))
+	for _, msg := range req.Messages {
+		messages = append(messages, contextbudget.Message{Role: msg.Role, Content: msg.Content})
+	}
+	return contextbudget.Estimate(contextbudget.Request{Messages: messages, ToolsJSON: string(tools), MaxOutputTokens: req.MaxTokens})
+}
+
+func (r *Router) SetDefaultModelPool(models []string) {
+	if r.defaultPool == nil {
+		r.defaultPool = make(map[string]bool)
+	}
+	for _, model := range models {
+		model = strings.ToLower(strings.TrimSpace(model))
+		if model != "" {
+			r.defaultPool[model] = true
+		}
+	}
+}
+
+func (r *Router) Models() []ModelProfile { return r.registry }
+
+func (r *Router) SetChannels(channels []Channel) {
+	r.initializeControlPlane()
+	r.channels = map[string]Channel{}
+	for _, channel := range channels {
+		if strings.TrimSpace(channel.ID) == "" {
+			continue
+		}
+		if channel.Weight == 0 {
+			channel.Weight = 1
+		}
+		r.channels[strings.ToLower(strings.TrimSpace(channel.ID))] = channel
+	}
+}
+
+func (r *Router) SetAbilities(abilities []Ability) {
+	r.initializeControlPlane()
+	r.abilities = map[string]Ability{}
+	for _, ability := range abilities {
+		if strings.TrimSpace(ability.ID) == "" {
+			continue
+		}
+		r.abilities[strings.ToLower(strings.TrimSpace(ability.ID))] = ability
+	}
+}
+
+// SetGlobalPolicy 允许在运行时动态注入全局路由策略（常用于动态配置重载）
+func (r *Router) SetGlobalPolicy(p Policy) {
+	r.globalPolicy = p
+}
+
+func (r *Router) Decide(req providers.ChatCompletionRequest) Decision {
+	r.initializeControlPlane()
+	task := classifyTask(req)
+	mode := normalizedRouteMode(req.RouteMode)
+
+	// OpenAI clients send the explicit target in Model. Normalize it into
+	// PreferredModel before policy and AUTO routing can replace it.
+	if strings.TrimSpace(req.PreferredModel) == "" && strings.TrimSpace(req.Model) != "" && !strings.EqualFold(strings.TrimSpace(req.Model), "AUTO") {
+		req.PreferredModel = strings.TrimSpace(req.Model)
+	}
+
+	if strings.TrimSpace(req.PreferredModel) != "" {
+		if window := r.contextWindow(req.PreferredModel); window > 0 && !contextbudget.Fits(requestContextTokens(req), window, 0.9) {
+			return Decision{RouteMode: "context_limit", Reason: "requested context exceeds model safety window"}
+		}
+		chosen := r.lookup(req.PreferredModel)
+		decisionMode := "hybrid"
+		if mode == "manual" {
+			decisionMode = "manual"
+		}
+		decision := Decision{Model: chosen.ID, Provider: chosen.Provider, Task: task, RouteMode: decisionMode, Reason: "explicit model specified by caller", Scores: []CandidateScore{{Model: chosen.ID, Provider: chosen.Provider, Task: chosen.Task, TotalScore: 1.0, Reason: "explicit model override"}}}
+		if channel, ok := r.channelForModel(chosen.ID); ok {
+			decision.Channel = channel.ID
+			decision.Provider = channel.Provider
+		}
+		return decision
+	}
+
+	// 全局策略优先（仅在没有明确模型时）
+	if r.globalPolicy != nil {
+		if score, err := r.globalPolicy.Execute(req, r); err == nil && score != nil {
+			decision := Decision{
+				Model:     score.Model,
+				Provider:  score.Provider,
+				Task:      task,
+				RouteMode: "policy",
+				Reason:    score.Reason,
+				Scores:    []CandidateScore{*score},
+			}
+			if channel, ok := r.channelForModel(decision.Model); ok {
+				decision.Channel = channel.ID
+				decision.Provider = channel.Provider
+			}
+			return decision
+		}
+	}
+
+	if decision, ok := r.decideByControlPlane(req, task, mode); ok {
+		return decision
+	}
+
+	pool := filterCandidates(r.registry, req.CandidateModels)
+	if len(pool) == 0 && len(r.defaultPool) > 0 {
+		for _, item := range r.registry {
+			if r.defaultPool[strings.ToLower(strings.TrimSpace(item.ID))] {
+				pool = append(pool, item)
+			}
+		}
+	}
+	if len(pool) == 0 {
+		pool = r.registry
+	}
+	if len(pool) > 0 {
+		required := requestContextTokens(req)
+		filtered := make([]ModelProfile, 0, len(pool))
+		knownWindows := 0
+		for _, item := range pool {
+			window := r.declaredContextWindow(item.ID)
+			// AUTO is a homogeneous 1M pool. Unknown and smaller-window
+			// models are excluded instead of being selected for short requests.
+			if window != autoContextWindow {
+				continue
+			}
+			knownWindows++
+			if contextbudget.Fits(required, window, 0.9) {
+				filtered = append(filtered, item)
+			}
+		}
+		if len(filtered) == 0 && knownWindows > 0 {
+			return Decision{RouteMode: "long_context_required", Reason: "no candidate model fits the requested context safety window"}
+		}
+		pool = filtered
+	}
+
+	// Sticky routing by prompt prefix (AUTO mode only, no explicit model).
+	if r.prefixAffinityOn && strings.TrimSpace(req.PrefixFamily) != "" {
+		if pinned := r.prefixAffinity[req.PrefixFamily]; pinned != "" {
+			if prof := r.lookup(pinned); prof.Provider != "" {
+				decision := Decision{Model: prof.ID, Provider: prof.Provider, Task: task, RouteMode: "prefix_affinity", Reason: "prefix_family pinned to previous model", Scores: []CandidateScore{{Model: prof.ID, Provider: prof.Provider, Task: prof.Task, TotalScore: 1.0, Reason: "sticky prefix"}}}
+				if channel, ok := r.channelForModel(prof.ID); ok {
+					decision.Channel = channel.ID
+					decision.Provider = channel.Provider
+				}
+				return decision
+			}
+		}
+	}
+
+	scores := scoreCandidates(pool, task)
+	if len(scores) == 0 {
+		fallback := r.lookup(r.defaultModel)
+		return Decision{Model: fallback.ID, Provider: fallback.Provider, Task: task, RouteMode: mode, Reason: "fallback to default model"}
+	}
+
+	best := scores[0]
+	decision := Decision{Model: best.Model, Provider: best.Provider, Task: task, RouteMode: mode, Reason: best.Reason, Scores: scores}
+	if channel, ok := r.channelForModel(best.Model); ok {
+		decision.Channel = channel.ID
+		decision.Provider = channel.Provider
+	}
+	if r.prefixAffinityOn && strings.TrimSpace(req.PrefixFamily) != "" {
+		r.prefixAffinityPin(req.PrefixFamily, best.Model)
+	}
+	if len(scores) > 1 {
+		decision.FallbackModel = scores[1].Model
+		chain := make([]FallbackRoute, 0, len(scores)-1)
+		for _, s := range scores[1:] {
+			chain = append(chain, FallbackRoute{Model: s.Model, Provider: s.Provider, Reason: s.Reason})
+		}
+		decision.FallbackChain = chain
+	}
+	return decision
+}
+
+func (r *Router) decideByControlPlane(req providers.ChatCompletionRequest, task, mode string) (Decision, bool) {
+	if strings.TrimSpace(req.RouteChannel) != "" {
+		channel, ok := r.lookupChannel(req.RouteChannel)
+		if !ok || !channel.Enabled {
+			return Decision{}, false
+		}
+		profile := r.lookup(channel.Model)
+		profile.Provider = channel.Provider
+		return Decision{
+			Model:     profile.ID,
+			Provider:  profile.Provider,
+			Channel:   channel.ID,
+			Task:      task,
+			RouteMode: "channel",
+			Reason:    "explicit route_channel requested",
+			Scores:    []CandidateScore{{Model: profile.ID, Provider: profile.Provider, Channel: channel.ID, Task: profile.Task, TotalScore: 1.0, Reason: "explicit route_channel override"}},
+		}, true
+	}
+
+	if len(req.RouteAbilities) == 0 {
+		return Decision{}, false
+	}
+
+	type routeCandidate struct {
+		ability Ability
+		channel Channel
+		profile ModelProfile
+		score   float64
+		reason  string
+	}
+
+	candidates := make([]routeCandidate, 0)
+	for _, abilityID := range req.RouteAbilities {
+		ability, ok := r.lookupAbility(abilityID)
+		if !ok || !ability.Enabled {
+			continue
+		}
+		if ability.Task != "" && !strings.EqualFold(ability.Task, task) {
+			continue
+		}
+		if ability.RequestedModel != "" && strings.TrimSpace(req.Model) != "" && !strings.EqualFold(ability.RequestedModel, req.Model) {
+			continue
+		}
+		for _, channelID := range ability.ChannelIDs {
+			channel, ok := r.lookupChannel(channelID)
+			if !ok || !channel.Enabled {
+				continue
+			}
+			profile := r.lookup(channel.Model)
+			profile.Provider = channel.Provider
+			baseScore := scoreCandidates([]ModelProfile{profile}, task)[0]
+			priorityBoost := 0.0
+			if ability.Priority > 0 {
+				priorityBoost += 1.0 / float64(ability.Priority)
+			}
+			if channel.Priority > 0 {
+				priorityBoost += 1.0 / float64(channel.Priority)
+			}
+			weightedScore := baseScore.TotalScore + priorityBoost + channel.Weight*0.01
+			candidates = append(candidates, routeCandidate{
+				ability: ability,
+				channel: channel,
+				profile: profile,
+				score:   weightedScore,
+				reason:  fmt.Sprintf("ability %s matched channel %s", ability.ID, channel.ID),
+			})
+		}
+	}
+
+	if len(candidates) == 0 {
+		return Decision{}, false
+	}
+
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].score > candidates[j].score })
+	scores := make([]CandidateScore, 0, len(candidates))
+	for _, candidate := range candidates {
+		scores = append(scores, CandidateScore{
+			Model:      candidate.profile.ID,
+			Provider:   candidate.profile.Provider,
+			Channel:    candidate.channel.ID,
+			Ability:    candidate.ability.ID,
+			Task:       candidate.profile.Task,
+			TotalScore: candidate.score,
+			Reason:     candidate.reason,
+		})
+	}
+	decision := Decision{
+		Model:     candidates[0].profile.ID,
+		Provider:  candidates[0].profile.Provider,
+		Channel:   candidates[0].channel.ID,
+		Ability:   candidates[0].ability.ID,
+		Task:      task,
+		RouteMode: "ability",
+		Reason:    candidates[0].reason,
+		Scores:    scores,
+	}
+	if len(candidates) > 1 {
+		decision.FallbackModel = candidates[1].profile.ID
+	}
+	return decision, true
+}
+
+func classifyTask(req providers.ChatCompletionRequest) string {
+	if hint := strings.TrimSpace(strings.ToLower(req.TaskHint)); hint != "" {
+		return hint
+	}
+	buf := getBuffer()
+	for i, msg := range req.Messages {
+		if i > 0 {
+			buf.WriteByte(' ')
+		}
+		buf.WriteString(strings.ToLower(msg.Content))
+	}
+	text := buf.String()
+	putBuffer(buf)
+	switch {
+	case strings.Contains(text, "code"), strings.Contains(text, "golang"), strings.Contains(text, "python"), strings.Contains(text, "hello world"), strings.Contains(text, "软件"), strings.Contains(text, "开发"), strings.Contains(text, "代码"):
+		return "code"
+	case strings.Contains(text, "analyze"), strings.Contains(text, "分析"), strings.Contains(text, "report"), strings.Contains(text, "总结"):
+		return "analysis"
+	default:
+		return "general"
+	}
+}
+
+func (r *Router) lookup(model string) ModelProfile {
+	for _, item := range r.registry {
+		if strings.EqualFold(item.ID, model) {
+			return item
+		}
+	}
+	return ModelProfile{ID: model, Provider: r.defaultProv, Task: "general", Description: "externally supplied model", Capability: 0.8, CostScore: 0.8, LatencyScore: 0.8, HealthScore: 0.8}
+}
+
+func filterCandidates(registry []ModelProfile, candidates []string) []ModelProfile {
+	if len(candidates) == 0 {
+		return nil
+	}
+	var out []ModelProfile
+	for _, candidate := range candidates {
+		for _, item := range registry {
+			if strings.EqualFold(item.ID, candidate) {
+				out = append(out, item)
+			}
+		}
+	}
+	return out
+}
+
+func (r *Router) lookupChannel(channelID string) (Channel, bool) {
+	r.initializeControlPlane()
+	channel, ok := r.channels[strings.ToLower(strings.TrimSpace(channelID))]
+	return channel, ok
+}
+
+func (r *Router) lookupAbility(abilityID string) (Ability, bool) {
+	r.initializeControlPlane()
+	ability, ok := r.abilities[strings.ToLower(strings.TrimSpace(abilityID))]
+	return ability, ok
+}
+
+func defaultChannelID(item ModelProfile) string {
+	provider := strings.ToLower(strings.TrimSpace(item.Provider))
+	model := strings.ToLower(strings.TrimSpace(item.ID))
+	provider = strings.ReplaceAll(provider, " ", "-")
+	model = strings.ReplaceAll(model, " ", "-")
+	return provider + ":" + model
+}
+
+func normalizedRouteMode(mode string) string {
+	mode = strings.TrimSpace(strings.ToLower(mode))
+	if mode == "manual" || mode == "hybrid" {
+		return mode
+	}
+	return "auto"
+}
+
+func scoreCandidates(models []ModelProfile, targetTask string) []CandidateScore {
+	scores := make([]CandidateScore, 0, len(models))
+	for _, item := range models {
+		taskBoost := 0.72
+		reason := "general weighted routing"
+		if item.Task == targetTask {
+			taskBoost = 1.0
+			reason = "task-based routing matched model capability"
+		}
+		total := item.Capability*0.45*taskBoost + item.CostScore*0.20 + item.LatencyScore*0.15 + item.HealthScore*0.20
+		scores = append(scores, CandidateScore{Model: item.ID, Provider: item.Provider, Task: item.Task, TotalScore: total, Reason: reason})
+	}
+	sort.Slice(scores, func(i, j int) bool { return scores[i].TotalScore > scores[j].TotalScore })
+	return scores
+}
+
+type HistoricalMetrics struct {
+	Requests       int64
+	Successes      int64
+	TotalLatencyMs float64
+	TotalCost      float64
+}
+
+func (r *Router) RecordFeedback(task, model string, latencyMs float64, cost float64, success bool) {
+	_ = task
+	_ = model
+	_ = latencyMs
+	_ = cost
+	_ = success
+}
+func (r *Router) RegisterProductionModel(model, provider, task, description string) {
+	model = strings.TrimSpace(model)
+	provider = strings.TrimSpace(provider)
+	if model == "" || provider == "" {
+		return
+	}
+	for _, item := range r.registry {
+		if strings.EqualFold(item.ID, model) {
+			return
+		}
+	}
+	if task == "" {
+		task = "general"
+	}
+	r.registry = append(r.registry, ModelProfile{ID: model, Provider: provider, Task: task, Description: description, Capability: 0.8, CostScore: 0.8, LatencyScore: 0.8, HealthScore: 0.8})
+}
+func (r *Router) RegisterProductionChannelModel(channelID, model string) {
+	channelID = strings.TrimSpace(channelID)
+	model = strings.ToLower(strings.TrimSpace(model))
+	if channelID == "" || model == "" {
+		return
+	}
+	for _, ids := range r.modelChannels {
+		for _, existing := range ids {
+			if strings.EqualFold(existing, channelID) {
+				return
+			}
+		}
+	}
+	if r.modelChannels == nil {
+		r.modelChannels = make(map[string][]string)
+	}
+	r.modelChannels[model] = append(r.modelChannels[model], channelID)
+}
+func (r *Router) MarkDirectModel(model string) {
+	if r.directModels == nil {
+		r.directModels = make(map[string]bool)
+	}
+	r.directModels[strings.ToLower(strings.TrimSpace(model))] = true
+}
+func (r *Router) LoadHistoricalMetrics(metrics map[string]HistoricalMetrics) {
+	if r.metrics == nil {
+		r.metrics = make(map[string]HistoricalMetrics)
+	}
+	r.metrics = metrics
+}
+func (r *Router) SetProviderHealthChecker(check func(provider string) bool) {
+	r.healthCheck = check
+}
+func (r *Router) SetPrefixFamilyAffinity(on bool) {
+	if r.prefixAffinity == nil {
+		r.prefixAffinity = make(map[string]string)
+	}
+	r.prefixAffinityOn = on
+}
+func (r *Router) channelForModel(model string) (Channel, bool) {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return Channel{}, false
+	}
+	matches := make([]Channel, 0)
+	for _, ch := range r.channels {
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(ch.ID)), "openai:") {
+			continue
+		}
+		if strings.EqualFold(ch.Model, model) && ch.Enabled {
+			matches = append(matches, ch)
+		}
+	}
+	if len(matches) == 0 {
+		return Channel{}, false
+	}
+	sort.SliceStable(matches, func(i, j int) bool {
+		iSynthetic := strings.HasPrefix(strings.ToLower(matches[i].ID), "openai:")
+		jSynthetic := strings.HasPrefix(strings.ToLower(matches[j].ID), "openai:")
+		if iSynthetic != jSynthetic {
+			return !iSynthetic
+		}
+		if matches[i].Weight != matches[j].Weight {
+			return matches[i].Weight > matches[j].Weight
+		}
+		if matches[i].Priority != matches[j].Priority {
+			return matches[i].Priority > matches[j].Priority
+		}
+		return strings.ToLower(matches[i].ID) < strings.ToLower(matches[j].ID)
+	})
+	return matches[0], true
+}
+func (r *Router) prefixAffinityPin(family, provider string) string {
+	if !r.prefixAffinityOn || family == "" {
+		return ""
+	}
+	if p, ok := r.prefixAffinity[family]; ok {
+		return p
+	}
+	if provider != "" {
+		r.prefixAffinity[family] = provider
+	}
+	return provider
+}

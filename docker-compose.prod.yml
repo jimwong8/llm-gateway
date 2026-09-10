@@ -1,0 +1,184 @@
+# ============================================
+# LLM Gateway — Docker Compose (生产环境)
+# 使用方式：
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d
+# ============================================
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: llm-gateway-postgres
+    environment:
+      POSTGRES_USER: llmadmin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: llmgateway
+    expose:
+      - "5432"
+    # 生产环境不暴露端口到宿主机，仅内部网络访问
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U llmadmin -d llmgateway"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./internal/db/migrations:/docker-entrypoint-initdb.d:ro
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "2.0"
+        reservations:
+          memory: 512M
+          cpus: "0.5"
+    networks:
+      - backend
+
+  redis:
+    image: redis:7-alpine
+    container_name: llm-gateway-redis
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --requirepass ${REDIS_PASSWORD:-}
+      --save 60 1000
+      --save 300 100
+    expose:
+      - "6379"
+    # 生产环境不暴露端口到宿主机
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-}", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    volumes:
+      - redisdata:/data
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+        reservations:
+          memory: 128M
+          cpus: "0.25"
+    networks:
+      - backend
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llm-gateway
+    expose:
+      - "8080"
+    # 生产环境由 nginx 反向代理，不直接暴露端口
+    environment:
+      APP_ENV: production
+      APP_PORT: "8080"
+      POSTGRES_DSN: postgres://llmadmin:${POSTGRES_PASSWORD}@postgres:5432/llmgateway?sslmode=disable
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      MOCK_MODE: "false"
+      ADMIN_API_KEY: ${ADMIN_API_KEY}
+      JWT_SECRET: ${JWT_SECRET}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_TIMEOUT_SEC: "${OPENAI_TIMEOUT_SEC:-120}"
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-https://api.anthropic.com/v1}
+      ANTHROPIC_TIMEOUT_SEC: "${ANTHROPIC_TIMEOUT_SEC:-120}"
+      XSTX_API_KEY: ${XSTX_API_KEY:-}
+      XSTX_BASE_URL: ${XSTX_BASE_URL:-https://api.xstx.info/v1}
+      XSTX_TIMEOUT_SEC: "${XSTX_TIMEOUT_SEC:-120}"
+      AUDIT_LOG_ENABLED: "${AUDIT_LOG_ENABLED:-true}"
+      AUDIT_RETENTION_DAYS: "${AUDIT_RETENTION_DAYS:-90}"
+      BILLING_ENABLED: "${BILLING_ENABLED:-true}"
+      TENANT_RPM: "${TENANT_RPM:-60}"
+      DEFAULT_API_KEY_RPM: "${DEFAULT_API_KEY_RPM:-60}"
+      SEMANTIC_CACHE_ENABLED: "${SEMANTIC_CACHE_ENABLED:-false}"
+      MEMORY_ENABLED: "${MEMORY_ENABLED:-true}"
+      MODEL_GOVERNANCE_ENABLED: "${MODEL_GOVERNANCE_ENABLED:-true}"
+      PROVIDER_MAX_RETRIES: "${PROVIDER_MAX_RETRIES:-2}"
+      PROVIDER_FAILURE_THRESHOLD: "${PROVIDER_FAILURE_THRESHOLD:-3}"
+      PROVIDER_OPEN_SECONDS: "${PROVIDER_OPEN_SECONDS:-30}"
+      FALLBACK_MAX_DEPTH: "${FALLBACK_MAX_DEPTH:-3}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "10"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "2.0"
+        reservations:
+          memory: 128M
+          cpus: "0.5"
+    networks:
+      - backend
+      - frontend
+
+  # ---- Nginx 反向代理 ----
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: llm-gateway-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+    depends_on:
+      gateway:
+        condition: service_healthy
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.5"
+    networks:
+      - frontend
+
+volumes:
+  pgdata:
+    driver: local
+  redisdata:
+    driver: local
+
+networks:
+  backend:
+    driver: bridge
+    internal: true  # 后端网络，无外部访问
+  frontend:
+    driver: bridge

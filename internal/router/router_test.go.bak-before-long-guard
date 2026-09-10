@@ -1,0 +1,250 @@
+package router
+
+import (
+	"testing"
+
+	"llm-gateway/gateway/internal/providers"
+)
+
+func TestRouter_Decide_ManualOverride(t *testing.T) {
+	r := New("default-prov", "default-model")
+
+	req := providers.ChatCompletionRequest{
+		RouteMode:      "manual",
+		PreferredModel: "gpt-4o-mini",
+	}
+
+	decision := r.Decide(req)
+	if decision.RouteMode != "manual" {
+		t.Errorf("expected mode manual, got %s", decision.RouteMode)
+	}
+	if decision.Model != "gpt-4o-mini" {
+		t.Errorf("expected model gpt-4o-mini, got %s", decision.Model)
+	}
+}
+
+func TestRouter_Decide_GlobalPolicy(t *testing.T) {
+	r := New("default-prov", "default-model")
+
+	// Create a policy that routes everything to claude-sonnet
+	policyRaw := []byte(`{"type": "direct", "model": "claude-sonnet"}`)
+	p, err := ParsePolicyConfig(policyRaw)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	r.SetGlobalPolicy(p)
+
+	req := providers.ChatCompletionRequest{
+		RouteMode: "auto",
+	}
+
+	decision := r.Decide(req)
+	if decision.RouteMode != "policy" {
+		t.Errorf("expected mode policy, got %s", decision.RouteMode)
+	}
+	if decision.Model != "claude-sonnet" {
+		t.Errorf("expected model claude-sonnet, got %s", decision.Model)
+	}
+}
+
+func TestClassifyTask(t *testing.T) {
+	tests := []struct {
+		req  providers.ChatCompletionRequest
+		want string
+	}{
+		{
+			req:  providers.ChatCompletionRequest{TaskHint: "code"},
+			want: "code",
+		},
+		{
+			req: providers.ChatCompletionRequest{
+				Messages: []providers.ChatMessage{{Content: "help me write a python script"}},
+			},
+			want: "code",
+		},
+		{
+			req: providers.ChatCompletionRequest{
+				Messages: []providers.ChatMessage{{Content: "analyze this report"}},
+			},
+			want: "analysis",
+		},
+		{
+			req: providers.ChatCompletionRequest{
+				Messages: []providers.ChatMessage{{Content: "hello"}},
+			},
+			want: "general",
+		},
+	}
+
+	for i, test := range tests {
+		got := classifyTask(test.req)
+		if got != test.want {
+			t.Errorf("test %d: expected %s, got %s", i, test.want, got)
+		}
+	}
+}
+
+func TestRouter_Decide_ExplicitRouteChannel(t *testing.T) {
+	r := New("default-prov", "default-model")
+	r.SetChannels([]Channel{{ID: "premium-openai", Provider: "openai", Model: "gpt-4o-mini", Task: "general", Enabled: true, Priority: 1, Weight: 1}})
+
+	decision := r.Decide(providers.ChatCompletionRequest{
+		RouteMode:    "auto",
+		RouteChannel: "premium-openai",
+		Messages:     []providers.ChatMessage{{Role: "user", Content: "hello"}},
+	})
+
+	if decision.RouteMode != "channel" {
+		t.Fatalf("expected channel mode, got %s", decision.RouteMode)
+	}
+	if decision.Channel != "premium-openai" {
+		t.Fatalf("expected channel premium-openai, got %s", decision.Channel)
+	}
+	if decision.Model != "gpt-4o-mini" || decision.Provider != "openai" {
+		t.Fatalf("unexpected target: %s/%s", decision.Provider, decision.Model)
+	}
+}
+
+func TestRouter_Decide_RouteAbilities(t *testing.T) {
+	r := New("default-prov", "default-model")
+	r.SetChannels([]Channel{
+		{ID: "code-primary", Provider: "openai", Model: "gpt-4o-mini", Task: "code", Enabled: true, Priority: 1, Weight: 1},
+		{ID: "code-fallback", Provider: "openai", Model: "deepseek-v4-flash", Task: "code", Enabled: true, Priority: 2, Weight: 1},
+	})
+	r.SetAbilities([]Ability{{ID: "tenant-code", Task: "code", ChannelIDs: []string{"code-primary", "code-fallback"}, Enabled: true, Priority: 1}})
+
+	decision := r.Decide(providers.ChatCompletionRequest{
+		RouteAbilities: []string{"tenant-code"},
+		TaskHint:       "code",
+		Messages:       []providers.ChatMessage{{Role: "user", Content: "write some code"}},
+	})
+
+	if decision.RouteMode != "ability" {
+		t.Fatalf("expected ability mode, got %s", decision.RouteMode)
+	}
+	if decision.Ability != "tenant-code" {
+		t.Fatalf("expected ability tenant-code, got %s", decision.Ability)
+	}
+	if decision.Channel != "code-primary" {
+		t.Fatalf("expected primary channel code-primary, got %s", decision.Channel)
+	}
+	if decision.FallbackModel != "deepseek-v4-flash" {
+		t.Fatalf("expected fallback model fail-code, got %s", decision.FallbackModel)
+	}
+}
+
+func TestRouter_Decide_LegacyRouting_UnchangedWithoutControlPlaneConfig(t *testing.T) {
+	r := New("default-prov", "default-model")
+
+	decision := r.Decide(providers.ChatCompletionRequest{
+		RouteMode: "auto",
+		TaskHint:  "code",
+		Messages:  []providers.ChatMessage{{Role: "user", Content: "write a golang function"}},
+	})
+
+	if decision.RouteMode != "auto" {
+		t.Fatalf("expected auto mode, got %s", decision.RouteMode)
+	}
+	if decision.Channel != "" {
+		t.Fatalf("expected no channel for legacy routing, got %s", decision.Channel)
+	}
+	if decision.Ability != "" {
+		t.Fatalf("expected no ability for legacy routing, got %s", decision.Ability)
+	}
+	if decision.Provider == "mock-code" || decision.Provider == "mock-analysis" || decision.Provider == "mock-fail" {
+		t.Fatalf("production route must not select a mock provider, got %s/%s", decision.Provider, decision.Model)
+	}
+}
+
+func TestRouter_Decide_ExplicitChannel_UnknownFallsBackToLegacy(t *testing.T) {
+	r := New("default-prov", "default-model")
+
+	decision := r.Decide(providers.ChatCompletionRequest{
+		RouteMode:    "auto",
+		RouteChannel: "missing-channel",
+		TaskHint:     "code",
+		Messages:     []providers.ChatMessage{{Role: "user", Content: "write a golang function"}},
+	})
+
+	if decision.RouteMode != "auto" {
+		t.Fatalf("expected auto mode when explicit channel is missing, got %s", decision.RouteMode)
+	}
+	if decision.Channel != "" {
+		t.Fatalf("expected empty channel when explicit channel is missing, got %s", decision.Channel)
+	}
+	if decision.Provider == "mock-code" || decision.Provider == "mock-analysis" || decision.Provider == "mock-fail" {
+		t.Fatalf("production route must not select a mock provider, got %s/%s", decision.Provider, decision.Model)
+	}
+}
+
+func TestRouter_Decide_ExplicitAbility_UnknownFallsBackToLegacy(t *testing.T) {
+	r := New("default-prov", "default-model")
+
+	decision := r.Decide(providers.ChatCompletionRequest{
+		RouteMode:      "auto",
+		RouteAbilities: []string{"tenant-code"},
+		TaskHint:       "code",
+		Messages:       []providers.ChatMessage{{Role: "user", Content: "write a golang function"}},
+	})
+
+	if decision.RouteMode != "auto" {
+		t.Fatalf("expected auto mode when explicit ability is unavailable, got %s", decision.RouteMode)
+	}
+	if decision.Ability != "" {
+		t.Fatalf("expected empty ability when explicit ability is unavailable, got %s", decision.Ability)
+	}
+	if decision.Channel != "" {
+		t.Fatalf("expected empty channel when explicit ability is unavailable, got %s", decision.Channel)
+	}
+	if decision.Provider == "mock-code" || decision.Provider == "mock-analysis" || decision.Provider == "mock-fail" {
+		t.Fatalf("production route must not select a mock provider, got %s/%s", decision.Provider, decision.Model)
+	}
+}
+
+func TestRouter_ProductionModelsIncludeAllBAIModels(t *testing.T) {
+	r := New("openai", "deepseek-v4-flash")
+	want := map[string]bool{"deepseek-v4-flash": true, "mimo-v2.5": true, "hy3": true, "deepseek-v4-flash-vision-exp": true}
+	got := map[string]bool{}
+	for _, model := range r.Models() {
+		if want[model.ID] {
+			got[model.ID] = model.Provider == "openai"
+		}
+	}
+	for id := range want {
+		if !got[id] {
+			t.Fatalf("production model %q is not registered with openai provider", id)
+		}
+	}
+}
+
+func TestRouter_ProductionModelsExcludeGPT4oMini(t *testing.T) {
+	for _, model := range New("openai", "deepseek-v4-flash").Models() {
+		if model.ID == "gpt-4o-mini" {
+			t.Fatal("gpt-4o-mini must not be a production candidate")
+		}
+	}
+}
+
+func TestRouter_AutoModelSelectsBestCandidate(t *testing.T) {
+	r := New("openai", "deepseek-v4-flash")
+	req := providers.ChatCompletionRequest{Model: "AUTO", Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}}}
+	decision := r.Decide(req)
+	if decision.Model == "" || decision.Provider == "" {
+		t.Fatalf("AUTO routing returned empty model/provider: %+v", decision)
+	}
+	if decision.RouteMode != "auto" && decision.RouteMode != "model" {
+		t.Fatalf("AUTO routing should use auto mode, got %s", decision.RouteMode)
+	}
+}
+
+func TestRouter_AutoNotSelectedAsCandidate(t *testing.T) {
+	r := New("openai", "deepseek-v4-flash")
+	// Literal AUTO request must never resolve to provider=auto (self-recursion).
+	d := r.Decide(providers.ChatCompletionRequest{Model: "AUTO", Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}}})
+	if d.Provider == "auto" || d.Model == "AUTO" {
+		t.Fatalf("AUTO routing must pick a real model, got %s/%s", d.Provider, d.Model)
+	}
+	if d.Provider == "" || d.Model == "" {
+		t.Fatalf("AUTO routing returned empty: %+v", d)
+	}
+}

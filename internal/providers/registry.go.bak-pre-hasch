@@ -1,0 +1,729 @@
+package providers
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"log/slog"
+	"os"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+	"llm-gateway/gateway/internal/config"
+)
+
+type ProviderHealth struct {
+	Name         string
+	Type         string
+	Enabled      bool
+	Status       string
+	FailureCount int
+	LastError    string
+	LatencyMS    int64
+	CheckedAt    time.Time
+	OpenedUntil  time.Time
+}
+
+type providerState struct {
+	ProviderHealth
+}
+
+type Registry struct {
+	providers          map[string]Provider
+	channelProviders   map[string]Provider
+	channelModels      map[string][]Provider
+	channelNext        map[string]uint64
+	channelModelIDs    map[string][]string
+	fallback           Provider
+	localGates         map[string]*channelGate
+	localGateMu        sync.Mutex
+	states             map[string]*providerState
+	maxRetries         int
+	failureThreshold   int
+	openInterval       time.Duration
+	channelConcurrency int
+	channelInterval    time.Duration
+	mu                 sync.RWMutex
+	redis              *redis.Client
+	channelGateTTL     time.Duration
+	channelRPM         int
+	coolDowns          map[string]time.Time
+}
+
+func NewRegistry(cfg config.Config, fallback Provider, items ...Provider) *Registry {
+	out := &Registry{
+		providers:          map[string]Provider{},
+		channelProviders:   map[string]Provider{},
+		channelModels:      map[string][]Provider{},
+		channelNext:        map[string]uint64{},
+		channelModelIDs:    map[string][]string{},
+		states:             map[string]*providerState{},
+		fallback:           fallback,
+		maxRetries:         max(0, cfg.ProviderMaxRetries),
+		failureThreshold:   max(1, cfg.ProviderFailureThreshold),
+		openInterval:       time.Duration(max(1, cfg.ProviderOpenSeconds)) * time.Second,
+		channelConcurrency: max(1, cfg.ProviderChannelMaxConcurrency),
+		channelInterval:    time.Duration(max(0, cfg.ProviderChannelMinIntervalMS)) * time.Millisecond,
+		redis:              nil,
+		channelGateTTL:     5 * time.Minute,
+		channelRPM:         max(0, cfg.ProviderChannelRPM),
+		coolDowns:          map[string]time.Time{},
+		localGates:         map[string]*channelGate{},
+	}
+	for _, item := range items {
+		out.add(item)
+	}
+	out.add(fallback)
+	if strings.TrimSpace(cfg.RedisAddr) != "" {
+		out.redis = redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword, DB: cfg.RedisDB})
+	}
+	return out
+}
+
+func (r *Registry) add(item Provider) {
+	if item == nil {
+		return
+	}
+	name := strings.ToLower(strings.TrimSpace(item.Name()))
+	if name == "" {
+		return
+	}
+	r.providers[name] = item
+	if _, ok := r.states[name]; !ok {
+		r.states[name] = &providerState{ProviderHealth: ProviderHealth{Name: item.Name(), Type: providerType(item.Name()), Enabled: true, Status: "ok"}}
+	}
+}
+
+// RegisterChannelProvider registers an isolated upstream credential instance.
+// The channel ID is intentionally separate from the provider name so multiple
+// keys sharing one Base URL never share health, limits, or credentials.
+func (r *Registry) RegisterChannelProvider(channelID string, provider Provider) {
+	if provider == nil || strings.TrimSpace(channelID) == "" {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	channelKey := strings.ToLower(strings.TrimSpace(channelID))
+	r.channelProviders[channelKey] = provider
+	r.providers[strings.ToLower(strings.TrimSpace(provider.Name()))] = provider
+	if _, ok := r.states[strings.ToLower(strings.TrimSpace(provider.Name()))]; !ok {
+		r.states[strings.ToLower(strings.TrimSpace(provider.Name()))] = &providerState{ProviderHealth: ProviderHealth{Name: provider.Name(), Type: providerType(provider.Name()), Enabled: true, Status: "ok"}}
+	}
+}
+
+func (r *Registry) RegisterChannelModel(channelID, model string, provider Provider) {
+	if provider == nil || strings.TrimSpace(channelID) == "" || strings.TrimSpace(model) == "" {
+		return
+	}
+	r.RegisterChannelProvider(channelID, provider)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	modelKey := strings.ToLower(strings.TrimSpace(model))
+	r.channelModels[modelKey] = append(r.channelModels[modelKey], provider)
+	r.channelModelIDs[modelKey] = append(r.channelModelIDs[modelKey], strings.TrimSpace(channelID))
+}
+
+// PreferredChannelForModel returns the first registered real channel for a model.
+// It is used as a final guard against synthetic legacy channels such as openai:model.
+// ChannelForModelAt returns a distinct registered channel for a model by
+// stable registration index. It enables fallback to try different credentials.
+func (r *Registry) ChannelForModelAt(model string, index int) (string, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	ids := r.channelModelIDs[strings.ToLower(strings.TrimSpace(model))]
+	if index < 0 || index >= len(ids) {
+		return "", false
+	}
+	return ids[index], true
+}
+
+func (r *Registry) PreferredChannelForModel(model string) (string, bool) {
+	modelKey := strings.ToLower(strings.TrimSpace(model))
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	ids := r.channelModelIDs[modelKey]
+	if len(ids) == 0 {
+		return "", false
+	}
+	// The two production instances share Redis. Use one Redis counter per
+	// model so round-robin ordering is global, not one sequence per process.
+	start := int(r.channelNext[modelKey] % uint64(len(ids)))
+	if r.redis != nil {
+		if n, err := r.redis.Incr(context.Background(), "llm-gateway:channel-round-robin:"+modelKey).Result(); err == nil {
+			start = int((n - 1) % int64(len(ids)))
+			_ = r.redis.Expire(context.Background(), "llm-gateway:channel-round-robin:"+modelKey, 24*time.Hour).Err()
+		}
+	}
+
+	now := time.Now()
+	for offset := 0; offset < len(ids); offset++ {
+		idx := (start + offset) % len(ids)
+		id := ids[idx]
+		state := r.states[strings.ToLower(strings.TrimSpace(id))]
+		if state == nil || state.OpenedUntil.IsZero() || now.After(state.OpenedUntil) {
+			coolUntil := r.coolDowns[strings.ToLower(strings.TrimSpace(id))]
+			if !coolUntil.IsZero() && now.Before(coolUntil) {
+				continue
+			}
+			r.channelNext[modelKey] = uint64((idx + 1) % len(ids))
+			return id, true
+		}
+	}
+	// Every registered channel is unavailable. Do not return a cooling-down
+	// channel and send a request that is expected to fail; let the caller enter
+	// the normal model fallback path immediately.
+	return "", false
+}
+
+// channelGate is the in-process per-channel gate used when Redis is absent
+// (e.g. single-instance dev deployments). It enforces the same concurrency
+// and minimum-interval semantics as the distributed Redis gate.
+type channelGate struct {
+	mu     sync.Mutex
+	cond   *sync.Cond
+	active int
+	lastAt time.Time
+}
+
+func (r *Registry) acquireChannel(ctx context.Context, id string) error {
+	if r.redis == nil {
+		key := strings.ToLower(strings.TrimSpace(id))
+		r.localGateMu.Lock()
+		g := r.localGates[key]
+		if g == nil {
+			g = &channelGate{}
+			g.cond = sync.NewCond(&g.mu)
+			r.localGates[key] = g
+		}
+		r.localGateMu.Unlock()
+		g.mu.Lock()
+		defer g.mu.Unlock()
+		for g.active >= r.channelConcurrency {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			g.cond.Wait()
+		}
+		if r.channelInterval > 0 && !g.lastAt.IsZero() {
+			if wait := r.channelInterval - time.Since(g.lastAt); wait > 0 {
+				time.Sleep(wait)
+			}
+		}
+		g.active++
+		g.lastAt = time.Now()
+		return nil
+	}
+	key := strings.ToLower(strings.TrimSpace(id))
+	token := fmt.Sprintf("%d-%d", time.Now().UnixNano(), os.Getpid())
+	gateKey := "llm-gateway:channel-gate:" + key
+	now := time.Now().UnixMilli()
+	acquired, err := redisChannelAcquire(ctx, r.redis, gateKey, token, r.channelConcurrency, r.channelInterval, now, r.channelGateTTL, r.channelRPM)
+	if err == nil && acquired {
+		return nil
+	}
+	return fmt.Errorf("channel rate limit")
+}
+
+func redisChannelAcquire(ctx context.Context, client *redis.Client, key, token string, maxConcurrency int, interval time.Duration, now int64, ttl time.Duration, rpm int) (bool, error) {
+	script := redis.NewScript(`local active=tonumber(redis.call('HGET',KEYS[1],'active') or '0')
+local last=tonumber(redis.call('HGET',KEYS[1],'last_ms') or '0')
+local minute=ARGV[2]-ARGV[2]%60000
+local bucket=tonumber(redis.call('HGET',KEYS[1],'rpm:'..minute) or '0')
+if active >= tonumber(ARGV[1]) then return 0 end
+if tonumber(ARGV[3]) > 0 and (tonumber(ARGV[2])-last) < tonumber(ARGV[3]) then return 0 end
+if tonumber(ARGV[6]) > 0 and bucket >= tonumber(ARGV[6]) then return 0 end
+local cool=tonumber(redis.call('HGET',KEYS[1],'cool_until') or '0')
+if cool > 0 and tonumber(ARGV[2]) < cool then return 0 end
+redis.call('HINCRBY',KEYS[1],'active',1)
+redis.call('HSET',KEYS[1],'last_ms',ARGV[2],'owner:'..ARGV[4],1)
+if tonumber(ARGV[6]) > 0 then redis.call('HINCRBY',KEYS[1],'rpm:'..minute,1) end
+redis.call('EXPIRE',KEYS[1],ARGV[5])
+return 1`)
+	value, err := script.Run(ctx, client, []string{key}, maxConcurrency, now, interval.Milliseconds(), token, int(ttl.Seconds()), rpm).Int()
+	return value == 1, err
+}
+
+func (r *Registry) releaseChannel(id string) {
+	if r.redis == nil {
+		key := strings.ToLower(strings.TrimSpace(id))
+		r.localGateMu.Lock()
+		g := r.localGates[key]
+		r.localGateMu.Unlock()
+		if g == nil {
+			return
+		}
+		g.mu.Lock()
+		if g.active > 0 {
+			g.active--
+		}
+		g.cond.Signal()
+		g.mu.Unlock()
+		return
+	}
+	key := strings.ToLower(strings.TrimSpace(id))
+	// Best-effort decrement; TTL recovers leaked slots.
+	_, _ = r.redis.HIncrBy(context.Background(), "llm-gateway:channel-gate:"+key, "active", -1).Result()
+}
+
+// CleanupStaleGates removes all channel gate keys on startup to prevent
+// stale active counters from blocking requests after a restart.
+func (r *Registry) CleanupStaleGates() {
+	if r.redis == nil {
+		return
+	}
+	keys, err := r.redis.Keys(context.Background(), "llm-gateway:channel-gate:*").Result()
+	if err != nil {
+		return
+	}
+	for _, key := range keys {
+		_ = r.redis.Del(context.Background(), key).Err()
+	}
+	if len(keys) > 0 {
+		slog.Info("cleaned stale channel gates", "count", len(keys))
+	}
+}
+
+func (r *Registry) ResolveChannel(channelID string) Provider {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.channelProviders[strings.ToLower(strings.TrimSpace(channelID))]
+}
+
+func (r *Registry) ChatCompletionStream(ctx context.Context, providerName string, req ChatCompletionRequest) (io.ReadCloser, error) {
+	provider := r.Resolve(providerName)
+	// Keep stream provider selection consistent with non-streaming requests:
+	// configured channel credentials take precedence for the model.
+	if strings.EqualFold(providerName, "openai") {
+		if channelProvider := r.providerForModel(req.Model); channelProvider != nil {
+			provider = channelProvider
+		}
+	}
+	if s, ok := provider.(interface {
+		ChatCompletionStream(context.Context, ChatCompletionRequest) (io.ReadCloser, error)
+	}); ok {
+		return s.ChatCompletionStream(ctx, req)
+	}
+	return nil, fmt.Errorf("provider %s does not support streaming", providerName)
+}
+
+func (r *Registry) ChatCompletionStreamOnModel(ctx context.Context, model string, req ChatCompletionRequest) (io.ReadCloser, string, error) {
+	var lastErr error
+	seen := map[string]bool{}
+	for attempt := 0; attempt < 8; attempt++ {
+		channel, ok := r.PreferredChannelForModel(model)
+		if !ok || seen[channel] {
+			break
+		}
+		seen[channel] = true
+		stream, err := r.ChatCompletionStreamOnChannel(ctx, channel, req)
+		if err == nil {
+			return stream, channel, nil
+		}
+		lastErr = err
+		// A failing credential must not terminate same-model stream failover.
+		// The shared cursor advances, so the next iteration tries another key.
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("channel rate gate: no available channel")
+	}
+	return nil, "", lastErr
+}
+
+func (r *Registry) ChatCompletionStreamOnChannel(ctx context.Context, channelID string, req ChatCompletionRequest) (io.ReadCloser, error) {
+	provider := r.ResolveChannel(channelID)
+	if provider == nil {
+		return nil, fmt.Errorf("channel provider not found: %s", channelID)
+	}
+	if err := r.acquireChannel(ctx, channelID); err != nil {
+		return nil, fmt.Errorf("channel rate gate: %w", err)
+	}
+	stream, err := r.ChatCompletionStream(ctx, provider.Name(), req)
+	if err != nil {
+		r.releaseChannel(channelID)
+		return nil, err
+	}
+	return &gatedReadCloser{ReadCloser: stream, release: func() { r.releaseChannel(channelID) }}, nil
+}
+
+type gatedReadCloser struct {
+	io.ReadCloser
+	once    sync.Once
+	release func()
+}
+
+func (g *gatedReadCloser) Close() error { g.once.Do(g.release); return g.ReadCloser.Close() }
+
+// ChatCompletionOnModel selects the next channel for a model and retries a
+// bounded number of times when a channel is temporarily blocked by the local
+// rate gate. Provider failures are returned immediately to the normal model
+// fallback path; rate-gate exhaustion is returned as a distinct error.
+func (r *Registry) ChatCompletionOnModel(ctx context.Context, model string, req ChatCompletionRequest) (ChatCompletionResponse, string, error) {
+	var lastErr error
+	seen := map[string]bool{}
+	for attempt := 0; attempt < 8; attempt++ {
+		channel, ok := r.PreferredChannelForModel(model)
+		if !ok || seen[channel] {
+			break
+		}
+		seen[channel] = true
+		resp, err := r.ChatCompletionOnChannel(ctx, channel, req)
+		if err == nil {
+			return resp, channel, nil
+		}
+		lastErr = err
+		// A failing credential must not terminate same-model failover.
+		// PreferredChannelForModel advances the shared cursor, so the next
+		// iteration tries the next distinct channel/key.
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("channel rate gate: no available channel")
+	}
+	return ChatCompletionResponse{}, "", lastErr
+}
+
+func (r *Registry) ChatCompletionOnChannel(ctx context.Context, channelID string, req ChatCompletionRequest) (ChatCompletionResponse, error) {
+	provider := r.ResolveChannel(channelID)
+	if provider == nil {
+		return ChatCompletionResponse{}, fmt.Errorf("channel provider not found: %s", channelID)
+	}
+	if err := r.acquireChannel(ctx, channelID); err != nil {
+		return ChatCompletionResponse{}, fmt.Errorf("channel rate gate: %w", err)
+	}
+	defer r.releaseChannel(channelID)
+	return r.chatCompletionProvider(ctx, provider, req)
+}
+
+func (r *Registry) Resolve(name string) Provider {
+	if provider, ok := r.providers[strings.ToLower(strings.TrimSpace(name))]; ok {
+		return provider
+	}
+	return r.fallback
+}
+
+func (r *Registry) providerForModel(model string) Provider {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	list := r.channelModels[strings.ToLower(strings.TrimSpace(model))]
+	if len(list) == 0 {
+		return nil
+	}
+	// Prefer channels in the order registered by the database ranking:
+	// higher measured weight first, then lower measured latency. Skip open
+	// circuits so a failing key does not starve healthy siblings.
+	for _, p := range list {
+		if !r.isOpenLocked(p.Name()) {
+			return p
+		}
+	}
+	return list[0]
+}
+
+func (r *Registry) isOpenLocked(name string) bool {
+	state := r.states[strings.ToLower(strings.TrimSpace(name))]
+	if state == nil {
+		return false
+	}
+	return !state.OpenedUntil.IsZero() && time.Now().Before(state.OpenedUntil)
+}
+
+func (r *Registry) ChatCompletion(ctx context.Context, providerName string, req ChatCompletionRequest) (ChatCompletionResponse, error) {
+	provider := r.Resolve(providerName)
+	if strings.EqualFold(providerName, "openai") {
+		if channelProvider := r.providerForModel(req.Model); channelProvider != nil {
+			provider = channelProvider
+		}
+	}
+	if provider == nil {
+		return ChatCompletionResponse{}, fmt.Errorf("provider not found: %s", providerName)
+	}
+	return r.chatCompletionProvider(ctx, provider, req)
+}
+
+func (r *Registry) chatCompletionProvider(ctx context.Context, provider Provider, req ChatCompletionRequest) (ChatCompletionResponse, error) {
+	name := strings.ToLower(strings.TrimSpace(provider.Name()))
+	if err := r.beforeCall(name); err != nil {
+		return ChatCompletionResponse{}, err
+	}
+
+	attempts := r.maxRetries + 1
+	if attempts < 1 {
+		attempts = 1
+	}
+	var lastErr error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		started := time.Now()
+		resp, err := provider.ChatCompletion(ctx, req)
+		latency := time.Since(started)
+		if err == nil {
+			if responseIsEmptyOrTruncated(resp) {
+				err = fmt.Errorf("empty or truncated provider response")
+			} else {
+				r.recordSuccess(name, latency)
+				return resp, nil
+			}
+		}
+		lastErr = err
+		r.recordFailure(name, latency, err)
+		if attempt == attempts || ctx.Err() != nil || !shouldRetry(name) {
+			break
+		}
+		time.Sleep(time.Duration(attempt) * 200 * time.Millisecond)
+		if err := r.beforeCall(name); err != nil {
+			return ChatCompletionResponse{}, err
+		}
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("provider request failed: %s", name)
+	}
+	return ChatCompletionResponse{}, lastErr
+}
+
+func responseIsEmptyOrTruncated(resp ChatCompletionResponse) bool {
+	if len(resp.Choices) == 0 {
+		return true
+	}
+	choice := resp.Choices[0]
+	// Reasoning models (e.g. SenseNova) may consume all tokens in reasoning
+	// leaving content empty. If reasoning has content, the response is valid.
+	hasReasoning := strings.TrimSpace(choice.Message.Reasoning) != "" || strings.TrimSpace(choice.Message.ReasoningContent) != ""
+	if choice.FinishReason == "length" && !hasReasoning {
+		return true
+	}
+	if choice.FinishReason == "length" && hasReasoning {
+		return false // reasoning-only response is valid
+	}
+	return strings.TrimSpace(choice.Message.Content) == "" && !hasReasoning
+}
+
+func (r *Registry) beforeCall(name string) error {
+	r.mu.RLock()
+	state := r.states[name]
+	if state == nil {
+		r.mu.RUnlock()
+		return nil
+	}
+	openedUntil := state.OpenedUntil
+	r.mu.RUnlock()
+	if !openedUntil.IsZero() && time.Now().Before(openedUntil) {
+		return fmt.Errorf("provider circuit open: %s until %s", name, openedUntil.UTC().Format(time.RFC3339))
+	}
+	return nil
+}
+
+func (r *Registry) recordSuccess(name string, latency time.Duration) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	state := r.ensureStateLocked(name)
+	state.Status = "ok"
+	state.Enabled = true
+	state.FailureCount = 0
+	state.LastError = ""
+	state.LatencyMS = latency.Milliseconds()
+	state.CheckedAt = time.Now().UTC()
+	state.OpenedUntil = time.Time{}
+}
+
+func (r *Registry) recordFailure(name string, latency time.Duration, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	state := r.ensureStateLocked(name)
+	state.Enabled = true
+	state.LastError = err.Error()
+	state.LatencyMS = latency.Milliseconds()
+	state.CheckedAt = time.Now().UTC()
+	// A 429 (rate limit / quota) is a per-model throttle, not a channel outage.
+	// Mark it error so observability sees it, but do not count toward the
+	// channel-wide circuit breaker — otherwise one exhausted model (e.g.
+	// glm-5.2 quota) takes down every sibling model on the same channel.
+	if isThrottleError(err) {
+		state.Status = "error"
+		// Put the channel on cooldown so other instances skip it too.
+		r.coolDowns[strings.ToLower(strings.TrimSpace(name))] = time.Now().Add(30 * time.Second)
+		return
+	}
+	state.FailureCount++
+	state.Status = "error"
+	if state.FailureCount >= r.failureThreshold {
+		state.Status = "open"
+		state.OpenedUntil = time.Now().UTC().Add(r.openInterval)
+	}
+}
+
+func (r *Registry) RecordProbe(name string, enabled bool, status string, detail string, latency time.Duration) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	state := r.ensureStateLocked(name)
+	state.Enabled = enabled
+	state.Status = strings.TrimSpace(status)
+	if state.Status == "" {
+		state.Status = "unknown"
+	}
+	state.LastError = strings.TrimSpace(detail)
+	state.LatencyMS = latency.Milliseconds()
+	state.CheckedAt = time.Now().UTC()
+	if state.Status == "ok" || state.Status == "disabled" {
+		state.FailureCount = 0
+		if state.Status == "ok" {
+			state.OpenedUntil = time.Time{}
+		}
+	}
+}
+
+// IsProviderOpen reports whether the given provider name is currently
+// circuit-open (recent sustained failures). The router uses this to skip
+// models whose upstream is unavailable so AUTO routing does not select a
+// broken channel.
+func (r *Registry) IsProviderOpen(name string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	key := strings.ToLower(strings.TrimSpace(name))
+	if key == "" {
+		return false
+	}
+	state, ok := r.states[key]
+	if !ok {
+		return false
+	}
+	return !state.OpenedUntil.IsZero() && time.Now().Before(state.OpenedUntil)
+}
+
+func (r *Registry) HealthStatuses() []ProviderHealth {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]ProviderHealth, 0, len(r.states))
+	for _, state := range r.states {
+		out = append(out, state.ProviderHealth)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
+	})
+	return out
+}
+
+func (r *Registry) ensureStateLocked(name string) *providerState {
+	key := strings.ToLower(strings.TrimSpace(name))
+	if state, ok := r.states[key]; ok {
+		return state
+	}
+	state := &providerState{ProviderHealth: ProviderHealth{Name: name, Type: providerType(name), Enabled: true, Status: "unknown"}}
+	r.states[key] = state
+	return state
+}
+
+func providerType(name string) string {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	switch {
+	case strings.HasPrefix(lower, "mock"):
+		return "mock"
+	case strings.Contains(lower, "openai"):
+		return "openai"
+	default:
+		return "provider"
+	}
+}
+
+func shouldRetry(name string) bool {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	return !strings.HasPrefix(lower, "mock")
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+type FallbackRoute struct {
+	Model    string
+	Provider string
+	Channel  string
+	Reason   string
+}
+
+type FallbackResult struct {
+	UsedFallback  bool
+	Attempts      int
+	FinalProvider string
+	FinalModel    string
+}
+
+func (r *Registry) ChatCompletionWithFallback(ctx context.Context, chain []FallbackRoute, req ChatCompletionRequest) (ChatCompletionResponse, FallbackResult, error) {
+	result := FallbackResult{}
+	if len(chain) == 0 {
+		return ChatCompletionResponse{}, result, fmt.Errorf("fallback chain is empty")
+	}
+	var lastErr error
+	for i, route := range chain {
+		providerName := route.Provider
+		if providerName == "" {
+			providerName = r.Resolve(route.Model).Name()
+		}
+		provider := r.Resolve(providerName)
+		if route.Channel != "" {
+			if channelProvider := r.ResolveChannel(route.Channel); channelProvider != nil {
+				provider = channelProvider
+			}
+		}
+		if provider == nil {
+			lastErr = fmt.Errorf("provider not found: %s", providerName)
+			continue
+		}
+		channelAcquired := ""
+		if route.Channel != "" {
+			if err := r.acquireChannel(ctx, route.Channel); err != nil {
+				lastErr = err
+				continue
+			}
+			channelAcquired = route.Channel
+		}
+		name := strings.ToLower(strings.TrimSpace(provider.Name()))
+		if err := r.beforeCall(name); err != nil {
+			if channelAcquired != "" {
+				r.releaseChannel(channelAcquired)
+			}
+			lastErr = err
+			continue
+		}
+		attempts := r.maxRetries + 1
+		if attempts < 1 {
+			attempts = 1
+		}
+		for attempt := 1; attempt <= attempts; attempt++ {
+			started := time.Now()
+			resp, err := provider.ChatCompletion(ctx, req)
+			latency := time.Since(started)
+			if err == nil {
+				r.recordSuccess(name, latency)
+				result.Attempts = i + 1
+				result.FinalProvider = provider.Name()
+				result.FinalModel = route.Model
+				result.UsedFallback = i > 0
+				if channelAcquired != "" {
+					r.releaseChannel(channelAcquired)
+				}
+				return resp, result, nil
+			}
+			lastErr = err
+			r.recordFailure(name, latency, err)
+			if attempt == attempts || ctx.Err() != nil || !shouldRetry(name) {
+				break
+			}
+			time.Sleep(time.Duration(attempt) * 200 * time.Millisecond)
+			if err := r.beforeCall(name); err != nil {
+				lastErr = err
+				break
+			}
+		}
+		if channelAcquired != "" {
+			r.releaseChannel(channelAcquired)
+		}
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("all fallback providers failed")
+	}
+	return ChatCompletionResponse{}, result, lastErr
+}

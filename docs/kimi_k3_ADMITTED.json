@@ -1,0 +1,17 @@
+{
+  "ts": "2026-08-31T01:42:13Z",
+  "model": "moonshotai/kimi-k3",
+  "verified_channel": "nvidia-nim-key-02",
+  "admission": "full",
+  "evidence": {
+    "direct_probe": {"status": 200, "content": "KIMI-ADMIT-OK", "reasoning_nonempty": true, "finish_reason": "stop", "seconds": 17},
+    "gateway_explicit": {"status": 200, "route_channel": "nvidia-nim-key-66", "content": "KIMI-GATEWAY-OK", "reasoning_nonempty": true, "finish_reason": "stop"},
+    "gateway_auto": {"status": 200, "route_model": "glm-5.2", "route_channel": "sensenova-file-01", "note": "normal auto routing, not kimi failure"},
+    "streaming": {"status": 200, "content_type": "text/event-stream", "data_chunks": 36, "done": true, "route_channel": "nvidia-nim-key-65"},
+    "tool_calling": {"status": 200, "reasoning_preserved": true, "no_400": true, "route_channel": "nvidia-nim-key-63"},
+    "models_list": {"note": "/v1/models lists DEFAULT_MODEL_POOL only; kimi-k3 reachable via explicit model (architecture expected)"}
+  },
+  "model_limits": {"context_window": 1048576, "safe_context_window": 0, "confidence": "observed", "last_status": 200},
+  "monitor": "stopped",
+  "monitor_bug": "kimi_k3_monitor.sh defined TRIGGER var but never wrote the trigger file; admission proceeded from probe_status admit + independent re-verification"
+}

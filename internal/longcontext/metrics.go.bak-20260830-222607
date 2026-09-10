@@ -1,0 +1,99 @@
+package longcontext
+
+import (
+	"encoding/json"
+	"expvar"
+	"sync"
+	"time"
+)
+
+var (
+	// Task lifecycle counters.
+	tasksCreated   = expvar.NewInt("longcontext.tasks.created")
+	tasksCompleted = expvar.NewMap("longcontext.tasks.completed.by_status")
+
+	// Chunk processing counters.
+	chunksProcessed = expvar.NewMap("longcontext.chunks.processed.by_status")
+
+	// Worker counters.
+	workerClaims = expvar.NewInt("longcontext.worker.claims")
+	workerErrors = expvar.NewInt("longcontext.worker.errors")
+
+	// Latency snapshot per phase (last N observations, seconds).
+	phaseDurations = &latencySnapshot{
+		buckets: make(map[string]*ringFloats),
+	}
+)
+
+type ringFloats struct {
+	size int
+	vals []float64
+	mu   sync.Mutex
+}
+
+func newRing(size int) *ringFloats { return &ringFloats{size: size} }
+
+func (r *ringFloats) add(v float64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.vals) < r.size {
+		r.vals = append(r.vals, v)
+		return
+	}
+	copy(r.vals, r.vals[1:])
+	r.vals[r.size-1] = v
+}
+
+func (r *ringFloats) snapshot() []float64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]float64, len(r.vals))
+	copy(out, r.vals)
+	return out
+}
+
+type latencySnapshot struct {
+	mu      sync.Mutex
+	buckets map[string]*ringFloats
+}
+
+func (l *latencySnapshot) Record(phase string, d time.Duration) {
+	l.mu.Lock()
+	b := l.buckets[phase]
+	if b == nil {
+		b = newRing(100)
+		l.buckets[phase] = b
+	}
+	l.mu.Unlock()
+	b.add(d.Seconds())
+}
+
+func (l *latencySnapshot) String() string {
+	l.mu.Lock()
+	m := make(map[string][]float64, len(l.buckets))
+	for k, v := range l.buckets {
+		m[k] = v.snapshot()
+	}
+	l.mu.Unlock()
+	// expvar.Map value must be valid JSON.
+	b, _ := json.Marshal(m)
+	return string(b)
+}
+
+func init() {
+	expvar.Publish("longcontext.durations.seconds", phaseDurations)
+}
+
+// Metrics helpers.
+func recordTaskCreated() { tasksCreated.Add(1) }
+func recordTaskCompleted(status string) {
+	tasksCompleted.Add(status, 1)
+}
+func recordChunkProcessed(status string) {
+	chunksProcessed.Add(status, 1)
+}
+func recordWorkerClaim() { workerClaims.Add(1) }
+func recordWorkerError() { workerErrors.Add(1) }
+func recordPhaseDuration(phase string, d time.Duration) {
+	phaseDurations.Record(phase, d)
+}
