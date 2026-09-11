@@ -5,7 +5,9 @@ const USER_TOKEN_KEY = 'llm_gateway_user_token'
 
 export function getUserToken(): string {
   if (typeof window === 'undefined') return ''
-  return window.sessionStorage.getItem(USER_TOKEN_KEY) ?? ''
+  return window.sessionStorage.getItem(USER_TOKEN_KEY) 
+    ?? window.sessionStorage.getItem('llm_gateway_admin_token')
+    ?? ''
 }
 
 export function setUserToken(token: string) {

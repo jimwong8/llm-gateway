@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AppShell } from '../components/layout/AppShell'
 import { sendPlaygroundRequest, type PlaygroundResult } from '../lib/playground'
@@ -11,8 +11,20 @@ type RequestState = {
   messages: PlaygroundMessage[]
 }
 
+// 兜底模型列表：/v1/models 拉取失败时使用
+const FALLBACK_MODELS = [
+  'deepseek-v4-flash',
+  'glm-5.2',
+  'sensenova-6.8-flash-lite',
+  'glm-5.3-flash',
+  'mimo-v2.5',
+  'minimax/minimax-m3:free',
+  'minimax/minimax-m2.7:free',
+  'meituan/longcat-2.0:free',
+] as const
+
 const initialRequestState: RequestState = {
-  model: 'gpt-4o-mini',
+  model: 'deepseek-v4-flash',
   tenantID: 'tenant-a',
   taskHint: '',
   messages: [{ role: 'user', content: '请解释一下当前配置会如何影响路由决策。' }],
@@ -34,6 +46,41 @@ export function PlaygroundPage() {
   const [recentRequests, setRecentRequests] = useState<RecentRequest[]>([])
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [availableModels, setAvailableModels] = useState<string[]>(() => [...FALLBACK_MODELS])
+
+  // 动态拉取 /v1/models，失败时保留兜底列表
+  useEffect(() => {
+    let cancelled = false
+    const token = sessionStorage.getItem('llm_gateway_admin_token')
+      || sessionStorage.getItem('llm_gateway_user_token')
+      || ''
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
+
+    fetch('/v1/models', { headers })
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
+      .then((data: unknown) => {
+        if (cancelled) return
+        const candidates = (data as { data?: Array<{ id: string }> })?.data
+          ?.map((m) => m.id)
+          .filter(Boolean)
+        if (candidates && candidates.length > 0) {
+          setAvailableModels(candidates)
+          // 若当前默认模型不在新列表里，切到第一个
+          setRequestState((prev) =>
+            candidates.includes(prev.model) ? prev : { ...prev, model: candidates[0] },
+          )
+        }
+      })
+      .catch(() => {
+        /* 拉取失败：保留 FALLBACK_MODELS */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const requestPreview = useMemo<PlaygroundRequest>(
     () => ({
@@ -114,7 +161,11 @@ export function PlaygroundPage() {
           <div className="playground-form__grid">
             <label>
               {t('playground.model')}
-              <input value={requestState.model} onChange={(event) => setRequestState((prev) => ({ ...prev, model: event.target.value }))} />
+              <select value={requestState.model} onChange={(event) => setRequestState((prev) => ({ ...prev, model: event.target.value }))}>
+                {availableModels.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
             </label>
             <label>
               {t('playground.tenantId')}

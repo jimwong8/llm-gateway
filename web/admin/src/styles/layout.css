@@ -2,23 +2,7 @@
    App Shell Layout — 核心布局样式
    ======================================== */
 
-:root {
-  /* Dark theme default */
-  --bg-primary: #0b1220;
-  --bg-surface: #111a2b;
-  --bg-elevated: #1a2540;
-  --bg-hover: #22314f;
-  --text-primary: #e8ecf3;
-  --text-secondary: #a8b3c7;
-  --text-muted: #6b7891;
-  --border-color: #243250;
-  --surface-color: #111a2b;
-  --sidebar-bg: #0d1524;
-  --sidebar-width: 240px;
-  --sidebar-collapsed-width: 60px;
-  --topbar-height: 56px;
-  --quicknav-height: 44px;
-}
+
 
 :root.light {
   --bg-primary: #f5f7fb;

@@ -103,13 +103,13 @@ export async function deleteMaskRule(id: number): Promise<void> {
 // ── Mask Settings ───────────────────────────────────────
 
 export async function fetchMaskSettings(): Promise<{ enabled: boolean }> {
-  const res = await userFetch('/api/memory/masks/settings', { headers: { ...userAuthHeaders() } })
+  const res = await userFetch('/api/memory/mask-settings', { headers: { ...userAuthHeaders() } })
   if (!res.ok) throw new Error(await res.text())
   return res.json()
 }
 
 export async function updateMaskSettings(enabled: boolean): Promise<{ enabled: boolean }> {
-  const res = await userFetch('/api/memory/masks/settings', {
+  const res = await userFetch('/api/memory/mask-settings', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...userAuthHeaders() },
     body: JSON.stringify({ enabled }),
