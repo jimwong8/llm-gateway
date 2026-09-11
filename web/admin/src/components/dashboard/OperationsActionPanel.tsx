@@ -1,16 +1,18 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 export function OperationsActionPanel() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { t } = useTranslation()
 
   const handleRefreshAll = () => {
     queryClient.invalidateQueries().then(() => {
-      toast.success('已触发全局刷新')
+      toast.success(t('panel.operations.refreshOk'))
     }).catch((err) => {
-      toast.error('刷新失败', { description: String(err) })
+      toast.error(t('panel.operations.refreshFail'), { description: String(err) })
     })
   }
 
@@ -27,23 +29,23 @@ export function OperationsActionPanel() {
   }
 
   return (
-    <section className="operations-action-panel" aria-label="运维快捷动作">
+    <section className="operations-action-panel" aria-label={t('panel.operations.aria')}>
       <header className="panel-header">
-        <h2>快捷操作</h2>
-        <span>运维工具</span>
+        <h2>{t('panel.operations.title')}</h2>
+        <span>{t('panel.operations.subtitle')}</span>
       </header>
       <div className="operations-action-panel__grid">
-        <button type="button" onClick={handleRefreshAll} aria-label="刷新全部仪表盘数据">
-          刷新全部
+        <button type="button" onClick={handleRefreshAll} aria-label={t('panel.operations.refreshAria')}>
+          {t('panel.operations.refreshAll')}
         </button>
-        <button type="button" onClick={handleOpenPlayground} aria-label="打开在线测试 Playground">
-          打开在线测试
+        <button type="button" onClick={handleOpenPlayground} aria-label={t('panel.operations.playgroundAria')}>
+          {t('panel.operations.playground')}
         </button>
-        <button type="button" onClick={handleExportErrors} aria-label="导出错误日志">
-          导出错误日志
+        <button type="button" onClick={handleExportErrors} aria-label={t('panel.operations.exportAria')}>
+          {t('panel.operations.export')}
         </button>
-        <button type="button" onClick={handleViewAudit} aria-label="查看审计日志">
-          查看审计导出
+        <button type="button" onClick={handleViewAudit} aria-label={t('panel.operations.auditAria')}>
+          {t('panel.operations.audit')}
         </button>
       </div>
     </section>

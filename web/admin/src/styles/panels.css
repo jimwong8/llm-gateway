@@ -353,3 +353,5 @@
   font-size: 0.875rem;
   color: var(--text-muted);
 }
+
+.summary-card-grid--3 { grid-template-columns: repeat(3, 1fr); }

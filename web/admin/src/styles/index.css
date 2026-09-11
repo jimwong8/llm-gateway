@@ -494,3 +494,8 @@
     width: 100%;
   }
 }
+
+/* security-radar error state (extracted from inline styles, batch: panel i18n) */
+.security-radar-panel__error-body { margin-top: 0.5rem; font-size: 0.85rem; color: var(--slate-400, #94a3b8); }
+.security-radar-panel__toggle-raw { margin-top: 0.5rem; font-size: 0.75rem; color: var(--slate-400, #94a3b8); background: transparent; border: none; cursor: pointer; }
+.security-radar-panel__raw { margin-top: 0.5rem; padding: 0.5rem; background: var(--gray-900); color: var(--gray-300); font-size: 0.7rem; border-radius: 0.25rem; overflow: auto; }

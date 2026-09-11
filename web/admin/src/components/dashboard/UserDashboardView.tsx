@@ -166,7 +166,7 @@ function CostTrendSummary({ data, t }: { data?: CostTrendPoint[]; t: (key: strin
   const totalTokens = data.reduce((s, d) => s + d.tokens, 0)
   const totalRequests = data.reduce((s, d) => s + d.requests, 0)
   return (
-    <div className="summary-card-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+    <div className="summary-card-grid summary-card-grid--3">
       <div className="summary-card">
         <span>{t('dashboard.totalCost')}</span>
         <strong>¥{(totalCost / 100).toFixed(2)}</strong>

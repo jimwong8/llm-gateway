@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+
 export function CostQuotaPanel(props: {
   todayCost: string
   monthCost: string
@@ -5,31 +7,32 @@ export function CostQuotaPanel(props: {
   providerErrorRate: string
   totalTokens: string
 }) {
+  const { t } = useTranslation()
   return (
-    <section className="cost-quota-panel" aria-label="成本与配额控制区">
+    <section className="cost-quota-panel" aria-label={t('panel.costQuota.aria')}>
       <header className="panel-header">
-        <h2>成本与配额</h2>
-        <span>预算监控</span>
+        <h2>{t('panel.costQuota.title')}</h2>
+        <span>{t('panel.costQuota.subtitle')}</span>
       </header>
       <div className="cost-quota-panel__grid">
         <article>
-          <span>今日成本</span>
+          <span>{t('panel.costQuota.todayCost')}</span>
           <strong>{props.todayCost}</strong>
         </article>
         <article>
-          <span>本月成本</span>
+          <span>{t('panel.costQuota.monthCost')}</span>
           <strong>{props.monthCost}</strong>
         </article>
         <article>
-          <span>缓存命中</span>
+          <span>{t('panel.costQuota.cacheHit')}</span>
           <strong>{props.cacheHitRate}</strong>
         </article>
         <article>
-          <span>错误率</span>
+          <span>{t('panel.costQuota.errorRate')}</span>
           <strong>{props.providerErrorRate}</strong>
         </article>
         <article>
-          <span>总 Tokens</span>
+          <span>{t('panel.costQuota.totalTokens')}</span>
           <strong>{props.totalTokens}</strong>
         </article>
       </div>
